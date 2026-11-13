@@ -1105,7 +1105,13 @@ mod tests {
 
     #[test]
     fn contact_sheet_resolves_a_relative_cache_root_once() {
-        let dir = tempfile::tempdir().unwrap();
+        // Create the temp dir under the working directory so the relative path
+        // below is expressible everywhere: CI Windows puts %TEMP% on another
+        // volume, where no relative path can reach.
+        let dir = tempfile::Builder::new()
+            .prefix("lrsalvage-report-")
+            .tempdir_in(std::env::current_dir().unwrap())
+            .unwrap();
         let cache = dir.path().join("cache");
         std::fs::create_dir_all(&cache).unwrap();
 
@@ -1116,12 +1122,10 @@ mod tests {
 
         let cwd = std::env::current_dir().unwrap();
         let relative_cache = relative_to(&cwd, &cache);
-        assert!(!relative_cache.is_absolute(), "the premise of this test");
-        if relative_cache.has_root() {
-            // Windows CI puts the temp dir on a different volume than the
-            // working directory, and a relative path cannot cross volumes.
-            // The join logic itself is covered by
-            // `resolve_payload_is_idempotent`.
+        if relative_cache.is_absolute() || relative_cache.has_root() {
+            // Defensive: if a platform still cannot express this relatively,
+            // skip rather than assert a filesystem premise. The join rule
+            // itself is covered by `resolve_payload_is_idempotent`.
             return;
         }
 

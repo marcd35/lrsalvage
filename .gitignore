@@ -6,6 +6,7 @@
 /out
 /out-*
 *.partial
+lrsalvage-report-*
 
 # OS noise
 .DS_Store
