@@ -11,6 +11,37 @@ ordinary JPEG files, with the catalog's metadata attached.
 Version 0.1. Early, and deliberately conservative: it would rather tell you it
 found nothing than hand you a folder of wrong images.
 
+## Lightroom is not required
+
+You do not need Lightroom installed, licensed, or running. `lrsalvage` is a file
+reader, not a plugin: it opens the catalog (a SQLite database), `previews.db`, and
+the `.lrprev` payload files, and writes JPEGs. It never talks to Adobe software,
+uses no Lightroom SDK or COM interface, and reads nothing outside the two paths
+you give it.
+
+That is checked rather than claimed:
+
+- The release binary imports only system libraries — `kernel32`, `ntdll`,
+  `bcryptprimitives`, `VCRUNTIME140` and the C runtime API sets — plus bundled
+  SQLite. No Adobe module is in its dependency table.
+- A full run with Lightroom Classic installed but not running loads 12 modules,
+  none of them from Adobe.
+- It runs happily against a catalog copied from another machine, including
+  originals that point at drives which no longer exist (`K:`, `G:`). Only the
+  cache is read.
+
+So a `.lrcat` and a `* Previews.lrdata` recovered from a dead laptop, an external
+drive, or a backup folder are enough on their own, and no Adobe licence is needed
+to run this tool. What you give up without Lightroom is downstream of recovery
+anyway: re-rendering develop edits, regenerating previews that were never built,
+and anything above the resolution that was cached. See
+[What this cannot do](#what-this-cannot-do).
+
+One practical note: close Lightroom before extracting. The tool copies the
+catalog together with its `-wal` and `-shm` sidecars and opens the copy read-only,
+so an open catalog cannot corrupt a run — a closed one simply gives a cleaner
+snapshot.
+
 ## The hard truth, before anything else
 
 These are **previews**, not originals.
@@ -27,6 +58,57 @@ These are **previews**, not originals.
 
 If that is still worth having — and after a drive failure, it usually is — read
 on.
+
+## Compatibility
+
+Two things version independently here, and conflating them is how a "supports
+v13+" claim goes wrong: the **catalog** (a SQLite schema Lightroom has changed
+slowly) and the **preview storage** (which Lightroom replaced in 13.3).
+
+| Lightroom Classic | Catalog | Preview storage | Status |
+|---|---|---|---|
+| 4 – 9 | older schema | `.lrprev` pyramid | Same reader, **untested** |
+| 10 – 12 | v10 – v12 | `.lrprev` pyramid | Same reader; **v11 verified** on real catalogs |
+| 13.0 – 13.2 | v13 | `.lrprev` pyramid | Same reader, **untested** |
+| 13.3 and later | v13+ | per-image folders of extensionless JPEGs | **Not supported yet** — [issue #2](https://github.com/marcd35/lrsalvage/issues/2) |
+
+What those rows mean in practice:
+
+- **Verified**: Lightroom Classic 11 catalogs, the ones this tool was built and
+  tested against — a 3,416-image catalog (2,659 previews recovered) and a
+  78-image one (78/78).
+- **Same format, untested**: 10, 12 and 13.0 – 13.2 use the `.lrprev` pyramid
+  this tool parses. Nothing known stops them working; nobody has run it on one.
+- **Not supported: 13.3 and later.** On such a cache every image reports
+  `missing-payload` and the run exits 3 — or, if the cache has no `previews.db`,
+  it stops with a database error. That is the tool refusing to guess, not a
+  partial success. Work is tracked in
+  [issue #2](https://github.com/marcd35/lrsalvage/issues/2).
+
+Where this README says "verified", it means someone ran the tool against real
+files of that generation. Every claim below that with a byte-level basis carries
+an evidence label in [docs/format-notes.md](docs/format-notes.md): **verified**,
+**reported**, or **unverified**.
+
+## Why not an existing tool?
+
+There are several ways to get previews out of a Lightroom catalog. They differ in
+what they need installed, which storage formats they understand, and how much
+they give back.
+
+| | Needs Lightroom installed? | Reads 13.3+ previews? | Restores metadata? | Approach |
+|---|---|---|---|---|
+| `lrsalvage` | No | Not yet ([#2](https://github.com/marcd35/lrsalvage/issues/2)) | EXIF, ICC profile, star rating, capture-date mtime | Parses the container |
+| Friedl "Extract Cached Image Previews" | Yes (plugin) | Yes, since build 20240611.65 | Yes, via bundled ExifTool | Runs inside Lightroom |
+| Adobe `ExtractPreviews.lua` | Yes (script) | Updated after 13.3 | No metadata, no ICC profile | Runs inside Lightroom |
+| Python `.lrprev` extractors | No | No | Rarely | Scan for `FFD8`…`FFD9` |
+
+The practical difference is the last column. Scanning for start/end markers
+returns whatever JPEG-like blob appears last in the file — which can be the
+thumbnail embedded *inside* a preview level, not the level itself. This tool
+walks the declared chunk lengths and checks the decoded frame, so a wrong-sized
+answer fails loudly instead of quietly becoming a 160 px file with your name on
+it.
 
 ## Quick start
 
@@ -46,30 +128,100 @@ lrsalvage extract ^
 On macOS or Linux, use a trailing backslash instead of `^` to continue a line.
 
 `scan` is the safe first move: it opens everything read-only, joins the catalog
-against the preview index, and prints a per-image verdict plus totals. It writes
-no files. Add `--json` for machine-readable output, or give `--contact-sheet` a
-path to get a self-contained HTML page of the best available preview per image —
-the fastest way to see what you actually still have.
+against the preview index, and prints totals — recoverable images, their size
+tiers, and a count for each other state that occurs. It writes no files unless
+you ask for a contact sheet. Give `--contact-sheet` a path to get a
+self-contained HTML page of the images `extract` would write, each shown with the
+smallest level in its pyramid — a contact sheet wants recognition, not
+resolution.
 
-`extract` takes the same two paths plus a destination. Useful flags:
+A count is not a verdict. `--verbose` adds one line per plan item — per image at
+its best level, plus one per extra level with `--all-levels`, plus one per
+unmapped payload:
+
+```text
+status  tier  WxH  profile  relative-output
+recovered  standard  1616x1077  sRGB  12.31.23/DSC01652.jpg
+```
+
+Fields are separated by two spaces, and a fact the plan does not know prints as
+`-`, so the five columns stay put for a script. `--json` replaces the table with
+one machine-readable object; `--verbose` lines follow it.
+
+`scan --json` emits these fields, and only these:
+
+| Field | Meaning |
+|---|---|
+| `catalog`, `previews` | The two input paths, with `/` separators. |
+| `images` | Catalog images examined. |
+| `recovered` | Images whose parsed payload agrees with the size `previews.db` declares. |
+| `bytes` | Payload bytes of the items `extract` would write, before metadata is added. |
+| `suspect` | Recovered, but the decoded size disagrees with `previews.db`. |
+| `missing_payload` | `previews.db` has a row; the payload file is not on disk. |
+| `no_cache_entry` | The catalog has the image; `previews.db` has no row. |
+| `unmapped` | A payload that no catalog image claims. |
+| `failed` | A payload that is truncated, unreadable, or holds no complete JPEG level. |
+| `original_present` | Images skipped because the original file is still on disk. Always `0` with `--include-present`. |
+| `below_floor` | Items the floor excluded. |
+| `tiers` | Object keyed `full`, `large`, `standard`, `small`, `thumbnail`; absent tiers are absent keys. |
+
+`extract` takes the same two paths plus a destination. It shares
+`--min-long-edge`, `--all-levels`, and `--include-present` with `scan`; the table
+names which command each flag belongs to:
 
 | Flag | Effect |
 |---|---|
-| `--dry-run` | Do everything except write files. |
-| `--min-long-edge 640` | Ignore previews below this long edge (default 640). |
+| `--min-long-edge 640` | Ignore levels below this long edge (default 640; `0` disables the floor). |
 | `--all-levels` | Export every intermediate level, not just the best one. |
-| `--json` | Machine-readable report (on `scan`). |
+| `--include-present` | Also include images whose original file still exists on disk. |
+| `--verbose` | `scan` only: print one line per plan item instead of only totals. |
+| `--json` | `scan` only: emit one machine-readable object instead of the table. |
+| `--dry-run` | Do everything except write files, report files included. |
+| `--force` | Replace a destination file that does not verify as ours: a complete JPEG whose dimensions match the planned item. Without it, such a file is reported as failed and left byte-identical. |
+| `--no-metadata` | Do not add any metadata to the recovered JPEGs: no EXIF (so no orientation or rating), no rating XMP packet, no ICC profile. |
+| `--no-timestamps` | Leave the file modification time at the time of writing, instead of setting it to the capture time. |
 
 ### What lands on disk
 
-The Lightroom folder tree is mirrored under `--out`, so `2019\Iceland\_MG_0233.dng`
-becomes `E:\rescued\2019\Iceland\_MG_0233.jpg`. Virtual copies get the copy name
-appended: `_MG_0233 - Black and white.jpg`. Nothing else is written, and no file
-is ever named after a uuid.
+The output tree starts at the **last segment of
+`AgLibraryRootFolder.absolutePath`**, then follows `pathFromRoot`, then the file
+name:
+
+```
+C:/Users/marcc/Pictures/2023/12.31.23/DSC01652.ARW
+  → E:\rescued\12.31.23\DSC01652.jpg
+```
+
+It does not mirror the whole absolute path, so it never reproduces
+`Users\marcc\Pictures\2023\...` under the destination. Real catalogs commonly
+point `absolutePath` at the folder that was imported — here `.../12.31.23/` —
+and leave `pathFromRoot` empty. Where a catalog instead uses a drive-level root
+and puts the subfolders in `pathFromRoot`, the first directory is that root's
+last segment: `C:/Users/marcc/Pictures/` plus `pathFromRoot = 2023/12.31.23/`
+becomes `Pictures\2023\12.31.23\...`. A bare drive root (`C:/`) has no usable
+last segment, so that level is dropped rather than turned into a `C:` folder.
+
+Virtual copies get the copy name appended: `DSC01652 - Black and white.jpg`.
+Output JPEGs are never named after a uuid.
 
 The largest level per image wins, and "largest" is decided by decoded JPEG
 dimensions, not by byte count — a small file with a big header is still small.
-`--all-levels` writes the rest beside it.
+`--all-levels` writes the rest beside it, with ` - 1200x800` added before `.jpg`
+so the extra levels do not collide with the best one.
+
+Three report files are written in the output root, beside the recovered tree:
+`report.csv` (one row per plan item), `manifest.json` (the same facts with a
+schema and version), and `extract.csv` (one row per attempted write, with its
+SHA-256 and any per-file note). They are written after extraction, only on a run
+that selected something and is not a dry run. None of them ever overwrites an
+existing file: if `report.csv` is already there, the run writes `report (2).csv`
+and says so. The numbered name applies to all three.
+
+The run ends with a line on stderr such as
+`78 evaluated, 78 written, 0 skipped, 0 failed, 25.3 MiB`. Sizes there are
+mebibytes (1 MiB = 1,048,576 bytes). The reports keep exact bytes:
+`manifest.json` as a total over the selected payloads, `extract.csv` per written
+file.
 
 ## Safety
 
@@ -82,60 +234,96 @@ The catalog is the only copy of the map. It is treated as read-only evidence:
 - **Refuses dangerous destinations.** `--out` inside the catalog's own directory
   or inside the preview cache is rejected before anything is written. Pointing
   the tool at `My Catalog Previews.lrdata` and telling it to fill that folder is
-  how a recovery becomes a second data loss.
-- **Atomic writes.** Each JPEG is written to a temporary file and renamed into
-  place, so an interrupted run leaves no half-JPEG masquerading as a recovered
-  one.
-- **Resumable.** Re-running `extract` skips outputs that already exist and picks
-  up the rest. Interrupting it costs nothing.
+  how a recovery becomes a second data loss. The same check covers the report
+  files in the output root and a requested `--contact-sheet`, whose parent
+  directory is validated before the page is written.
+- **`scan` writes one thing at most.** Without `--contact-sheet`, `scan` writes
+  no file anywhere the user can see; with it, the contact sheet is the only
+  output and it obeys the destination rule above.
+- **Atomic writes.** Each JPEG is written to a temporary file, flushed, and
+  renamed into place, so an interrupted run leaves no half-JPEG masquerading as
+  a recovered one.
+- **Resumable.** Re-running `extract` skips an output only when it verifies as
+  ours: a complete JPEG whose dimensions match the planned item. An existing
+  file that does not verify is left byte-identical and reported as failed;
+  `--force` is the explicit way to replace it. Interrupting a run costs nothing.
 
 ## What the statuses mean
 
-Every image in the scan ends up in exactly one of five states:
+Every catalog image ends up in exactly one of these states; a payload that no
+live catalog image claims is listed as `unmapped`.
 
 | Status | Meaning |
 |---|---|
-| **recovered** | A payload was found and parsed; `extract` writes it. |
-| **unmapped** | A payload exists in the cache but no catalog image claims it. Listed, not renamed into your photo tree. |
-| **skipped** | No JPEG was produced, and nothing was corrupt: the catalog has no cache entry (`no-cache-entry`), the entry points at a payload that is gone (`missing-payload`), or the best level is below `--min-long-edge`. |
-| **failed** | A payload exists but is truncated, unreadable, or not a JPEG. |
-| **suspect** | A payload decoded, but its dimensions disagree with what the catalog recorded. Flagged in the report rather than silently trusted. |
+| **recovered** | A payload was found and parsed, and its decoded dimensions agree with `previews.db`. `extract` writes it if it clears `--min-long-edge`; a recovered image below the floor is counted but not selected. |
+| **suspect** | The payload is a real, complete photo whose decoded size disagrees with the size `previews.db` recorded. It is still extracted, subject to the floor, and flagged in every report: a real photo at the wrong declared size is worth recovering. |
+| **original-present** | The original RAW/JPEG/TIFF is still on disk, so there is nothing to salvage. Skipped by default; `--include-present` turns these into ordinary recovery candidates. |
+| **no-cache-entry** | The catalog has the image, but `previews.db` has no row for it. Nothing was ever rendered, or the row is gone. |
+| **missing-payload** | `previews.db` has a row, but the payload file it names is not on disk. |
+| **failed** | A payload exists but is truncated, unreadable, not a `.lrprev`, contains no readable JPEG level, or the level does not end at an end-of-image marker. |
+| **unmapped** | A payload exists in the cache but no live catalog image claims it. Listed with its payload path; never renamed into your photo tree. |
 
 `missing-payload` is worth reading twice. It means Lightroom believed a preview
 existed and it is not on disk — either the cache was partially deleted, or you
-are looking at a 13.3+ catalog whose `previews.db` rows are stale. Either way it
-is a different problem from "no preview was ever built", which is why the report
-keeps them apart even though both count as skipped.
+are looking at a 13.3+ cache, whose storage this tool does not read yet (see
+[Compatibility](#compatibility)). Either way it is a different problem from "no
+preview was ever built", which is why the report keeps them apart.
 
 ## Metadata restored
 
-The preview's pixels are only half of what the catalog knows. `extract` writes
-back, into the JPEG's EXIF/XMP:
+The preview's pixels are only half of what the catalog knows. With metadata on
+(the default), `extract` rebuilds three things around the untouched payload:
 
-- capture time, camera make and model, lens
-- ISO, exposure time, f-number, focal length
-- star rating
-- GPS latitude and longitude, when present
-- orientation, so viewers show the picture upright
-- an ICC profile matching the colour profile the catalog recorded (sRGB or
-  AdobeRGB)
+- **EXIF** — capture time, camera make and model, lens, ISO, exposure time,
+  f-number, focal length, GPS latitude and longitude when present, the orientation
+  that makes the picture display upright, and the star rating as EXIF tag
+  `0x4746`.
+- **XMP** — a small packet carrying the same rating as `xmp:Rating`, but only when
+  the payload carries no XMP packet of its own. Merging into a packet the payload
+  already has is not attempted: that packet is left byte-identical and the
+  omission is recorded in the run's per-file note, while the rating still lands
+  in EXIF.
+- **ICC** — a profile reconstructed from `Pyramid.colorProfile`. The catalog
+  records the profile's name and never its bytes, so `sRGB` becomes a
+  2,084-byte `sRGB IEC61966-2.1` profile and `AdobeRGB` a 560-byte
+  `Adobe RGB (1998)` profile. Names are matched case-insensitively and ignoring
+  spaces and punctuation. Any other name is reported — `colour profile 'ACR' has
+  no built-in ICC profile; none embedded` — and none is embedded: a wrong profile
+  is worse than none for colour-critical work.
+
+That ICC profile identifies the colour space; it is a reconstruction, not the
+profile the original file carried, and should not be presented as the original.
 
 Only what the catalog actually recorded is written. Missing fields stay missing —
-no guessed timestamps, no invented camera names. The pixels themselves are copied
-byte for byte; see [ADR 0003](docs/adr/0003-preserve-preview-bytes.md).
+no guessed timestamps, no invented camera names. An explicit `xmp:Rating = 0` is
+a recorded rating, and is written as such.
+
+The per-file note is the `note` column of `extract.csv`. It is not echoed for a
+successful write, and a dry run writes no report at all, so a dry run's notes are
+not shown; check a real run's `extract.csv` when colour matters.
+
+Unless `--no-timestamps` is given, the file's modification time is set to the
+capture time; if that date is missing or unparseable, the mtime is left alone.
+
+The compressed image data is copied byte for byte. The only bytes added or
+replaced are metadata segments: EXIF and XMP APP1, ICC APP2. An EXIF or ICC
+segment already in the payload is replaced, never duplicated. With
+`--no-metadata`, the payload is written unchanged. See
+[ADR 0003](docs/adr/0003-preserve-preview-bytes.md).
 
 ## Exit codes
 
 | Code | Meaning |
 |---|---|
-| 0 | Success; everything recoverable was recovered. |
-| 1 | Usage or input error: bad arguments, or the catalog / cache is missing or unreadable. |
-| 2 | Partial: some images were recovered, some failed. |
-| 3 | Nothing recoverable: the catalog and cache were readable but yielded no usable preview. |
-| 4 | Unsafe destination: `--out` is inside the catalog or cache, or is not writable. |
+| 0 | Success. Also what `--help` and `--version` return. |
+| 1 | Usage or input error: bad arguments, or the catalog / preview cache is missing, unreadable, or not a catalog. |
+| 2 | `extract` completed with some failures: at least one selected image could not be written. The run did real work and also hit something it could not do. `scan` never returns 2. |
+| 3 | Nothing selected to do: no image was selected to write — for example, every original is still present, or every preview is below the floor. `scan` and `extract` use the same test, so they agree on this code. `masks` returns 3 when it finds no `.dat` file or decodes none. |
+| 4 | Unsafe or unwritable destination: `--out` (or the contact-sheet directory) resolves inside the catalog or preview cache — or, for `masks`, inside the `.lrcat-data` directory — or cannot be created or written. |
 
-`2` is the one to pay attention to in scripts. It means the run did real work and
-also hit something it could not read; the report says which.
+`2` is the one to pay attention to in scripts: the report says which items failed
+and why. `3` is not an error — a catalog where every original is still on disk
+legitimately has nothing to salvage.
 
 ## What this cannot do
 
@@ -157,7 +345,9 @@ also hit something it could not read; the report says which.
 
 One confusion worth heading off: a `.lrcat-data` directory sitting next to the
 catalog is **not** preview data. It holds AI mask alpha channels (Select Subject,
-Select Sky). Nothing recoverable lives there. See
+Select Sky). Nothing recoverable lives there. If you want those masks,
+`lrsalvage masks --data "...\Photos.lrcat-data" --out "E:\masks"` decodes them to
+PNG; it is a separate command precisely because they are not photographs. See
 [docs/format-notes.md](docs/format-notes.md) section 3.
 
 ## Building
@@ -179,6 +369,24 @@ cargo clippy -- -D warnings
 Tests that need a real catalog are `#[ignore]`d and read their fixtures from
 environment variables, so the default `cargo test` runs against synthetic
 fixtures only.
+
+### Checks
+
+The toolchain is pinned in `rust-toolchain.toml`, so `cargo` builds with the same
+compiler here and in CI. The same five gates run on every pull request:
+
+```console
+cargo fmt --all --check
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace
+typos                                  # spelling, config in typos.toml
+cargo deny check                       # licences, advisories, banned crates
+```
+
+`cargo deny check` is what keeps the dual MIT/Apache-2.0 licence honest: a new
+dependency that is not permissively licensed fails the build rather than being
+discovered by someone redistributing the binary. Dependency updates arrive as
+Dependabot pull requests.
 
 ## Licence
 

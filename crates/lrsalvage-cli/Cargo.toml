@@ -1,0 +1,25 @@
+[package]
+name = "lrsalvage-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "CLI for salvaging Lightroom Classic previews"
+
+[[bin]]
+name = "lrsalvage"
+path = "src/main.rs"
+
+[dependencies]
+lrsalvage-core = { path = "../lrsalvage-core", version = "0.1.0" }
+clap.workspace = true
+walkdir.workspace = true
+serde_json.workspace = true
+indicatif.workspace = true
+
+[dev-dependencies]
+assert_cmd.workspace = true
+predicates.workspace = true
+rusqlite.workspace = true
+tempfile.workspace = true

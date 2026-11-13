@@ -15,28 +15,55 @@ So the useful information is around the pixels, not in them.
 
 ## Decision
 
-Copy the payload bytes verbatim and never re-encode by default. Put the recovered
-information around those bytes: EXIF (orientation, capture time, camera, lens,
-exposure), XMP (rating, GPS), and an ICC profile derived from the colour profile
-name the catalog recorded.
+Copy the payload's compressed image data verbatim and never re-encode by default.
+Metadata is the only thing rewritten: a new EXIF segment is inserted, and an
+existing EXIF segment in the payload is replaced rather than kept alongside. Put
+the recovered information around those bytes: EXIF (orientation, capture time,
+camera, lens, exposure, ISO, f-number, focal length, GPS, rating), a small XMP
+packet carrying the rating when the payload does not already carry an XMP packet,
+and an ICC profile derived from the colour profile name the catalog recorded.
 
-Operations that change pixels — rotation, conversion to sRGB — are opt-in flags
-only. When one is used, the run report says the pixels were altered.
+The ICC profile is rebuilt from the catalog's *name*, never recovered from the
+payload, because the payload carries none and the catalog stores no profile bytes
+(`docs/format-notes.md` §6.4). Two names resolve to a built-in, reproducible
+ICC v2 matrix/TRC profile: `sRGB` to the 2,084-byte `sRGB IEC61966-2.1` profile
+and `AdobeRGB` to the 560-byte `Adobe RGB (1998)` profile. Matching ignores case,
+spaces and punctuation.
+
+Unknown profile names are reported and no profile is embedded. The writer says
+`colour profile <name> has no built-in ICC profile; none embedded`; it never
+substitutes sRGB for a name it does not recognise. A payload that already has an
+XMP packet is left alone, and its rating stays in EXIF only, with a note.
+
+Any future operation that changes pixels — rotation, conversion to sRGB — must be
+an opt-in flag, and the run report must say the pixels were altered.
 
 ## Consequences
 
-- Default output is byte-identical to the cached JPEG. The quality is exactly
-  what Lightroom stored, with no second generation of loss and no argument about
-  which encoder is better.
+- The compressed image data is identical to what Lightroom stored, so the quality
+  is exactly the cached preview with no second generation of loss and no argument
+  about which encoder is better. With metadata on (the default) the *file* is not
+  byte-identical: EXIF, XMP and ICC segments are inserted, and a payload EXIF or
+  ICC segment is replaced. `--no-metadata` is the way to get the payload's own
+  bytes unchanged.
 - Orientation lives in EXIF, so a viewer that ignores EXIF still shows the image
   sideways. Accepted: rotating pixels to satisfy a display default is a permanent
   loss in exchange for a temporary convenience.
 - The ICC profile is reconstructed from a name (`sRGB`, `AdobeRGB`), not recovered
   from the file, and must be described that way. An unrecognised profile name
   means no profile plus a warning, because a wrong profile is worse than none for
-  anyone doing colour-critical work.
-- A rotated or colour-converted output has different pixels from the default one.
-  That difference must be visible in the file name or the report, never silent.
+  anyone doing colour-critical work. On the 78-payload cache, all 78 recovered
+  files carry `sRGB IEC61966-2.1`; the catalog's name for every one of them is
+  `sRGB`.
+- Recovered files now carry that ICC profile and, when the payload has no XMP
+  packet of its own, the rating packet. The rating is in EXIF at tag `0x4746`
+  whenever the catalog records one; the XMP packet repeats it only when merging
+  is unnecessary. A payload with its own XMP keeps it unchanged, and the omission
+  is recorded in the per-file note — the packet is never rewritten, because a
+  partial merge would be worse than the honest gap.
+- A rotated or colour-converted output would have different pixels from the
+  default one. That difference must be visible in the file name or the report,
+  never silent.
 - There is no "improve the JPEG on write" option, and there never should be:
   re-encoding cannot add detail and can only remove it.
 

@@ -1,0 +1,14 @@
+# Spelling check for prose and identifiers.
+#
+# The defaults are deliberately strict; these entries are domain vocabulary and
+# SQL aliases that are correct as written, not typos.
+
+[default.extend-words]
+fo = "fo"
+fi = "fi"
+rf = "rf"
+unparseable = "unparseable"
+mis = "mis"
+
+[files]
+extend-exclude = ["target", "Cargo.lock"]

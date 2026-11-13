@@ -1,0 +1,52 @@
+# cargo-deny policy. Run locally with `cargo deny check` (or the prebuilt
+# binary); CI runs the same command.
+#
+# The project is MIT OR Apache-2.0, so every dependency must be redistributable
+# under those terms. Anything not listed below fails the build rather than being
+# discovered later by a downstream user.
+
+[advisories]
+version = 2
+# A yanked crate is a warning, not a failure: it can still be a sound
+# dependency, and it may be pinned by something we cannot change yet.
+yanked = "warn"
+
+[licenses]
+version = 2
+confidence-threshold = 0.9
+# The allow list is a policy, not an inventory: a licence nobody uses today is
+# still permitted tomorrow.
+unused-allowed-license = "allow"
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-3.0",
+    "Zlib",
+    "0BSD",
+    "CC0-1.0",
+    "Unlicense",
+    # Weak, file-level copyleft. Acceptable to link against; if this ever grows
+    # into a strong-copyleft (GPL/AGPL) entry, that is a decision, not a config
+    # tweak.
+    "MPL-2.0",
+]
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+# No async runtime, no TLS stack: this tool is a file reader, and both would be
+# pure attack surface.
+deny = [
+    { name = "tokio" },
+    { name = "openssl" },
+    { name = "openssl-sys" },
+]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

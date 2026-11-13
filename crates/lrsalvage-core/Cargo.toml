@@ -1,0 +1,31 @@
+[package]
+name = "lrsalvage-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Salvage JPEG previews from Adobe Lightroom Classic catalogs"
+
+[dependencies]
+rusqlite.workspace = true
+tempfile.workspace = true
+walkdir.workspace = true
+thiserror.workspace = true
+
+sha2.workspace = true
+flate2.workspace = true
+base64 = "0.22"
+serde_json.workspace = true
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+filetime = "0.2"
+png = { version = "0.18", optional = true }
+
+[features]
+default = ["masks"]
+masks = ["dep:png"]
+
+[dev-dependencies]
+serde_json.workspace = true
+kamadak-exif = "0.6"
+proptest.workspace = true

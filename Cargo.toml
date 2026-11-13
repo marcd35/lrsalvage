@@ -1,0 +1,25 @@
+[workspace]
+resolver = "3"
+members = ["crates/lrsalvage-core", "crates/lrsalvage-cli"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/marcd35/lrsalvage"
+rust-version = "1.85"
+
+[workspace.dependencies]
+rusqlite = { version = "0.42", features = ["bundled"] }
+clap = { version = "4.6", features = ["derive", "env"] }
+walkdir = "2.5"
+tempfile = "3"
+thiserror = "2"
+
+serde_json = "1"
+sha2 = "0.10"
+flate2 = "1"
+indicatif = "0.18"
+assert_cmd = "2.2"
+predicates = "3.1"
+proptest = "1.12"

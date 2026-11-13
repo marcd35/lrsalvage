@@ -42,7 +42,8 @@ _Avoid_: stray file, unmapped file
 
 **Salvageable image**:
 A catalog image whose original file cannot be found and for which at least one
-payload survives.
+payload survives. An image whose original is still on disk is not a salvage
+target unless the caller explicitly asks for it.
 _Avoid_: recoverable image, lost photo, missing image
 
 **Best level**:
@@ -51,15 +52,13 @@ default.
 _Avoid_: highest quality, full size, original
 
 **Tier**:
-A size class that sets expectations about a best level: `best-available`
-(whatever this image happens to have), `standard` (about 1440 px on the long
-edge), `small` (between thumbnail and standard), `thumbnail` (about 160 px,
-enough to recognise the frame).
+A size class for a best level, by long edge: `full` (4000 px and above), `large`
+(1920–3999), `standard` (1024–1919), `small` (640–1023), `thumbnail` (below 640).
+The classes set expectations; they do not change what is in the cache.
 _Avoid_: quality, resolution
 
 **Recovered**:
-A JPEG now exists for the image. It is the only thing lrsalvage ever produces on
-disk.
+A JPEG now exists at the planned output path for the image.
 _Avoid_: restored, rescued
 
 **Restored**:
@@ -68,9 +67,16 @@ lrsalvage never does this, and no preview can lead to it.
 _Avoid_: recovered
 
 **Suspect**:
-An image whose payload disagrees with what the catalog recorded about it, and is
-therefore reported rather than trusted silently.
+An image whose payload is a genuine photograph but whose decoded size disagrees
+with the size the cache recorded. It is still recovered, and flagged, rather than
+silently trusted or thrown away.
 _Avoid_: corrupt, damaged
+
+**Original present**:
+An image skipped because its original file is still on disk. There is nothing to
+salvage; asking for such images explicitly turns them into ordinary recovery
+candidates.
+_Avoid_: skipped, duplicate, existing photo
 
 ## Images
 
@@ -78,6 +84,12 @@ _Avoid_: corrupt, damaged
 The source file — RAW, JPEG, TIFF, DNG — at the path the catalog records. The one
 thing salvage cannot recreate.
 _Avoid_: master, source photo
+
+**Colour profile**:
+The colour space the catalog records for a pyramid by name, such as `sRGB` or
+`AdobeRGB`. A recovered file carries a profile reconstructed from that name when
+one can be built, never the profile the original file had.
+_Avoid_: embedded profile, colour space
 
 **Virtual copy**:
 An additional catalog image that shares one original but has its own edits and
