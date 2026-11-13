@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufWriter, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
@@ -14,14 +14,23 @@ use crate::model::Orientation;
 use crate::plan::{Plan, PlanItem, Tier};
 use crate::{jpeg, lrprev};
 
-/// One-line-per-status summary for the terminal.
+/// One-line-per-status summary for the terminal, using the default 640 px floor.
 pub fn summary(plan: &Plan) -> String {
+    summary_with_floor(plan, 640)
+}
+
+/// The same summary, naming the floor the caller actually applied.
+pub fn summary_with_floor(plan: &Plan, floor: u32) -> String {
     let stats = &plan.stats;
 
     // label, count, optional trailing note
-    let mut rows: Vec<(&str, u64, Option<String>)> = Vec::with_capacity(12);
-    rows.push(("catalog images", stats.images, None));
-    rows.push(("recovered", stats.recoverable, Some(megabytes(stats.bytes))));
+    let mut rows: Vec<(String, u64, Option<String>)> = Vec::with_capacity(12);
+    rows.push(("catalog images".to_string(), stats.images, None));
+    rows.push((
+        "recovered".to_string(),
+        stats.recoverable,
+        Some(mebibytes(stats.bytes)),
+    ));
     for tier in [
         Tier::Full,
         Tier::Large,
@@ -38,12 +47,12 @@ pub fn summary(plan: &Plan) -> String {
                 Tier::Small => "  small",
                 Tier::Thumbnail => "  thumbnail",
             };
-            rows.push((label, count, None));
+            rows.push((label.to_string(), count, None));
         }
     }
     if stats.below_floor > 0 {
         rows.push((
-            "below floor (640px)",
+            format!("below floor ({floor}px)"),
             stats.below_floor,
             Some("not written unless --min-long-edge 0".to_string()),
         ));
@@ -51,12 +60,13 @@ pub fn summary(plan: &Plan) -> String {
     for (label, count) in [
         ("missing payload", stats.missing_payload),
         ("no cache entry", stats.no_cache_entry),
+        ("original present", stats.original_present),
         ("unmapped payloads", stats.unmapped),
         ("suspect", stats.suspect),
         ("failed", stats.failed),
     ] {
         if count > 0 {
-            rows.push((label, count, None));
+            rows.push((label.to_string(), count, None));
         }
     }
 
@@ -89,14 +99,72 @@ fn with_thousands(value: u64) -> String {
 }
 
 /// Tenths of a mebibyte, rounded half up, printed with one decimal and the
-/// "MB" label people expect. `stats.bytes` stays exact in the JSON manifest.
-fn megabytes(bytes: u64) -> String {
+/// unit it actually is: `1 MiB = 1,048,576 bytes`. `stats.bytes` stays exact in
+/// the JSON manifest.
+fn mebibytes(bytes: u64) -> String {
     let tenths = (u128::from(bytes) * 10 + (1 << 19)) / (1 << 20);
     format!(
-        "{}.{} MB",
+        "{}.{} MiB",
         with_thousands((tenths / 10) as u64),
         tenths % 10
     )
+}
+
+/// One stable line per plan item, for the per-image verdict in `scan`:
+///
+/// ```text
+/// status  tier  WxH  profile  relative-output
+/// ```
+///
+/// Fields are separated by two spaces, and a fact the plan does not know is
+/// printed as `-`, so a reader (or a script) can rely on the five columns.
+pub fn item_lines(plan: &Plan) -> Vec<String> {
+    plan.items.iter().map(item_line).collect()
+}
+
+fn item_line(item: &PlanItem) -> String {
+    let tier = item.tier.map(Tier::as_str).unwrap_or("-");
+    let size = match (item.width, item.height) {
+        (Some(width), Some(height)) => format!("{width}x{height}"),
+        _ => "-".to_string(),
+    };
+    let profile = item.color_profile.as_deref().unwrap_or("-");
+    format!(
+        "{}  {}  {}  {}  {}",
+        item.status.as_str(),
+        tier,
+        size,
+        profile,
+        relative_output(item)
+    )
+}
+
+/// The output path as it reads under the output root.
+///
+/// The plan stores absolute outputs but not the root they hang from, so the
+/// mapped case is rebuilt from the image's own relative path plus the file name
+/// the planner actually chose (which carries `- WxH` and ` (2)` suffixes).
+fn relative_output(item: &PlanItem) -> String {
+    match (&item.image, &item.output) {
+        (Some(image), Some(output)) => {
+            let base = image.relative_output_path();
+            let directory = base.parent().unwrap_or(Path::new(""));
+            let Some(name) = output.file_name() else {
+                return slashed(&base);
+            };
+            if directory.as_os_str().is_empty() {
+                slashed(Path::new(name))
+            } else {
+                slashed(&directory.join(name))
+            }
+        }
+        (Some(image), None) => slashed(&image.relative_output_path()),
+        (None, Some(output)) => match output.file_name() {
+            Some(name) => slashed(Path::new(name)),
+            None => "-".to_string(),
+        },
+        (None, None) => "-".to_string(),
+    }
 }
 
 /// Fixed column order; downstream tools rely on it.
@@ -458,18 +526,28 @@ fn caption_stem(item: &PlanItem) -> String {
 /// resolution.
 fn thumbnail_data_url(item: &PlanItem, cache_root: &Path) -> Option<String> {
     let payload = item.payload.as_ref()?;
-    let payload = if payload.is_absolute() {
-        payload.clone()
-    } else {
-        cache_root.join(payload)
-    };
-    let bytes = std::fs::read(payload).ok()?;
+    let bytes = std::fs::read(resolve_payload(payload, cache_root)).ok()?;
     let parsed = lrprev::Lrprev::parse(&bytes).ok()?;
     let smallest = smallest_level(&parsed)?;
     Some(format!(
         "data:image/jpeg;base64,{}",
         STANDARD.encode(smallest)
     ))
+}
+
+/// Resolve a payload path against the cache root exactly once.
+///
+/// The planner builds payload paths from whatever `--previews` it was given, so
+/// with a relative `--previews` the item already carries that prefix. Joining
+/// it again would look for `cache/cache/…` and silently drop every thumbnail.
+fn resolve_payload(payload: &Path, cache_root: &Path) -> PathBuf {
+    let already_resolved = payload.is_absolute()
+        || (!cache_root.as_os_str().is_empty() && payload.starts_with(cache_root));
+    if already_resolved {
+        payload.to_path_buf()
+    } else {
+        cache_root.join(payload)
+    }
 }
 
 fn smallest_level<'a>(parsed: &lrprev::Lrprev<'a>) -> Option<&'a [u8]> {
@@ -586,7 +664,7 @@ mod tests {
     }
 
     #[test]
-    fn summary_formats_counts_and_megabytes_and_drops_zero_rows() {
+    fn summary_formats_counts_and_mebibytes_and_drops_zero_rows() {
         let mut tiers = HashMap::new();
         tiers.insert("full", 53);
         tiers.insert("standard", 2696);
@@ -602,13 +680,16 @@ mod tests {
         assert!(text.contains("catalog images"), "{text}");
         assert!(text.contains("recovered"), "{text}");
         assert!(text.contains("3,057"), "{text}");
-        // 1,143,100,000 bytes is 1,090.1 MiB: the figure from the spec.
-        assert!(text.contains("1,090.1 MB"), "{text}");
+        // 1,143,100,000 bytes is 1,090.1 MiB: the figure from the spec, in the
+        // unit the arithmetic actually uses.
+        assert!(text.contains("1,090.1 MiB"), "{text}");
         assert!(text.contains("2,696"), "{text}");
+        assert!(!text.contains(" MB"), "MiB is not MB:\n{text}");
 
         for absent in [
             "missing payload",
             "no cache entry",
+            "original present",
             "unmapped payloads",
             "suspect",
             "failed",
@@ -625,10 +706,32 @@ mod tests {
     }
 
     #[test]
+    fn summary_names_the_floor_it_was_given() {
+        let stats = Stats {
+            images: 1,
+            recoverable: 1,
+            below_floor: 2,
+            ..Stats::default()
+        };
+
+        let text = summary_with_floor(&plan_with(stats), 1024);
+        assert!(text.contains("below floor (1024px)"), "{text}");
+        assert!(!text.contains("640px"), "{text}");
+
+        let default = summary(&plan_with(Stats {
+            images: 1,
+            recoverable: 1,
+            below_floor: 2,
+            ..Stats::default()
+        }));
+        assert!(default.contains("below floor (640px)"), "{default}");
+    }
+
+    #[test]
     fn empty_plan_still_reports_a_recovered_row() {
         let text = summary(&plan_with(Stats::default()));
         assert!(text.contains("recovered"), "{text}");
-        assert!(text.contains("0.0 MB"), "{text}");
+        assert!(text.contains("0.0 MiB"), "{text}");
     }
 
     #[test]
@@ -900,5 +1003,127 @@ mod tests {
         assert_eq!(html.matches("<figure>").count(), 1, "{html}");
         assert!(!html.contains("skipped"), "{html}");
         assert!(html.contains("recovered"), "{html}");
+    }
+
+    #[test]
+    fn item_lines_give_every_item_one_stable_verdict_line() {
+        let recovered = recovered_item(
+            "107 York St-1",
+            PathBuf::from("cache/payload.lrprev"),
+            PathBuf::from("out")
+                .join("3.16 107 york street")
+                .join("107 York St-1.jpg"),
+        );
+        let unmapped = PlanItem {
+            status: Status::Unmapped,
+            image: None,
+            payload: Some(PathBuf::from("cache/orphan.lrprev")),
+            output: None,
+            width: None,
+            height: None,
+            color_profile: None,
+            quality: None,
+            orientation: Orientation::Unknown,
+            tier: None,
+            declared: None,
+            selected: false,
+            note: None,
+        };
+        let plan = plan_with_items(vec![recovered, unmapped]);
+
+        let lines = item_lines(&plan);
+        assert_eq!(
+            lines,
+            item_lines(&plan),
+            "the same plan gives the same lines"
+        );
+        assert_eq!(lines.len(), 2, "one line per item, selected or not");
+        assert_eq!(
+            lines[0],
+            "recovered  standard  1600x1200  AdobeRGB  3.16 107 york street/107 York St-1.jpg"
+        );
+        // Nothing is written for an unmapped payload, so the last column is
+        // the same placeholder as every other unknown fact.
+        assert_eq!(lines[1], "unmapped  -  -  -  -");
+    }
+
+    #[test]
+    fn item_lines_use_the_file_name_the_planner_chose() {
+        // `--all-levels` and a path collision both change the file name, not
+        // the folder: the line must show what is actually written.
+        let item = recovered_item(
+            "IMG_0007",
+            PathBuf::from("cache/payload.lrprev"),
+            PathBuf::from("out")
+                .join("3.16 107 york street")
+                .join("IMG_0007 (2).jpg"),
+        );
+        let lines = item_lines(&plan_with_items(vec![item]));
+        assert!(
+            lines[0].ends_with("3.16 107 york street/IMG_0007 (2).jpg"),
+            "{}",
+            lines[0]
+        );
+    }
+
+    /// `target` written relative to `base`, so a test can reproduce a relative
+    /// `--previews` argument without changing the process working directory.
+    fn relative_to(base: &Path, target: &Path) -> PathBuf {
+        let base: Vec<_> = base.components().collect();
+        let target: Vec<_> = target.components().collect();
+        let common = base
+            .iter()
+            .zip(&target)
+            .take_while(|(left, right)| left == right)
+            .count();
+        let mut out = PathBuf::new();
+        for _ in common..base.len() {
+            out.push("..");
+        }
+        for component in &target[common..] {
+            out.push(component.as_os_str());
+        }
+        out
+    }
+
+    #[test]
+    fn contact_sheet_resolves_a_relative_cache_root_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache = dir.path().join("cache");
+        std::fs::create_dir_all(&cache).unwrap();
+
+        let small = jpeg(160, 120);
+        let mut payload = chunk("header", b"pyramid = { }", 0);
+        payload.extend(chunk("level_1", &small, 0));
+        std::fs::write(cache.join("payload.lrprev"), &payload).unwrap();
+
+        let cwd = std::env::current_dir().unwrap();
+        let relative_cache = relative_to(&cwd, &cache);
+        assert!(!relative_cache.is_absolute(), "the premise of this test");
+
+        // A relative `--previews` makes the planner put the prefix into the
+        // payload path itself, which is how the old code joined it twice.
+        let item = recovered_item(
+            "relative",
+            relative_cache.join("payload.lrprev"),
+            PathBuf::from("out").join("relative.jpg"),
+        );
+        let plan = Plan {
+            items: vec![item],
+            stats: Stats {
+                images: 1,
+                recoverable: 1,
+                ..Stats::default()
+            },
+        };
+
+        let sheet = dir.path().join("sheet.html");
+        write_contact_sheet(&plan, &sheet, &relative_cache).unwrap();
+        let html = std::fs::read_to_string(&sheet).unwrap();
+        assert!(
+            html.contains(&STANDARD.encode(&small)),
+            "the thumbnail must be inlined, not dropped:\n{html}"
+        );
+        assert!(!html.contains("class=\"placeholder\""), "{html}");
     }
 }

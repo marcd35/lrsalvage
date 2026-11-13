@@ -37,8 +37,18 @@ pub enum Error {
     #[error("jpeg start/end markers not found in payload")]
     JpegMarkersMissing,
 
+    #[error("ICC profile of {0} bytes does not fit in 255 JPEG APP2 segments")]
+    IccTooLarge(usize),
+
     #[error("refusing to write inside the catalog or preview cache: {0}")]
     UnsafeDestination(PathBuf),
+
+    #[error("cannot use {path} as a destination: {source}")]
+    Destination {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
 
     #[error("xmp blob is not zlib-compressed as expected: {0}")]
     Xmp(String),

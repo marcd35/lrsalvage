@@ -136,12 +136,24 @@ impl<'a> Lrprev<'a> {
             })?;
             let next = match data_end.checked_add(padding_len) {
                 Some(end) if end <= bytes.len() => end,
-                // Lightroom does not write trailing padding on the final
-                // chunk. Measured on 154 of 3,057 real payloads: every overrun
-                // equals exactly the last chunk's declared padding, and the
-                // payload itself is complete. Accepting it here is the
-                // difference between "recovered" and a false failure.
-                _ => bytes.len(),
+                // Lightroom does not write the final chunk's padding.
+                // Measured on 154 of 3,057 real payloads: every overrun equals
+                // exactly the last chunk's declared padding, and the payload
+                // itself is complete. That is only tolerable when the payload
+                // ends exactly at EOF; anywhere else the bytes really are
+                // missing, and a cut file is a failure (ADR 0001), not
+                // something to read past.
+                _ if data_end == bytes.len() => data_end,
+                _ => {
+                    return Err(truncated(
+                        start,
+                        format!(
+                            "chunk `{name}` declares {padding_len} padding bytes but only {} \
+                             remain after its payload",
+                            bytes.len() - data_end
+                        ),
+                    ));
+                }
             };
 
             chunks.push(Chunk {
@@ -420,6 +432,36 @@ mod tests {
         assert!(matches!(
             Lrprev::parse(&bytes),
             Err(Error::LrprevTruncated { offset, .. }) if offset == second_start
+        ));
+    }
+
+    #[test]
+    fn a_middle_chunk_cut_inside_its_padding_is_truncated() {
+        let mut bytes = chunk("header", HEADER_TEXT.as_bytes(), 0);
+        let second_start = bytes.len();
+        bytes.extend(chunk("level_1", &jpeg(101, 68, 0), 9));
+        let third_start = bytes.len();
+        bytes.extend(chunk("level_2", &jpeg(1616, 1077, 0), 0));
+        // Five of level_1's nine padding bytes are gone. Its payload is
+        // complete, but it is not the final chunk, so the file was cut.
+        bytes.truncate(third_start - 4);
+        assert!(matches!(
+            Lrprev::parse(&bytes),
+            Err(Error::LrprevTruncated { offset, .. }) if offset == second_start
+        ));
+    }
+
+    #[test]
+    fn the_final_chunk_may_not_be_cut_inside_its_padding() {
+        let mut bytes = chunk("header", HEADER_TEXT.as_bytes(), 0);
+        let level_start = bytes.len();
+        bytes.extend(chunk("level_1", &jpeg(101, 68, 0), 9));
+        // Every declared byte is not there, and neither is the whole payload
+        // boundary: only a payload that ends at EOF may skip its padding.
+        bytes.truncate(bytes.len() - 4);
+        assert!(matches!(
+            Lrprev::parse(&bytes),
+            Err(Error::LrprevTruncated { offset, .. }) if offset == level_start
         ));
     }
 

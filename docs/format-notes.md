@@ -67,8 +67,16 @@ smallest legal value is 24 (empty name) and anything below that means the file
 is corrupt, not a variant.
 
 Chunks repeat until EOF. A chunk whose header runs past EOF, or whose declared
-payload does not fit in the remaining bytes, is truncation — fail the file
+payload does not fit in the remaining bytes, is truncation - fail the file
 rather than resynchronising (ADR 0001).
+
+**The final chunk may omit its padding** (**verified**). Measured on 154 of the
+3,057 payloads present in the large catalog: the declared `padding_len` runs past
+EOF by exactly that chunk's padding, while the payload itself ends exactly at EOF
+and is complete. The parser therefore tolerates a shortfall only when the chunk
+payload ends exactly at the end of the file; a payload that runs past EOF is
+still truncation and still fails the file. No chunk other than the last may be
+short.
 
 ### 1.2 Worked example
 
@@ -148,15 +156,32 @@ for `AgHg`.
 
 ### 1.4 What is in a level
 
-One complete JPEG per level, with its own EXIF block (**verified**). That EXIF
-block contains its own small thumbnail, which is why marker scanning is unsafe:
-a `FF D8 … FF D9` scan inside a level can find the thumbnail, not the level.
+One complete JPEG per level. A level is a self-contained JPEG, so it may carry its
+own marker segments, including an embedded EXIF thumbnail: a `FF D8 … FF D9`
+scan inside a level can find that thumbnail rather than the level. That is why
+marker scanning is unsafe.
 
-Level size is known twice over: from the header's `levels` table, and from the
-JPEG's SOF marker. `lrsalvage` reads the SOF dimensions from the declared payload
-and compares them with the header, so a payload that is not the image it claims
-to be is caught instead of written. A payload that decodes to a *smaller* image
-than declared is a red flag, not a bonus thumbnail.
+It is **not** true that every level carries an `Exif` APP1 segment. Inspection of
+390 levels in a real cache found `DQT`, `DRI`, `APP14`, `SOF0` and `DHT`, and no
+`Exif` APP1 at all (**verified**). The reason to parse the declared lengths is
+that each level is a complete JPEG with its own segment stream, so a marker scan
+can stop at something that is not the level or run into the next chunk — not that
+every level has EXIF.
+
+Level size is known twice over: the cache records it in `PyramidLevel`, and the
+JPEG's SOF marker states it. `lrsalvage` reads the SOF dimensions from the
+declared payload and compares them with `previews.db`'s best-level dimensions,
+allowing width and height to be swapped; a payload that is not the size the cache
+expected is kept and marked `suspect`, not thrown away. The `header` chunk also
+lists dimensions, but the planner does not use that table for the check — the
+database row is the authority.
+
+`header::PyramidHeader` parses this Lua-like table and has unit tests, but no
+production path calls it: the only non-test use is a parser test in `lrprev.rs`
+(**verified** in the source). It is a documented capability with no consumer, and
+that is deliberate — `previews.db` is authoritative for dimensions, the profile
+name and the mapping (ADR 0002), so a second source of the same facts would only
+create disagreement to resolve. Do not describe it as part of the read path.
 
 ---
 
@@ -309,7 +334,9 @@ exactly rather than normalising.
 `Pyramid.quality` observed values: `standard`, `smallRender`, `final`,
 `bigThumbnail`, `thumbnail` (**verified**). Their meanings are not documented;
 do not assume `final` means full resolution. `Pyramid.colorProfile` observed
-values were only `AdobeRGB` and `sRGB` (**verified** in this catalog set).
+values were only `AdobeRGB` and `sRGB` (**verified** in this catalog set). Those
+two are the only names `lrsalvage` can turn into an ICC profile; see section 6.4
+for the sizes and for what happens to any other name.
 
 `PyramidLevel.longDimension` is `max(width, height)` for that level, stored
 alongside the two dimensions. Both are read from Lightroom's own render, so they
@@ -377,7 +404,7 @@ Large catalog, **verified**:
 |---|---|
 | `ImageCacheEntry` rows | 3,420 |
 | `Adobe_images` rows | 3,416 |
-| Payloads present on disk | 3,057 (1,090 MB) |
+| Payloads present on disk | 3,057 (1,090.1 MiB) |
 | Payloads missing | 363 |
 | Orphan payloads | 3 |
 | Motion previews | 3 |
@@ -481,6 +508,11 @@ offset 0 of the file. Read them as file-absolute and every strip lands 16 bytes
 early, which corrupts the first bytes of the zlib stream; read them as TIFF-base
 relative and the inflated byte count is exactly `width × rows`.
 
+Worked example (arithmetic on the verified rule, not a separately measured
+offset): the TIFF header starts at file offset `0x10`, so a `StripOffsets` entry
+of `0x00F2` means the strip starts at file offset `0x0102`. Reading at `0x00F2`
+would land 16 bytes early, in whatever precedes the strip.
+
 Despite the "Adobe Deflate" compression tag, the strip payload is a plain **zlib**
 stream (inflate, not raw deflate) (**verified**).
 
@@ -516,8 +548,8 @@ the histogram of a photograph (derived from the counts above).
 `.lrcat-data` contains **no previews**. Its files are mask alpha channels: one
 per AI mask, greyscale, often a handful of megapixels, frequently mostly black.
 A tool that treats them as recoverable images produces a folder of grey
-rectangles. `lrsalvage` reads the directory only to identify it, so that a scan
-can say "this is mask data, not preview data" instead of silently finding nothing.
+rectangles. `lrsalvage masks` decodes them to PNG on request; `scan` and
+`extract` ignore the directory entirely, because nothing in it is a preview.
 
 ---
 
@@ -571,7 +603,7 @@ the layout rather than assume either one.
 | The single-file pyramid is gone; there is no `.lrprev` per image any more. | Ian Lyons, July 2024 |
 | `previews.db` still exists after upgrade, but its rows can be stale. | Ian Lyons, September 2024; upgrade threads |
 | Extracted filenames now carry the long edge (`DSC06787_6000.jpg`) whereas 13.2 and earlier carried both dimensions (`_MG_0233-360x240.jpg`). | Adobe, "Extract preview for lost images" |
-| Extracted previews contain **no ICC profile**, so re-importing them assumes sRGB. | Adobe, "Extract preview for lost images" |
+| Extracted previews contain **no ICC profile**, so re-importing them assumes sRGB. This describes Adobe's own extractor; `lrsalvage` rebuilds a profile from the catalog's name (section 6.4). | Adobe, "Extract preview for lost images" |
 | "It seems that Lightroom totally changed how they store the preview-cache data, around Lr13.3." | regex.info changelog 20240611.65 |
 
 Consequences we can act on today:
@@ -668,13 +700,43 @@ attribute spellings that carry the fields are fixed by Adobe's schema:
 
 TODO: the table's remaining columns were not recorded; only `xmp` is read.
 
+`extract` writes the rating twice when it can: unconditionally as EXIF tag
+`0x4746` (`Rating`, a SHORT in IFD0), and as `xmp:Rating` in a small XMP APP1
+packet that it adds only when the payload carries no XMP packet of its own
+(**verified** in `exif.rs`, and on the 78-payload cache: no payload there had an
+XMP packet, so all 78 outputs received one). A payload with its own packet keeps
+it byte-identical; the rating still lands in EXIF and the omission is recorded in
+the outcome note. `xmp:Rating = 0` is written like any other value — it is a
+recorded rating of zero, not an absent one.
+
 ### 6.4 What the catalog does not carry
 
 Nothing we read carries ICC bytes: `previews.db` records only the profile *name*
 in `Pyramid.colorProfile` (`sRGB`, `AdobeRGB`), and Adobe reports that extracted
 previews embed no profile and are assumed sRGB on re-import (section 5).
-Attaching a profile is therefore a reconstruction from a name, and must never be
+Embedding a profile is therefore a reconstruction from a name, and must never be
 presented as the original profile (ADR 0003).
+
+`extract` does embed that reconstruction, and the sizes are fixed because the
+bytes are built, not read: `sRGB` → 2,084 bytes, described as
+`sRGB IEC61966-2.1`; `AdobeRGB` → 560 bytes, described as `Adobe RGB (1998)`.
+Both sizes match the profile's own declared size field (**verified** by calling
+the builder and by inspecting the 78 extracted files, all 78 carrying a
+2,084-byte `sRGB IEC61966-2.1` profile). They are ICC v2 matrix/TRC profiles
+with D50-adapted primaries, a D50 media white point and one tone curve per
+channel: sRGB uses a 256-sample curve, Adobe RGB a single gamma of 563/256. Each
+fits one APP2 `ICC_PROFILE` chunk; a larger profile would be split and numbered
+(ICC.1 Annex B), which no built-in profile needs.
+
+Name matching ignores case, spaces and punctuation, so `AdobeRGB`,
+`Adobe RGB (1998)` and `adobergb1998` all resolve. Any other name — including
+`ACR`, which appears in some catalogs — produces an outcome note,
+`colour profile <name> has no built-in ICC profile; none embedded`, and no
+profile is written. sRGB is never substituted for a name we cannot build.
+
+This profile is a statement about the colour space, not a copy of the original
+file's profile. Presenting it as the latter would be a claim the catalog cannot
+support.
 
 ---
 
@@ -689,7 +751,7 @@ presented as the original profile (ADR 0003).
 | [github.com/fdenivac/lrprev-extract](https://github.com/fdenivac/lrprev-extract) | **GPL.** Reference for behaviour only; do not copy code into this MIT/Apache project | — (licence) |
 | [github.com/hfiguiere/lrcat-extractor](https://github.com/hfiguiere/lrcat-extractor) | Rust; catalog parsing only, no pixel extraction | reported |
 | [Adobe, Lightroom Classic catalog FAQ](https://helpx.adobe.com/lightroom-classic/desktop/technical-support/workflow-issues/catalog-issues/catalog-faq-lightroom.html) | Preview storage changed in 13.3 | reported |
-| [Adobe, "Extract preview for lost images"](https://helpx.adobe.com/lightroom-classic/desktop/kb/extract-previews-for-lost-images-lightroom.html) | 13.2 vs 13.3 filename conventions; extracted previews have no ICC profile | reported |
+| [Adobe, "Extract preview for lost images"](https://helpx.adobe.com/lightroom-classic/desktop/kb/extract-previews-for-lost-images-lightroom.html) | 13.2 vs 13.3 filename conventions; Adobe's extractor writes no ICC profile | reported |
 | Ian Lyons (Adobe Community Expert), Adobe Community, July 2024 and September 2024 | Per-image folders, extensionless JPEGs, long-edge series, single-file pyramid gone, stale `previews.db` rows. Specific thread URLs TODO: not captured in this pass | reported |
 | [regex.info, "Extract Cached Image Previews", changelog 20240611.65](https://regex.info/blog/lightroom-goodies/preview-extraction) | Confirms the 13.3 change from an independent implementer | reported |
 
@@ -706,6 +768,7 @@ catalog's image table the way section 2.7 does.
 .lrprev magic            "AgHg" (41 67 48 67)
 .lrprev fixed header     24 bytes (4 + 2 + 1 + 1 + 8 + 8)
 .lrprev observed         header_len = 32, name field 8 bytes
+.lrprev final padding    may be omitted by the last chunk (154 of 3,057 files)
 byte order               big-endian (container), little-endian (TIFF inside .lrcat-data)
 payload name             <UUID uppercase>-<digest lowercase>.lrprev
 payload path             <cache>/<uuid[0]>/<uuid[0..4]>/...

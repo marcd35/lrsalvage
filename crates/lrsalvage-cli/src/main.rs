@@ -34,7 +34,8 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
-    /// Report what is recoverable. Writes nothing to the destination.
+    /// Report what is recoverable. Writes nothing except an explicitly
+    /// requested contact sheet.
     Scan(ScanArgs),
     /// Write the recoverable JPEGs, plus a report and a JSON manifest.
     Extract(ExtractArgs),
@@ -56,12 +57,18 @@ struct ScanArgs {
     /// Write a self-contained HTML contact sheet of the best previews.
     #[arg(long)]
     contact_sheet: Option<PathBuf>,
+    /// Print one line per plan item instead of only totals.
+    #[arg(long)]
+    verbose: bool,
     /// Ignore previews below this long edge.
     #[arg(long, default_value_t = 640)]
     min_long_edge: u32,
     /// Inspect every level, not only the best one.
     #[arg(long)]
     all_levels: bool,
+    /// Also include images whose original file is still present.
+    #[arg(long)]
+    include_present: bool,
 }
 
 #[derive(Debug, clap::Args)]
@@ -80,12 +87,18 @@ struct ExtractArgs {
     min_long_edge: u32,
     #[arg(long)]
     all_levels: bool,
-    /// Do not add EXIF metadata to the recovered JPEGs.
+    /// Also include images whose original file is still present.
+    #[arg(long)]
+    include_present: bool,
+    /// Do not add EXIF, XMP rating or the ICC profile to the recovered JPEGs.
     #[arg(long)]
     no_metadata: bool,
     /// Do not set file modification times to the capture time.
     #[arg(long)]
     no_timestamps: bool,
+    /// Replace an existing destination file that is not a verified extraction.
+    #[arg(long)]
+    force: bool,
 }
 
 #[derive(Debug, clap::Args)]
@@ -102,18 +115,36 @@ fn main() -> ExitCode {
         Ok(code) => ExitCode::from(code),
         Err(e) => {
             eprintln!("lrsalvage: {e}");
-            let code = match e {
-                Error::UnsafeDestination(_) => EXIT_UNSAFE,
-                Error::NotACatalog { .. } => EXIT_USAGE,
-                _ => EXIT_USAGE,
-            };
-            ExitCode::from(code)
+            ExitCode::from(exit_code_for(&e))
         }
     }
 }
 
+/// Only an unsafe or unusable destination is code 4; everything else that
+/// stops a run before it finishes is a usage or input error.
+fn exit_code_for(error: &Error) -> u8 {
+    match error {
+        Error::UnsafeDestination(_) | Error::Destination { .. } => EXIT_UNSAFE,
+        _ => EXIT_USAGE,
+    }
+}
+
 fn run() -> Result<u8> {
-    let cli = Cli::parse();
+    // clap's own parse failure is a usage error, and code 2 already means
+    // "partial", so it must never escape here.
+    let cli = match Cli::try_parse() {
+        Ok(cli) => cli,
+        Err(error) => {
+            // `--help` and `--version` are successful requests, not errors.
+            let code = if error.use_stderr() {
+                EXIT_USAGE
+            } else {
+                EXIT_OK
+            };
+            let _ = error.print();
+            return Ok(code);
+        }
+    };
     match cli.command {
         Command::Scan(args) => scan(args),
         Command::Extract(args) => extract(args),
@@ -144,21 +175,45 @@ fn scan(args: ScanArgs) -> Result<u8> {
     let options = Options {
         min_long_edge: args.min_long_edge,
         all_levels: args.all_levels,
+        include_present: args.include_present,
     };
     let (_snapshot, plan) = open_plan(&args.catalog, &args.previews, &options, Path::new("."))?;
 
     if args.json {
         println!("{}", scan_json(&plan, &args.catalog, &args.previews));
     } else {
-        print!("{}", report::summary(&plan));
+        print!("{}", report::summary_with_floor(&plan, args.min_long_edge));
+    }
+
+    if args.verbose {
+        for line in report::item_lines(&plan) {
+            // Keep stdout parseable when --json was asked for.
+            if args.json {
+                eprintln!("{line}");
+            } else {
+                println!("{line}");
+            }
+        }
     }
 
     if let Some(path) = args.contact_sheet {
-        report::write_contact_sheet(&plan, &path, &args.previews)?;
+        // The sheet is the one thing `scan` writes, so it gets the same
+        // destination rule as `--out`: never inside the evidence.
+        let parent = path
+            .parent()
+            .filter(|parent| !parent.as_os_str().is_empty())
+            .unwrap_or_else(|| Path::new("."));
+        extract::ensure_safe_destination_pending(parent, &args.catalog, &args.previews)?;
+        at_destination(
+            &path,
+            report::write_contact_sheet(&plan, &path, &args.previews),
+        )?;
         eprintln!("contact sheet: {}", path.display());
     }
 
-    if plan.stats.recoverable == 0 {
+    // Exit 3 means "nothing selected", the same set `extract` would write —
+    // not the raw recoverable count, which includes items below the floor.
+    if plan.selected_images() == 0 {
         return Ok(EXIT_NOTHING);
     }
     Ok(EXIT_OK)
@@ -182,6 +237,7 @@ fn scan_json(plan: &Plan, catalog: &Path, previews: &Path) -> String {
         "no_cache_entry": stats.no_cache_entry,
         "unmapped": stats.unmapped,
         "failed": stats.failed,
+        "original_present": stats.original_present,
         "below_floor": stats.below_floor,
         "tiers": tiers,
     })
@@ -192,19 +248,22 @@ fn extract(args: ExtractArgs) -> Result<u8> {
     let options = Options {
         min_long_edge: args.min_long_edge,
         all_levels: args.all_levels,
+        include_present: args.include_present,
     };
 
-    std::fs::create_dir_all(&args.out).map_err(|source| Error::Io {
-        path: args.out.clone(),
-        source,
-    })?;
-    extract::ensure_safe_destination(&args.out, &args.catalog, &args.previews)?;
+    // Validate before creating: a refused destination must leave no directory
+    // behind inside the catalog or the cache. A dry run creates nothing.
+    if args.dry_run {
+        extract::ensure_safe_destination_pending(&args.out, &args.catalog, &args.previews)?;
+    } else {
+        extract::ensure_safe_destination_create(&args.out, &args.catalog, &args.previews)?;
+    }
 
     let (_snapshot, plan) = open_plan(&args.catalog, &args.previews, &options, &args.out)?;
-    print!("{}", report::summary(&plan));
+    print!("{}", report::summary_with_floor(&plan, args.min_long_edge));
 
     let selected = plan.selected().count();
-    if selected == 0 {
+    if plan.selected_images() == 0 {
         eprintln!("nothing to extract");
         return Ok(EXIT_NOTHING);
     }
@@ -215,11 +274,12 @@ fn extract(args: ExtractArgs) -> Result<u8> {
         write_metadata: !args.no_metadata,
         set_timestamps: !args.no_timestamps,
         write_orientation: true,
+        force: args.force,
     };
 
     let bar = progress_bar(selected as u64, args.dry_run);
     let mut outcomes = Vec::with_capacity(selected);
-    let mut result = extract::extract(&plan, &extract_options, &mut |outcome| {
+    let result = extract::extract(&plan, &extract_options, &mut |outcome| {
         bar.inc(1);
         if outcome.status == OutcomeStatus::Failed {
             bar.suspend(|| {
@@ -234,55 +294,91 @@ fn extract(args: ExtractArgs) -> Result<u8> {
     });
     bar.finish_and_clear();
 
-    if let Err(e) = result {
+    if let Err(e) = &result {
         eprintln!("extraction aborted: {e}");
-        result = Err(e);
     }
 
     let outcomes = outcomes;
-    let written = outcomes
-        .iter()
-        .filter(|o| o.status == OutcomeStatus::Written)
-        .count();
-    let skipped = outcomes
-        .iter()
-        .filter(|o| o.status == OutcomeStatus::Skipped)
-        .count();
     let failed = outcomes
         .iter()
         .filter(|o| o.status == OutcomeStatus::Failed)
         .count();
-    let bytes: u64 = outcomes
-        .iter()
-        .filter(|o| o.status == OutcomeStatus::Written)
-        .map(|o| o.bytes)
-        .sum();
 
     if !args.dry_run {
-        let csv = args.out.join("report.csv");
-        report::write_csv(&plan, &csv)?;
-        let manifest = args.out.join("manifest.json");
-        report::write_json(&plan, &manifest, env!("CARGO_PKG_VERSION"))?;
-        let run_csv = args.out.join("extract.csv");
-        extract::write_outcomes_csv(&outcomes, &run_csv)?;
+        // These three files are the tool's own report, but a name on disk may
+        // belong to somebody else: take the next free number, never clobber.
+        let csv = claim(args.out.join("report.csv"));
+        at_destination(&csv, report::write_csv(&plan, &csv))?;
+        let manifest = claim(args.out.join("manifest.json"));
+        at_destination(
+            &manifest,
+            report::write_json(&plan, &manifest, env!("CARGO_PKG_VERSION")),
+        )?;
+        let run_csv = claim(args.out.join("extract.csv"));
+        at_destination(&run_csv, extract::write_outcomes_csv(&outcomes, &run_csv))?;
         eprintln!("wrote {}", csv.display());
         eprintln!("wrote {}", manifest.display());
         eprintln!("wrote {}", run_csv.display());
     }
 
-    eprintln!(
-        "{} written, {} skipped, {} failed, {:.1} MB",
-        written,
-        skipped,
-        failed,
-        bytes as f64 / 1_048_576.0
-    );
+    eprintln!("{}", extract::outcome_summary(&outcomes, args.dry_run));
 
     result?;
     if failed > 0 {
         return Ok(EXIT_PARTIAL);
     }
     Ok(EXIT_OK)
+}
+
+/// A failure to use `path` as a destination is exit 4, not "bad arguments".
+fn at_destination(path: &Path, result: Result<()>) -> Result<()> {
+    result.map_err(|error| match error {
+        Error::Io { source, .. } => Error::Destination {
+            path: path.to_path_buf(),
+            source,
+        },
+        other => other,
+    })
+}
+
+/// The requested path when it is free, otherwise the next free numbered name.
+///
+/// A run must never silently overwrite a file it cannot prove it wrote.
+fn claim(path: PathBuf) -> PathBuf {
+    let chosen = unused_path(&path);
+    if chosen != path {
+        eprintln!(
+            "{} already exists; writing {} instead",
+            path.display(),
+            chosen.display()
+        );
+    }
+    chosen
+}
+
+fn unused_path(path: &Path) -> PathBuf {
+    if !path.exists() {
+        return path.to_path_buf();
+    }
+    let stem = path
+        .file_stem()
+        .map(|stem| stem.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let extension = path
+        .extension()
+        .map(|ext| ext.to_string_lossy().into_owned());
+    let mut number = 2u32;
+    loop {
+        let name = match &extension {
+            Some(extension) => format!("{stem} ({number}).{extension}"),
+            None => format!("{stem} ({number})"),
+        };
+        let candidate = path.with_file_name(name);
+        if !candidate.exists() {
+            return candidate;
+        }
+        number += 1;
+    }
 }
 
 fn progress_bar(total: u64, hidden: bool) -> ProgressBar {
@@ -300,10 +396,9 @@ fn progress_bar(total: u64, hidden: bool) -> ProgressBar {
 }
 
 fn masks(args: MasksArgs) -> Result<u8> {
-    std::fs::create_dir_all(&args.out).map_err(|source| Error::Io {
-        path: args.out.clone(),
-        source,
-    })?;
+    // `.lrcat-data` is read-only evidence too: refuse an `--out` inside it,
+    // and do so before creating a single directory.
+    extract::ensure_create_outside(&args.out, &args.data)?;
 
     let files = masks::list(&args.data)?;
     if files.is_empty() {
