@@ -591,6 +591,12 @@ picture upright without touching a pixel (ADR 0003).
 
 ## 5. Lightroom 13.3 and later — REPORTED, not verified
 
+> **Implementation status:** not implemented. The tool currently reads only the
+> pre-13.3 `.lrprev` layout, and a 13.3+ cache therefore reports every image as
+> `missing-payload` (or fails if `previews.db` is absent). Tracked in
+> [issue #2](https://github.com/marcd35/lrsalvage/issues/2); this section stays
+> **reported** until a real 13.3+ vault has been measured.
+
 Lightroom Classic 13.3 changed preview storage. All of the following is
 **reported**; we had no 13.3+ catalog to inspect. The tool must therefore detect
 the layout rather than assume either one.

@@ -59,6 +59,57 @@ These are **previews**, not originals.
 If that is still worth having — and after a drive failure, it usually is — read
 on.
 
+## Compatibility
+
+Two things version independently here, and conflating them is how a "supports
+v13+" claim goes wrong: the **catalog** (a SQLite schema Lightroom has changed
+slowly) and the **preview storage** (which Lightroom replaced in 13.3).
+
+| Lightroom Classic | Catalog | Preview storage | Status |
+|---|---|---|---|
+| 4 – 9 | older schema | `.lrprev` pyramid | Same reader, **untested** |
+| 10 – 12 | v10 – v12 | `.lrprev` pyramid | Same reader; **v11 verified** on real catalogs |
+| 13.0 – 13.2 | v13 | `.lrprev` pyramid | Same reader, **untested** |
+| 13.3 and later | v13+ | per-image folders of extensionless JPEGs | **Not supported yet** — [issue #2](https://github.com/marcd35/lrsalvage/issues/2) |
+
+What those rows mean in practice:
+
+- **Verified**: Lightroom Classic 11 catalogs, the ones this tool was built and
+  tested against — a 3,416-image catalog (2,659 previews recovered) and a
+  78-image one (78/78).
+- **Same format, untested**: 10, 12 and 13.0 – 13.2 use the `.lrprev` pyramid
+  this tool parses. Nothing known stops them working; nobody has run it on one.
+- **Not supported: 13.3 and later.** On such a cache every image reports
+  `missing-payload` and the run exits 3 — or, if the cache has no `previews.db`,
+  it stops with a database error. That is the tool refusing to guess, not a
+  partial success. Work is tracked in
+  [issue #2](https://github.com/marcd35/lrsalvage/issues/2).
+
+Where this README says "verified", it means someone ran the tool against real
+files of that generation. Every claim below that with a byte-level basis carries
+an evidence label in [docs/format-notes.md](docs/format-notes.md): **verified**,
+**reported**, or **unverified**.
+
+## Why not an existing tool?
+
+There are several ways to get previews out of a Lightroom catalog. They differ in
+what they need installed, which storage formats they understand, and how much
+they give back.
+
+| | Needs Lightroom installed? | Reads 13.3+ previews? | Restores metadata? | Approach |
+|---|---|---|---|---|
+| `lrsalvage` | No | Not yet ([#2](https://github.com/marcd35/lrsalvage/issues/2)) | EXIF, ICC profile, star rating, capture-date mtime | Parses the container |
+| Friedl "Extract Cached Image Previews" | Yes (plugin) | Yes, since build 20240611.65 | Yes, via bundled ExifTool | Runs inside Lightroom |
+| Adobe `ExtractPreviews.lua` | Yes (script) | Updated after 13.3 | No metadata, no ICC profile | Runs inside Lightroom |
+| Python `.lrprev` extractors | No | No | Rarely | Scan for `FFD8`…`FFD9` |
+
+The practical difference is the last column. Scanning for start/end markers
+returns whatever JPEG-like blob appears last in the file — which can be the
+thumbnail embedded *inside* a preview level, not the level itself. This tool
+walks the declared chunk lengths and checks the decoded frame, so a wrong-sized
+answer fails loudly instead of quietly becoming a 160 px file with your name on
+it.
+
 ## Quick start
 
 ```console
@@ -214,9 +265,9 @@ live catalog image claims is listed as `unmapped`.
 
 `missing-payload` is worth reading twice. It means Lightroom believed a preview
 existed and it is not on disk — either the cache was partially deleted, or you
-are looking at a 13.3+ catalog whose `previews.db` rows are stale. Either way it
-is a different problem from "no preview was ever built", which is why the report
-keeps them apart.
+are looking at a 13.3+ cache, whose storage this tool does not read yet (see
+[Compatibility](#compatibility)). Either way it is a different problem from "no
+preview was ever built", which is why the report keeps them apart.
 
 ## Metadata restored
 
