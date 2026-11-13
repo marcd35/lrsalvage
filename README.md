@@ -319,6 +319,24 @@ Tests that need a real catalog are `#[ignore]`d and read their fixtures from
 environment variables, so the default `cargo test` runs against synthetic
 fixtures only.
 
+### Checks
+
+The toolchain is pinned in `rust-toolchain.toml`, so `cargo` builds with the same
+compiler here and in CI. The same five gates run on every pull request:
+
+```console
+cargo fmt --all --check
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace
+typos                                  # spelling, config in typos.toml
+cargo deny check                       # licences, advisories, banned crates
+```
+
+`cargo deny check` is what keeps the dual MIT/Apache-2.0 licence honest: a new
+dependency that is not permissively licensed fails the build rather than being
+discovered by someone redistributing the binary. Dependency updates arrive as
+Dependabot pull requests.
+
 ## Licence
 
 Dual-licensed under either of

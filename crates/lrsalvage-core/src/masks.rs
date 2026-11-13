@@ -252,6 +252,15 @@ pub fn decode_dat(bytes: &[u8]) -> Result<Mask> {
     let total = width
         .checked_mul(height)
         .ok_or_else(|| malformed("mask dimensions overflow"))?;
+    // A 20-byte header must not be able to request a multi-gigabyte
+    // allocation. Real AI masks are a few megapixels; 250 MP is far above
+    // anything Lightroom writes and still bounded.
+    const MAX_PIXELS: usize = 250_000_000;
+    if total > MAX_PIXELS {
+        return Err(malformed(format!(
+            "mask declares {total} pixels, above the {MAX_PIXELS} limit"
+        )));
+    }
     let mut gray = vec![0u8; total];
 
     let mut row_cursor = 0usize;

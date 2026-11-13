@@ -1,0 +1,6 @@
+[toolchain]
+# Pin the toolchain so local runs and CI compile with the same compiler.
+# Bump deliberately; `cargo update` never touches this file.
+channel = "1.100.0"
+components = ["rustfmt", "clippy"]
+profile = "minimal"

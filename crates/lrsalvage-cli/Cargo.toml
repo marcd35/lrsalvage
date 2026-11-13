@@ -12,8 +12,14 @@ name = "lrsalvage"
 path = "src/main.rs"
 
 [dependencies]
-lrsalvage-core = { path = "../lrsalvage-core" }
+lrsalvage-core = { path = "../lrsalvage-core", version = "0.1.0" }
 clap.workspace = true
 walkdir.workspace = true
 serde_json.workspace = true
 indicatif.workspace = true
+
+[dev-dependencies]
+assert_cmd.workspace = true
+predicates.workspace = true
+rusqlite.workspace = true
+tempfile.workspace = true

@@ -53,6 +53,14 @@ bytes, and `plan` never learns a byte offset.
 
 - `cargo test` must pass.
 - `cargo clippy -- -D warnings` must be clean.
+- `cargo fmt --all --check` must be clean.
+- `typos` must be clean (config in `typos.toml`; add domain words there, never
+  blanket-exclude prose).
+- `cargo deny check` must pass (policy in `deny.toml`: licences, advisories,
+  duplicate/banned crates, sources). Adding a dependency that trips the licence
+  allow-list is a decision, not a config edit.
+- The toolchain is pinned in `rust-toolchain.toml`; bump it deliberately and let
+  CI prove the bump.
 - Byte-level facts learned from real files must be recorded in
   `docs/format-notes.md` with an evidence label (**verified**, **reported**,
   **unverified**, or **TODO**) before they are built on. Unlabelled claims are
