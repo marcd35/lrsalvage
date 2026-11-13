@@ -376,7 +376,11 @@ fn extract_one(item: &PlanItem, options: &ExtractOptions) -> Outcome {
             status: OutcomeStatus::DryRun,
             bytes: bytes.len() as u64,
             sha256: None,
-            note: Some(if notes.is_empty() { "dry run; nothing written".to_string() } else { format!("dry run; nothing written; {}", notes.join("; ")) }),
+            note: Some(if notes.is_empty() {
+                "dry run; nothing written".to_string()
+            } else {
+                format!("dry run; nothing written; {}", notes.join("; "))
+            }),
         };
     }
 

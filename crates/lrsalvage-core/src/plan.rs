@@ -745,11 +745,7 @@ mod tests {
                     )
                     .expect("file row");
                 }
-                let root_file = if row.has_file {
-                    Some(id)
-                } else {
-                    None
-                };
+                let root_file = if row.has_file { Some(id) } else { None };
                 conn.execute(
                     "INSERT INTO Adobe_images \
                      (id_local, copyName, orientation, fileFormat, rootFile) \
@@ -945,7 +941,11 @@ mod tests {
         let fixture = Fixture::new(vec![
             ImageRow::new(1, "IMG_0001")
                 .traversal("../../../escaped/")
-                .cache("AAAA0001-1111-4111-8111-000000000001", &[(1616, 1077)], &[(1616, 1077)]),
+                .cache(
+                    "AAAA0001-1111-4111-8111-000000000001",
+                    &[(1616, 1077)],
+                    &[(1616, 1077)],
+                ),
         ]);
         let plan = fixture.plan(&Options::default());
 
@@ -956,7 +956,10 @@ mod tests {
             output.display(),
             fixture.output.display()
         );
-        assert_eq!(slashed(output), slashed(&fixture.output.join("2015/escaped/IMG_0001.jpg")));
+        assert_eq!(
+            slashed(output),
+            slashed(&fixture.output.join("2015/escaped/IMG_0001.jpg"))
+        );
         assert!(
             !output
                 .components()
@@ -968,24 +971,36 @@ mod tests {
     #[test]
     fn an_image_whose_original_is_still_on_disk_is_not_a_salvage_target() {
         let fixture = Fixture::new(vec![
-            ImageRow::new(1, "IMG_0001")
-                .original_on_disk()
-                .cache("AAAA0001-1111-4111-8111-000000000001", &[(1616, 1077)], &[(1616, 1077)]),
-            ImageRow::new(2, "IMG_0002")
-                .cache("AAAA0002-1111-4111-8111-000000000002", &[(1616, 1077)], &[(1616, 1077)]),
+            ImageRow::new(1, "IMG_0001").original_on_disk().cache(
+                "AAAA0001-1111-4111-8111-000000000001",
+                &[(1616, 1077)],
+                &[(1616, 1077)],
+            ),
+            ImageRow::new(2, "IMG_0002").cache(
+                "AAAA0002-1111-4111-8111-000000000002",
+                &[(1616, 1077)],
+                &[(1616, 1077)],
+            ),
         ]);
         // Premise: image 1's original really is on disk.
         let image = item(&fixture.plan(&Options::default()), 1)
             .image
             .clone()
             .expect("image data");
-        assert!(image.original_path.is_file(), "{}", image.original_path.display());
+        assert!(
+            image.original_path.is_file(),
+            "{}",
+            image.original_path.display()
+        );
 
         let plan = fixture.plan(&Options::default());
         let present = item(&plan, 1);
         assert_eq!(present.status, Status::OriginalPresent);
         assert_eq!(present.status.as_str(), "original-present");
-        assert!(!present.selected, "an image with its original is not salvaged");
+        assert!(
+            !present.selected,
+            "an image with its original is not salvaged"
+        );
         assert!(present.output.is_none());
         assert!(
             present
@@ -1004,11 +1019,11 @@ mod tests {
 
     #[test]
     fn include_present_salvages_an_image_whose_original_is_on_disk() {
-        let fixture = Fixture::new(vec![
-            ImageRow::new(1, "IMG_0001")
-                .original_on_disk()
-                .cache("AAAA0001-1111-4111-8111-000000000001", &[(1616, 1077)], &[(1616, 1077)]),
-        ]);
+        let fixture = Fixture::new(vec![ImageRow::new(1, "IMG_0001").original_on_disk().cache(
+            "AAAA0001-1111-4111-8111-000000000001",
+            &[(1616, 1077)],
+            &[(1616, 1077)],
+        )]);
         let plan = fixture.plan(&Options {
             include_present: true,
             ..Options::default()
@@ -1023,10 +1038,11 @@ mod tests {
 
     #[test]
     fn a_cache_row_for_a_deleted_image_does_not_hide_its_payload() {
-        let fixture = Fixture::new(vec![
-            ImageRow::new(1, "IMG_0001")
-                .cache("AAAA0001-1111-4111-8111-000000000001", &[(1616, 1077)], &[(1616, 1077)]),
-        ]);
+        let fixture = Fixture::new(vec![ImageRow::new(1, "IMG_0001").cache(
+            "AAAA0001-1111-4111-8111-000000000001",
+            &[(1616, 1077)],
+            &[(1616, 1077)],
+        )]);
         let mut index = fixture.index();
         // A stale row: `imageId` 999 has no row in Adobe_images any more.
         let stale = CacheEntry {
@@ -1065,13 +1081,11 @@ mod tests {
 
     #[test]
     fn all_levels_counts_images_once_and_names_only_the_extra_levels() {
-        let fixture = Fixture::new(vec![
-            ImageRow::new(1, "IMG_0001").cache(
-                "AAAA0001-1111-4111-8111-000000000001",
-                &[(1024, 683), (1616, 1077)],
-                &[(1616, 1077)],
-            ),
-        ]);
+        let fixture = Fixture::new(vec![ImageRow::new(1, "IMG_0001").cache(
+            "AAAA0001-1111-4111-8111-000000000001",
+            &[(1024, 683), (1616, 1077)],
+            &[(1616, 1077)],
+        )]);
         let plan = fixture.plan(&Options {
             all_levels: true,
             ..Options::default()
@@ -1138,11 +1152,16 @@ mod tests {
 
     #[test]
     fn an_unmapped_payload_has_no_output_path_but_names_its_payload() {
-        let fixture = Fixture::new(vec![
-            ImageRow::new(1, "IMG_0001")
-                .cache("AAAA0001-1111-4111-8111-000000000001", &[(1616, 1077)], &[(1616, 1077)]),
-        ]);
-        fixture.write_payload("ZZZZ0999-1111-4111-8111-000000000999", "0bad", &[(1024, 683)]);
+        let fixture = Fixture::new(vec![ImageRow::new(1, "IMG_0001").cache(
+            "AAAA0001-1111-4111-8111-000000000001",
+            &[(1616, 1077)],
+            &[(1616, 1077)],
+        )]);
+        fixture.write_payload(
+            "ZZZZ0999-1111-4111-8111-000000000999",
+            "0bad",
+            &[(1024, 683)],
+        );
 
         let plan = fixture.plan(&Options::default());
         let unmapped: Vec<&PlanItem> = plan
@@ -1163,10 +1182,11 @@ mod tests {
 
     #[test]
     fn a_suspect_payload_is_still_selected_and_the_note_explains_why() {
-        let fixture = Fixture::new(vec![
-            ImageRow::new(1, "IMG_0001")
-                .cache("AAAA0001-1111-4111-8111-000000000001", &[(800, 600)], &[(1616, 1077)]),
-        ]);
+        let fixture = Fixture::new(vec![ImageRow::new(1, "IMG_0001").cache(
+            "AAAA0001-1111-4111-8111-000000000001",
+            &[(800, 600)],
+            &[(1616, 1077)],
+        )]);
         let plan = fixture.plan(&Options::default());
 
         let suspect = item(&plan, 1);
@@ -1202,11 +1222,11 @@ mod tests {
 
     #[test]
     fn an_image_without_a_file_row_gets_an_id_based_output_name() {
-        let fixture = Fixture::new(vec![
-            ImageRow::new(9, "")
-                .without_file()
-                .cache("AAAA0009-1111-4111-8111-000000000009", &[(1616, 1077)], &[(1616, 1077)]),
-        ]);
+        let fixture = Fixture::new(vec![ImageRow::new(9, "").without_file().cache(
+            "AAAA0009-1111-4111-8111-000000000009",
+            &[(1616, 1077)],
+            &[(1616, 1077)],
+        )]);
         let plan = fixture.plan(&Options::default());
 
         let planned = item(&plan, 9);
@@ -1223,11 +1243,16 @@ mod tests {
     #[test]
     fn a_virtual_copy_keeps_its_own_name_and_its_own_output_path() {
         let fixture = Fixture::new(vec![
-            ImageRow::new(1, "IMG_0001")
-                .cache("AAAA0001-1111-4111-8111-000000000001", &[(1616, 1077)], &[(1616, 1077)]),
-            ImageRow::new(2, "IMG_0001")
-                .copy("Black and white")
-                .cache("AAAA0002-1111-4111-8111-000000000002", &[(1616, 1077)], &[(1616, 1077)]),
+            ImageRow::new(1, "IMG_0001").cache(
+                "AAAA0001-1111-4111-8111-000000000001",
+                &[(1616, 1077)],
+                &[(1616, 1077)],
+            ),
+            ImageRow::new(2, "IMG_0001").copy("Black and white").cache(
+                "AAAA0002-1111-4111-8111-000000000002",
+                &[(1616, 1077)],
+                &[(1616, 1077)],
+            ),
         ]);
         let plan = fixture.plan(&Options::default());
 
@@ -1247,10 +1272,11 @@ mod tests {
 
     #[test]
     fn a_cache_row_whose_payload_is_gone_is_missing_payload() {
-        let fixture = Fixture::new(vec![
-            ImageRow::new(1, "IMG_0001")
-                .missing_payload("AAAA0001-1111-4111-8111-000000000001", &[(1616, 1077)]),
-        ]);
+        let fixture =
+            Fixture::new(vec![ImageRow::new(1, "IMG_0001").missing_payload(
+                "AAAA0001-1111-4111-8111-000000000001",
+                &[(1616, 1077)],
+            )]);
         let plan = fixture.plan(&Options::default());
 
         let missing = item(&plan, 1);
@@ -1271,10 +1297,16 @@ mod tests {
     #[test]
     fn two_images_whose_names_differ_only_in_case_do_not_collide() {
         let fixture = Fixture::new(vec![
-            ImageRow::new(1, "IMG_0001")
-                .cache("AAAA0001-1111-4111-8111-000000000001", &[(1616, 1077)], &[(1616, 1077)]),
-            ImageRow::new(2, "img_0001")
-                .cache("AAAA0002-1111-4111-8111-000000000002", &[(1616, 1077)], &[(1616, 1077)]),
+            ImageRow::new(1, "IMG_0001").cache(
+                "AAAA0001-1111-4111-8111-000000000001",
+                &[(1616, 1077)],
+                &[(1616, 1077)],
+            ),
+            ImageRow::new(2, "img_0001").cache(
+                "AAAA0002-1111-4111-8111-000000000002",
+                &[(1616, 1077)],
+                &[(1616, 1077)],
+            ),
         ]);
         let plan = fixture.plan(&Options::default());
         let first = item(&plan, 1).output.as_ref().expect("output");

@@ -39,7 +39,10 @@ fn is_reserved_device_name(name: &str) -> bool {
     if matches!(stem.as_str(), "CON" | "PRN" | "AUX" | "NUL") {
         return true;
     }
-    let Some(rest) = stem.strip_prefix("COM").or_else(|| stem.strip_prefix("LPT")) else {
+    let Some(rest) = stem
+        .strip_prefix("COM")
+        .or_else(|| stem.strip_prefix("LPT"))
+    else {
         return false;
     };
     matches!(rest.as_bytes(), [b'1'..=b'9'])
@@ -360,8 +363,21 @@ mod tests {
     #[test]
     fn a_component_that_could_leave_the_output_root_is_rejected() {
         for hostile in [
-            "", " ", ".", "..", "...", "./x", "../x", "a/b", "a\\b", "/etc", "\\windows", "C:",
-            "C:\\x", "C:x", "C:/x",
+            "",
+            " ",
+            ".",
+            "..",
+            "...",
+            "./x",
+            "../x",
+            "a/b",
+            "a\\b",
+            "/etc",
+            "\\windows",
+            "C:",
+            "C:\\x",
+            "C:x",
+            "C:/x",
         ] {
             assert_eq!(sanitize_component(hostile), None, "{hostile:?}");
         }
@@ -421,7 +437,10 @@ mod tests {
     fn absolute_and_drive_prefixed_parts_are_dropped() {
         let mut hostile = image(1, "IMG");
         hostile.path_from_root = "C:/Users/evil/".to_string();
-        assert_eq!(slashed(&hostile.relative_output_path()), "2015/Users/evil/IMG.jpg");
+        assert_eq!(
+            slashed(&hostile.relative_output_path()),
+            "2015/Users/evil/IMG.jpg"
+        );
 
         let mut unc = image(1, "IMG");
         unc.path_from_root = "\\\\server\\share\\".to_string();
@@ -437,7 +456,10 @@ mod tests {
     fn a_file_name_with_a_separator_falls_back_to_the_image_id() {
         let mut hostile = image(17, "..\\..\\evil");
         assert_eq!(hostile.output_stem(), "image-17");
-        assert_eq!(slashed(&hostile.relative_output_path()), "2015/image-17.jpg");
+        assert_eq!(
+            slashed(&hostile.relative_output_path()),
+            "2015/image-17.jpg"
+        );
 
         // A copy name is untrusted too: it must not smuggle in a separator.
         hostile.copy_name = Some("../../x".to_string());
