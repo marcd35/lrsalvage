@@ -1,0 +1,13 @@
+# Rust
+/target
+**/*.rs.bk
+
+# Extracted output from local runs
+/out
+/out-*
+*.partial
+
+# OS noise
+.DS_Store
+Thumbs.db
+desktop.ini
