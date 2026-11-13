@@ -16,10 +16,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # No `toolchain` input: dtolnay/rust-toolchain reads rust-toolchain.toml,
-      # so CI and local runs compile with the same pinned compiler.
+      # Keep the version in sync with rust-toolchain.toml. The action requires an
+      # explicit input; specifying it here avoids depending on how the action
+      # resolves the toolchain file.
       - name: Install Rust
         uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.100.0
+          components: rustfmt, clippy
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
