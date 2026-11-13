@@ -11,6 +11,37 @@ ordinary JPEG files, with the catalog's metadata attached.
 Version 0.1. Early, and deliberately conservative: it would rather tell you it
 found nothing than hand you a folder of wrong images.
 
+## Lightroom is not required
+
+You do not need Lightroom installed, licensed, or running. `lrsalvage` is a file
+reader, not a plugin: it opens the catalog (a SQLite database), `previews.db`, and
+the `.lrprev` payload files, and writes JPEGs. It never talks to Adobe software,
+uses no Lightroom SDK or COM interface, and reads nothing outside the two paths
+you give it.
+
+That is checked rather than claimed:
+
+- The release binary imports only system libraries — `kernel32`, `ntdll`,
+  `bcryptprimitives`, `VCRUNTIME140` and the C runtime API sets — plus bundled
+  SQLite. No Adobe module is in its dependency table.
+- A full run with Lightroom Classic installed but not running loads 12 modules,
+  none of them from Adobe.
+- It runs happily against a catalog copied from another machine, including
+  originals that point at drives which no longer exist (`K:`, `G:`). Only the
+  cache is read.
+
+So a `.lrcat` and a `* Previews.lrdata` recovered from a dead laptop, an external
+drive, or a backup folder are enough on their own, and no Adobe licence is needed
+to run this tool. What you give up without Lightroom is downstream of recovery
+anyway: re-rendering develop edits, regenerating previews that were never built,
+and anything above the resolution that was cached. See
+[What this cannot do](#what-this-cannot-do).
+
+One practical note: close Lightroom before extracting. The tool copies the
+catalog together with its `-wal` and `-shm` sidecars and opens the copy read-only,
+so an open catalog cannot corrupt a run — a closed one simply gives a cleaner
+snapshot.
+
 ## The hard truth, before anything else
 
 These are **previews**, not originals.
