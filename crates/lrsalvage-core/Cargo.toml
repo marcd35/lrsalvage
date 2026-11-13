@@ -15,7 +15,7 @@ thiserror.workspace = true
 
 sha2.workspace = true
 flate2.workspace = true
-base64 = "0.22"
+base64 = "0.23"
 serde_json.workspace = true
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 filetime = "0.2"
