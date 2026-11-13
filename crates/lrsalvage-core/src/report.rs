@@ -1086,6 +1086,23 @@ mod tests {
         out
     }
 
+    /// The joining rule itself, independent of the filesystem: a payload path
+    /// that already carries the cache prefix must not be joined twice.
+    #[test]
+    fn resolve_payload_is_idempotent() {
+        let cache = Path::new("cache");
+        assert_eq!(
+            resolve_payload(Path::new("cache/payload.lrprev"), cache),
+            PathBuf::from("cache/payload.lrprev")
+        );
+        assert_eq!(
+            resolve_payload(Path::new("payload.lrprev"), cache),
+            PathBuf::from("cache/payload.lrprev")
+        );
+        let absolute = std::env::temp_dir().join("payload.lrprev");
+        assert_eq!(resolve_payload(&absolute, cache), absolute);
+    }
+
     #[test]
     fn contact_sheet_resolves_a_relative_cache_root_once() {
         let dir = tempfile::tempdir().unwrap();
@@ -1100,6 +1117,13 @@ mod tests {
         let cwd = std::env::current_dir().unwrap();
         let relative_cache = relative_to(&cwd, &cache);
         assert!(!relative_cache.is_absolute(), "the premise of this test");
+        if relative_cache.has_root() {
+            // Windows CI puts the temp dir on a different volume than the
+            // working directory, and a relative path cannot cross volumes.
+            // The join logic itself is covered by
+            // `resolve_payload_is_idempotent`.
+            return;
+        }
 
         // A relative `--previews` makes the planner put the prefix into the
         // payload path itself, which is how the old code joined it twice.
