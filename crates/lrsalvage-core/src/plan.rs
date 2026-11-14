@@ -851,16 +851,7 @@ mod tests {
             let dir = self.cache.join(first).join(first_four);
             fs::create_dir_all(&dir).expect("create payload dir");
             let path = dir.join(format!("{uuid}-{digest}.lrprev"));
-
-            let mut bytes = chunk("header", b"pyramid = { }", 0);
-            for (index, (width, height)) in levels.iter().enumerate() {
-                bytes.extend(chunk(
-                    &format!("level_{}", index + 1),
-                    &jpeg(*width, *height),
-                    0,
-                ));
-            }
-            fs::write(&path, bytes).expect("write payload");
+            fs::write(&path, lrsalvage_fixtures::bytes::container(levels)).expect("write payload");
             path
         }
     }
@@ -889,37 +880,6 @@ mod tests {
 
     fn slashed(path: &Path) -> String {
         path.to_string_lossy().replace('\\', "/")
-    }
-
-    /// One `AgHg` chunk: magic, header length, version, kind, lengths, name,
-    /// payload, padding.
-    fn chunk(name: &str, payload: &[u8], padding: usize) -> Vec<u8> {
-        let header_len = 24 + name.len();
-        let mut bytes = Vec::with_capacity(header_len + payload.len() + padding);
-        bytes.extend_from_slice(b"AgHg");
-        bytes.extend_from_slice(&u16::try_from(header_len).unwrap().to_be_bytes());
-        bytes.push(0); // version
-        bytes.push(0); // kind
-        bytes.extend_from_slice(&(payload.len() as u64).to_be_bytes());
-        bytes.extend_from_slice(&(padding as u64).to_be_bytes());
-        bytes.extend_from_slice(name.as_bytes());
-        bytes.extend_from_slice(payload);
-        bytes.resize(bytes.len() + padding, 0xEE);
-        bytes
-    }
-
-    /// A structurally valid JPEG at `width` x `height`.
-    fn jpeg(width: u16, height: u16) -> Vec<u8> {
-        let mut bytes = vec![0xFF, 0xD8];
-        bytes.extend_from_slice(&[0xFF, 0xC0, 0x00, 0x11, 0x08]);
-        bytes.extend_from_slice(&height.to_be_bytes());
-        bytes.extend_from_slice(&width.to_be_bytes());
-        bytes.extend_from_slice(&[0x03, 0x01, 0x11, 0x00, 0x02, 0x11, 0x01, 0x03, 0x11, 0x01]);
-        bytes.extend_from_slice(&[
-            0xFF, 0xDA, 0x00, 0x0C, 0x03, 0x01, 0x00, 0x02, 0x11, 0x03, 0x11, 0x00, 0x3F, 0x00,
-        ]);
-        bytes.extend_from_slice(&[0x00, 0xFF, 0xD9]);
-        bytes
     }
 
     #[test]
