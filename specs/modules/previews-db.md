@@ -11,6 +11,7 @@ references:
   - adr-0002-map-via-previews-db
   - adr-0005-discover-payloads-by-index
   - adr-0006-degrade-without-guessing
+  - adr-0007-publish-a-verification-report
   - format-notes
 ---
 
@@ -63,6 +64,15 @@ rows are live, which are stale, and what to do about either is `plan`'s decision
   plus the reason (missing, or the SQLite error text) for the caller's hint. The
   running code still fails here; that changes with the indexless mode
   (`adr-0006-degrade-without-guessing`).
+- **The two name templates live here, beside the rule they describe.**
+  `CONTAINER_GRAMMAR` is `<uuid[0]>/<uuid[0..4]>/<UUID>-<digest>.lrprev`, and
+  `LEVEL_FILE_GRAMMAR` is that path with `_<longedge>` in place of the extension.
+  Both hold placeholders only, never a name, and they exist so the verification
+  report can publish the shape of a cache without publishing one of its files:
+  `report` prints them verbatim and paraphrases neither. A unit test here
+  substitutes a known `(uuid, digest)` and asserts each template agrees with the
+  path the derivation returns, so a template cannot drift from the rule it stands
+  for (`adr-0007-publish-a-verification-report`).
 - **"Derived, never globbed" is the v1 rule, not the final one.**
   `adr-0005-discover-payloads-by-index` keeps the identity here (`(uuid, digest)`
   is this module's key) but widens the *level set* by a glob bounded to a row's

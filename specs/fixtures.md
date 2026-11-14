@@ -18,6 +18,7 @@ references:
   - adr-0004-detect-layout-not-version
   - adr-0005-discover-payloads-by-index
   - adr-0006-degrade-without-guessing
+  - adr-0007-publish-a-verification-report
   - format-notes
   - glossary
 ---
@@ -246,7 +247,7 @@ selected, so `extract` never starts. A vault of failures alone therefore reads a
 | # | Variation | Builder produces | Status | Stats | Run | Exit | Assertion | Evidence | Pins |
 |---|---|---|---|---|---|---|---|---|---|
 | E1 | an index that holds no rows | `previews.db` with the modern schema and no rows; no payload files | `no-cache-entry` for both images | `images 2`, `no_cache_entry 2`, layout `none` | `scan` | 3 | count | synthetic | "this cache holds nothing" is a layout, not an error |
-| E2 | nothing selected, nothing unclaimed | the same vault | — | — | `extract` | 3 | count | ADR 0006 ¶7 | no `report.csv`, no `manifest.json`, no JPEG: an empty run is not something to report on |
+| E2 | nothing selected, nothing unclaimed | the same vault | — | — | `extract` | 3 | count | ADR 0006 ¶7 | no `report.csv`, no `manifest.json`, no JPEG: an empty run is not something to report on. `scan --report` on the same vault **does** write its file (R6): the two artifacts answer different questions |
 
 ### `unindexed` — 2 images, 2 pyramids
 
@@ -262,11 +263,32 @@ selected, so `extract` never starts. A vault of failures alone therefore reads a
 |---|---|---|---|---|---|---|---|---|---|
 | N1 | payload-like files of no known shape | three JPEGs: right shard with no numeric suffix; right leaf in the wrong shard; a leaf whose uuid does not parse | `missing-payload` | `missing_payload 1`, `unmapped 0`, `unrecognised 3`, layout `unknown` | `scan` | 3 | count | synthetic; ADR 0005 ¶6 | unrecognised is not an orphan: no item, no output path, one hint; the pyramid has no file at its own address |
 | N2 | a version no release produced | `Adobe_DBVersion 9900001`, `Adobe_CrsVersion 99.0.0` | — | both strings verbatim | `scan --json` | 3 | count | ADR 0004 | no version refuses a run: a newer number reports, it does not error |
-| N3 | nothing to report on | the same vault | — | — | `extract` | 3 | count | ADR 0006 ¶7 | no report file: `selected 0` and `unmapped 0` |
+| N3 | nothing to report on | the same vault | — | — | `extract` | 3 | count | ADR 0006 ¶7 | no extract report file: `selected 0` and `unmapped 0`. `scan --report` still writes the verification report (R4) |
 
-`unrecognised 3` and `layout unknown` are asserted in `--json` and
-`manifest.json`. Neither is a status, a CSV column or an exit code: the count says
+`unrecognised 3` and `layout unknown` are asserted in `--json`,
+`manifest.json` and the verification report (R4). Neither is a status, a CSV column or an exit code: the count says
 what the cache held, not what any image became (`adr-0004-detect-layout-not-version`).
+
+## The verification report — nine rows
+
+A report row is a property of a **run**, not of an image, so these are listed once
+here instead of being repeated in each vault's `Runs` table; each row names the
+vault it is asserted against. `count` rows read the parsed object's fields, `bytes`
+rows read the file back, `both` rows do one then the other. R2 is the row this
+whole artifact exists for, and it is the matrix's first **negative** assertion: it
+fails if a single path, uuid, digest, shard folder or leaf name reaches the file.
+
+| # | Vault | Run | Exit | Asserts | Pins |
+|---|---|---|---|---|---|
+| R1 | `modern` | `scan --report <out>/scan.json` | 0 | count: the object's keys are exactly the frozen set (`schema`, `version`, `generated_unix`, `layout`, `db_version`, `crs_version`, `options`, `stats`, `shapes`); `layout modern`; `db_version 1504001`; `crs_version 18.0.0`; `options` echoes `640`, `false`, `false`; every `stats` member equals the vault's pinned totals; `shapes.level_file.count` equals the level files built, `suffix_matches_sof` the same, `container.count 0` with no template | the report describes the run, and its field set is a contract, not a snapshot of the plan |
+| R2 | `modern` | the bytes R1 wrote | 0 | bytes: the file contains none of the vault's absolute paths (catalog, cache, output root), none of its uuids, none of its digests, none of its shard folder names and none of its leaf names | the regression the decision exists for: one leaked string fails the row. Compared against names the **builder** produced, never a hard-coded sample |
+| R3 | `mixed` | `scan --report` | 0 | count: `shapes.level_file.count` and `shapes.container.count` are both non-zero and each carries its own template; `stats.superseded 1` | a mixed cache publishes two grammars, which is why the template belongs to the class rather than to the cache |
+| R4 | `unrecognised` | `scan --report` | 3 | count: `layout unknown`; `stats.unrecognised 3`; `shapes.level_file.count 0` and `shapes.container.count 0`, both templates absent; the file exists although the run wrote nothing else, and the one hint still prints on stderr | an exit-3 run still hands over its report; the histogram has no bucket for "no shape" (ADR 0005 ¶6) |
+| R5 | `unindexed` | `scan --report` | 3 | count: `unmapped 2`, `no_cache_entry 2`, `layout modern`, `shapes.level_file.count` equals every level file the builder wrote — derived from the leaf alone, with no rows to consult — and the file exists | the shape facts survive without an index; the hint and the report serve different readers |
+| R6 | `empty` | `scan --report` | 3 | count: the file exists; `images 2`, `no_cache_entry 2`, `recovered 0`, `layout none`, every `shapes` count `0` | a requested artifact is written even when nothing was selected — the contrast with E2, where `extract` writes no report at all |
+| R7 | `modern` | `--report` naming a file that already exists | 0 | count+bytes: the run writes `scan (2).json`, says so on stderr, and the existing file is byte-identical afterwards | a claimed name, never an overwrite (`cli`) |
+| R8 | `modern` | `--report` whose parent is inside the cache | 4 | count: exit `4`, no file inside the cache and no file anywhere else | every named write obeys the destination rule, and a failed report write is a destination error rather than "nothing selected" |
+| R9 | `modern` | `scan --json --report` (and `--verbose`) | 0 | count: stdout parses as exactly one object with the `--json` field set, `--verbose` lines are on stderr, and the report file is written and path-free | the two surfaces do not mix: a file for a stranger, one object for a script |
 
 ## Conventions
 
@@ -288,7 +310,12 @@ what the cache held, not what any image became (`adr-0004-detect-layout-not-vers
 - **Every row is built, never loaded.** No vault, no payload and no SQLite file is
   committed.
 - **Cache-level counts are asserted per vault**, not per row: `superseded` in
-  `mixed`, `deleted` in `modern`, `unrecognised` in `unrecognised`.
+  `mixed`, `deleted` in `modern`, `unrecognised` in `unrecognised`, and the three
+  `shapes` counts wherever the vault has payload files.
+- **A negative row asserts absence, and only absence.** `!bytes.contains(…)` over
+  every identifying string the builder produced for that vault is the one shape a
+  promise like "never a full path" can be tested in; it asserts nothing else, so
+  the row cannot pass by being empty.
 
 ## What has no row, and why
 

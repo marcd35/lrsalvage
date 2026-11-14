@@ -237,9 +237,11 @@ The catalog is the only copy of the map. It is treated as read-only evidence:
   how a recovery becomes a second data loss. The same check covers the report
   files in the output root and a requested `--contact-sheet`, whose parent
   directory is validated before the page is written.
-- **`scan` writes one thing at most.** Without `--contact-sheet`, `scan` writes
-  no file anywhere the user can see; with it, the contact sheet is the only
-  output and it obeys the destination rule above.
+- **`scan` writes only what you name.** Without a flag that gives it a path, it
+  writes no file anywhere the user can see; every file it does write obeys the
+  destination rule above and takes a free numbered name instead of overwriting
+  one. The rule is "only what you name", not a count of artifacts, because the
+  count is the part that keeps changing.
 - **Atomic writes.** Each JPEG is written to a temporary file, flushed, and
   renamed into place, so an interrupted run leaves no half-JPEG masquerading as
   a recovered one.

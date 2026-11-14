@@ -16,6 +16,7 @@ references:
   - adr-0002-map-via-previews-db
   - adr-0005-discover-payloads-by-index
   - adr-0006-degrade-without-guessing
+  - adr-0007-publish-a-verification-report
   - glossary
 ---
 
@@ -88,6 +89,15 @@ nothing — not one byte, not one directory. Everything that ends up on disk is
   is judged by the same per-level rule — its own bytes against its own row — and
   the image's one status is its chosen item's, so a good 808 beside a truncated
   1616 is `recovered` and `failed` as two items while the image stays `failed`.
+- **The plan counts the shapes the cache's payloads took, as cache counts.** The
+  same sweep that finds orphans records `level_file`, how many of those leaves name
+  the long edge their `SOF` measured (`suffix_matches_sof`), and `container` — three
+  numbers about files, reported beside `superseded` and never a status, an item
+  field or an exit code. None of them needs a row: a leaf the glob found and a leaf
+  a row named are counted the same way, because the comparison is the measured
+  `SOF` against the name rather than a second matcher. What they are for is the
+  verification report a stranger can hand over
+  (`adr-0007-publish-a-verification-report`).
 - **A suspect payload is recovered, not discarded.** Width and height may be
   swapped before calling it a disagreement, because the stored render is
   unrotated; a real photograph at the wrong declared size is still worth having,
