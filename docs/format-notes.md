@@ -706,12 +706,50 @@ from a catalog newer than `1200001`.
 - The payload path rule generalises: keep the two shard levels, change the leaf
   and drop the extension. Discovery can be index-driven (derive the leaf from
   `PyramidLevel`), with a glob on `<uuid>-<digest>_*` as the fallback when rows
-  are stale.
+  are stale. Decided in `adr-0005-discover-payloads-by-index`.
 
 Why the 1440 number matters: 1440 is the traditional default standard-preview
 long edge, and the measured 1,440 × 960 group (2,696 images) is the bulk of a real
 cache (section 2.7). A catalog that never had 1:1 previews built has a hard
 ceiling of about 1440 px, no matter what tool reads it.
+
+### 5.7 What a level file says about itself — VERIFIED
+
+All 390 payloads of the upgraded cache were read (every file, not a sample) on
+2026-11-14. Every count below is 390 of 390 unless it says otherwise.
+
+- **The path is shard-consistent.** `<uuid[0]>/<uuid[0..4]>/<UUID>-<digest>_<longedge>`
+  held for all 390, so a uuid can be checked against its own address.
+- **The leaf grammar is fixed-width**: 36-character uuid, `-`, 32-character
+  lowercase hex digest, `_`, digits — 69 characters before the underscore.
+  Splitting the leaf on `-` splits the uuid itself; the digest is the 32
+  characters after position 36.
+- **The top-level segment chain is short and stable**: `SOI`, `DQT`, `DRI`,
+  `APP14` (Adobe), `SOF0`, `DHT`, `SOS`. No file carries `APP1`, an XMP packet, or
+  `ICC_PROFILE`.
+- **`SOI` at offset 0 and `FF D9` exactly at EOF**, with no trailing padding — so
+  completeness can be required of a payload that has no length field.
+- **`_<longedge>` equals the top-level `SOF` long edge** in all 390, confirming
+  section 5.2 across the whole cache instead of one image.
+- **Level rows are REAL and unordered.** `longDimension`, `level`, `width` and
+  `height` read back as `101.0`, and a pyramid's rows are not in level order. A
+  suffix derived from `longDimension` must be the rounded integer.
+- **One digest for the whole store** (section 5.2): the digest identifies the
+  store, not the image, so the uuid discriminates and the pair is what a row maps.
+- **A four-character shard is not a unique address.** All 78 uuids here have a
+  distinct `<uuid[0..4]>`, but among the large catalog's 3,416 pyramids roughly
+  89 colliding pairs are expected (arithmetic, not measurement). A folder can
+  therefore hold levels of two pyramids; only the full uuid in the leaf separates
+  them.
+- **Why the marker walk is safe.** An embedded EXIF thumbnail sits inside APP1's
+  declared payload, so a walk of the top-level chain never reaches its `SOF`.
+  This is a property of the layout, not something observed in situ: no payload in
+  this cache carries an `APP1` segment at all.
+- **TODO**: `MotionPreview` and `FacePreview` (with their `Deleted*` and
+  `CacheEntry` siblings) exist in this store and hold 0 rows. No video or
+  face-preview cache has been inspected, so their modern payload shape is
+  **unverified**; until it is measured, a payload-shaped motion preview will be
+  counted as an orphan.
 
 ---
 

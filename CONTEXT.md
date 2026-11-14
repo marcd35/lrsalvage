@@ -40,6 +40,12 @@ The stored bytes of one level, exactly as they sit in the cache, before any
 metadata of ours is wrapped around them.
 _Avoid_: blob, JPEG data, preview bytes
 
+**Level file**:
+A payload that is its own file, named by the pyramid it belongs to and the long
+edge of the level it holds, as the modern layout stores them — as opposed to a
+level inside a legacy container.
+_Avoid_: loose JPEG, preview file, payload file
+
 **Preview layout**:
 The way a cache arranges its payloads on disk: a legacy pyramid, one file per
 level, both at once, nothing at all, or something unrecognised. A property of the
@@ -58,7 +64,8 @@ pyramid that is.
 _Avoid_: row, mapping, index entry
 
 **Orphan payload**:
-A payload that exists in the cache but is claimed by no image in the catalog.
+A payload — or a whole pyramid of level files — that exists in the cache but is
+claimed by no image in the catalog.
 _Avoid_: stray file, unmapped file
 
 ## Recovery

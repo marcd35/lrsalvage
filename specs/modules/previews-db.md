@@ -9,6 +9,7 @@ depends-on:
   - model
 references:
   - adr-0002-map-via-previews-db
+  - adr-0005-discover-payloads-by-index
   - format-notes
 ---
 
@@ -46,3 +47,8 @@ rows are live, which are stale, and what to do about either is `plan`'s decision
   without one yields an empty index, which is exactly what turns every image into
   `no-cache-entry` and every payload into an orphan — the honest answer per
   `adr-0002-map-via-previews-db`.
+- **"Derived, never globbed" is the v1 rule, not the final one.**
+  `adr-0005-discover-payloads-by-index` keeps the identity here (`(uuid, digest)`
+  is this module's key) but widens the *level set* by a glob bounded to a row's
+  own identity and folder, and moves per-file certification into `jpeg`. This
+  spec describes the running code and changes with the reader.
