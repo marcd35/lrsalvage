@@ -9,6 +9,8 @@ fi = "fi"
 rf = "rf"
 unparseable = "unparseable"
 mis = "mis"
+# The plural of PNG: the checker splits `PNGs` into a `PN` token.
+pn = "pn"
 
 [files]
 extend-exclude = ["target", "Cargo.lock"]
