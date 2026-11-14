@@ -229,9 +229,7 @@ pub fn chunk(name: &str, payload: &[u8], padding: usize) -> Vec<u8> {
 pub fn header(levels: &[(u16, u16)]) -> Vec<u8> {
     let mut text = String::from("pyramid = {\n\tlevels = {\n");
     for (width, height) in levels {
-        text.push_str(&format!(
-            "\t\t{{ height = {height}, width = {width}, }},\n"
-        ));
+        text.push_str(&format!("\t\t{{ height = {height}, width = {width}, }},\n"));
     }
     text.push_str("\t},\n}\n");
     text.into_bytes()
@@ -323,7 +321,10 @@ mod tests {
         let bytes = jpeg(1616, 1077);
         assert!(bytes.starts_with(&[0xFF, 0xD8]));
         assert!(bytes.ends_with(&[0xFF, 0xD9]));
-        assert_eq!(jpeg::dimensions(&bytes).expect("a readable frame"), (1616, 1077));
+        assert_eq!(
+            jpeg::dimensions(&bytes).expect("a readable frame"),
+            (1616, 1077)
+        );
         assert!(jpeg::is_complete(&bytes));
     }
 
@@ -331,7 +332,10 @@ mod tests {
     fn the_damaged_shapes_are_the_damage_they_name() {
         let truncated = truncated_jpeg(1616, 1077);
         assert!(!jpeg::is_complete(&truncated));
-        assert_eq!(jpeg::dimensions(&truncated).expect("a readable frame"), (1616, 1077));
+        assert_eq!(
+            jpeg::dimensions(&truncated).expect("a readable frame"),
+            (1616, 1077)
+        );
 
         let headless = no_soi(1616, 1077);
         assert!(!headless.starts_with(&[0xFF, 0xD8]));
@@ -347,8 +351,14 @@ mod tests {
         let parsed = lrprev::Lrprev::parse(&bytes).expect("a parseable container");
         let levels = parsed.levels();
         assert_eq!(levels.len(), 2);
-        assert_eq!(jpeg::dimensions(levels[0].data).expect("readable"), (101, 68));
-        assert_eq!(jpeg::dimensions(levels[1].data).expect("readable"), (1616, 1077));
+        assert_eq!(
+            jpeg::dimensions(levels[0].data).expect("readable"),
+            (101, 68)
+        );
+        assert_eq!(
+            jpeg::dimensions(levels[1].data).expect("readable"),
+            (1616, 1077)
+        );
         assert!(parsed.header().is_some());
     }
 
@@ -381,7 +391,10 @@ mod tests {
     fn our_output_carries_the_software_tag_and_the_frames_size() {
         let bytes = our_output(1616, 1077, "0.1.0");
         assert!(jpeg::is_complete(&bytes));
-        assert_eq!(jpeg::dimensions(&bytes).expect("a readable frame"), (1616, 1077));
+        assert_eq!(
+            jpeg::dimensions(&bytes).expect("a readable frame"),
+            (1616, 1077)
+        );
 
         let (tag, value) = ifd0_entry(&bytes, 0x0131).expect("IFD0 carries 0x0131");
         assert_eq!(tag, 0x0131);
@@ -443,7 +456,8 @@ mod tests {
         );
         // Stored, then the bytes themselves: nothing is re-encoded.
         assert!(
-            blob.windows(xml.len()).any(|window| window == xml.as_bytes()),
+            blob.windows(xml.len())
+                .any(|window| window == xml.as_bytes()),
             "the text survives uncompressed in a stored block"
         );
     }
