@@ -1,9 +1,10 @@
 //! End-to-end tests: synthetic catalog + preview cache in, JPEGs out.
 //!
-//! Every fixture is built from scratch inside a `TempDir`; a real `.lrcat` is
-//! never involved. The byte layouts follow the modules that read them
-//! (`catalog`, `previews_db`, `lrprev`), and the assertions only use the public
-//! seams: `Plan::build`, `extract` and `ensure_safe_destination`.
+//! The catalog, the preview cache and every payload come from
+//! `lrsalvage-fixtures`, built inside a `TempDir`; a real `.lrcat` is never
+//! involved. This suite therefore holds no byte layout of its own, and the
+//! assertions only use the public seams: `Plan::build`, `extract` and
+//! `ensure_safe_destination`.
 //!
 //! One fixture covers one image of each kind the planner can report:
 //!
@@ -21,43 +22,19 @@
 
 use std::collections::BTreeMap;
 use std::fs;
-use std::io::{Cursor, Write};
+use std::io::Cursor;
 use std::path::{Path, PathBuf};
 
-use lrsalvage_core::catalog::Catalog;
 use lrsalvage_core::error::Error;
 use lrsalvage_core::extract::{self, ExtractOptions, OutcomeStatus};
 use lrsalvage_core::jpeg;
 use lrsalvage_core::plan::{Options, Plan, PlanItem, Status};
-use lrsalvage_core::previews_db::PreviewIndex;
-use rusqlite::{Connection, params};
+use lrsalvage_fixtures::vault::{ImageRow, Level, PyramidRow, Vault};
 
 /// Lightroom stores absolute paths with POSIX separators and a trailing slash.
 /// The output tree is grouped by its last segment only.
 const ROOT_FOLDER: &str = "F:/photog/2015/3. March/3.16 107 york street/";
 const ROOT_NAME: &str = "3.16 107 york street";
-
-const CATALOG_SCHEMA: &str = r#"
-    CREATE TABLE Adobe_images (id_local INTEGER PRIMARY KEY, copyName TEXT,
-      orientation TEXT, fileFormat TEXT, rootFile INTEGER);
-    CREATE TABLE AgLibraryFile (id_local INTEGER PRIMARY KEY, folder INTEGER,
-      baseName TEXT, extension TEXT);
-    CREATE TABLE AgLibraryFolder (id_local INTEGER PRIMARY KEY, pathFromRoot TEXT,
-      rootFolder INTEGER);
-    CREATE TABLE AgLibraryRootFolder (id_local INTEGER PRIMARY KEY, absolutePath TEXT);
-    CREATE TABLE Adobe_AdditionalMetadata (image INTEGER, xmp BLOB);
-"#;
-
-/// Column names and order are what `previews_db::PreviewIndex::open` selects.
-const PREVIEWS_SCHEMA: &str = r#"
-    CREATE TABLE Pyramid (uuid NOT NULL, digest NOT NULL, colorProfile NOT NULL,
-      fileTimeStamp, quality NOT NULL, croppedWidth NOT NULL, croppedHeight NOT NULL,
-      pyramidFileTimeStamp, fingerprint, fromProxy);
-    CREATE TABLE PyramidLevel (uuid NOT NULL, digest NOT NULL, level NOT NULL,
-      longDimension NOT NULL, lastAccess NOT NULL, width NOT NULL, height NOT NULL);
-    CREATE TABLE ImageCacheEntry (imageId NOT NULL, uuid NOT NULL, digest NOT NULL,
-      orientation);
-"#;
 
 const XMP: &str = r#"<x:xmpmeta xmlns:x="adobe:ns:meta/">
  <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
@@ -85,12 +62,11 @@ const FILES: &[(i64, &str)] = &[
 
 struct CacheSpec {
     uuid: &'static str,
-    digest: &'static str,
     /// JPEG dimensions of each `level_N` chunk actually written. `None` means
     /// the cache row exists but the payload file is gone.
-    levels: Option<&'static [(u16, u16)]>,
+    levels: Option<&'static [(u32, u32)]>,
     /// Dimensions `PyramidLevel` claims, one row per entry.
-    declared: &'static [(u16, u16)],
+    declared: &'static [(u32, u32)],
 }
 
 struct ImageSpec {
@@ -111,7 +87,6 @@ const IMAGES: &[ImageSpec] = &[
         orientation: "AB",
         cache: Some(CacheSpec {
             uuid: "AAAA0001-1111-4111-8111-000000000001",
-            digest: "aa01",
             levels: Some(&[(101, 68), (1616, 1077)]),
             declared: &[(1616, 1077), (640, 427)],
         }),
@@ -123,7 +98,6 @@ const IMAGES: &[ImageSpec] = &[
         orientation: "AB",
         cache: Some(CacheSpec {
             uuid: "AAAA0002-1111-4111-8111-000000000002",
-            digest: "aa02",
             levels: None,
             declared: &[(1616, 1077)],
         }),
@@ -142,7 +116,6 @@ const IMAGES: &[ImageSpec] = &[
         orientation: "BC",
         cache: Some(CacheSpec {
             uuid: "AAAA0004-1111-4111-8111-000000000004",
-            digest: "aa04",
             levels: Some(&[(800, 600)]),
             declared: &[(1616, 1077)],
         }),
@@ -154,7 +127,6 @@ const IMAGES: &[ImageSpec] = &[
         orientation: "AB",
         cache: Some(CacheSpec {
             uuid: "AAAA0005-1111-4111-8111-000000000005",
-            digest: "aa05",
             levels: Some(&[(320, 240)]),
             declared: &[(320, 240)],
         }),
@@ -166,7 +138,6 @@ const IMAGES: &[ImageSpec] = &[
         orientation: "AB",
         cache: Some(CacheSpec {
             uuid: "AAAA0006-1111-4111-8111-000000000006",
-            digest: "aa06",
             levels: Some(&[(1616, 1077)]),
             declared: &[(1616, 1077)],
         }),
@@ -178,7 +149,6 @@ const IMAGES: &[ImageSpec] = &[
         orientation: "AB",
         cache: Some(CacheSpec {
             uuid: "AAAA0007-1111-4111-8111-000000000007",
-            digest: "aa07",
             levels: Some(&[(1616, 1077)]),
             declared: &[(1616, 1077)],
         }),
@@ -190,7 +160,6 @@ const IMAGES: &[ImageSpec] = &[
         orientation: "AB",
         cache: Some(CacheSpec {
             uuid: "AAAA0008-1111-4111-8111-000000000008",
-            digest: "aa08",
             levels: Some(&[(1616, 1077)]),
             declared: &[(1616, 1077)],
         }),
@@ -199,153 +168,88 @@ const IMAGES: &[ImageSpec] = &[
 
 /// Present in the cache, claimed by no `ImageCacheEntry`.
 const ORPHAN_UUID: &str = "ZZZZ0009-1111-4111-8111-000000000009";
-const ORPHAN_DIGEST: &str = "0bad";
 
 /// A catalog, a preview cache and its payloads, all inside one temp dir.
+///
+/// Both databases and every byte come from `lrsalvage-fixtures`: this suite
+/// keeps no fixture of its own beside it.
 struct Fixture {
-    dir: tempfile::TempDir,
+    vault: Vault,
 }
 
 impl Fixture {
     fn new() -> Self {
-        let fixture = Fixture {
-            dir: tempfile::tempdir().expect("temp dir"),
-        };
-        fixture.write_catalog();
-        fixture.write_previews();
-        fixture
+        Fixture { vault: build() }
     }
 
     fn dir(&self) -> &Path {
-        self.dir.path()
+        self.vault.dir()
     }
 
     fn catalog_path(&self) -> PathBuf {
-        self.dir().join("catalog").join("2023.lrcat")
+        self.vault.catalog().to_path_buf()
     }
 
     fn cache_root(&self) -> PathBuf {
-        self.dir().join("2023 Previews.lrdata")
+        self.vault.previews().to_path_buf()
     }
 
     fn output_root(&self) -> PathBuf {
-        self.dir().join("recovered")
-    }
-
-    fn write_catalog(&self) {
-        let dir = self.dir().join("catalog");
-        fs::create_dir_all(&dir).expect("create catalog dir");
-        let conn = Connection::open(self.catalog_path()).expect("create catalog");
-        conn.execute_batch(CATALOG_SCHEMA).expect("catalog schema");
-        conn.execute(
-            "INSERT INTO AgLibraryRootFolder (id_local, absolutePath) VALUES (1, ?1)",
-            [ROOT_FOLDER],
-        )
-        .expect("root folder");
-        conn.execute(
-            "INSERT INTO AgLibraryFolder (id_local, pathFromRoot, rootFolder) \
-             VALUES (10, '', 1)",
-            [],
-        )
-        .expect("folder");
-        for (id, base_name) in FILES {
-            conn.execute(
-                "INSERT INTO AgLibraryFile (id_local, folder, baseName, extension) \
-                 VALUES (?1, 10, ?2, 'CR2')",
-                params![id, base_name],
-            )
-            .expect("file row");
-        }
-        for image in IMAGES {
-            conn.execute(
-                "INSERT INTO Adobe_images \
-                 (id_local, copyName, orientation, fileFormat, rootFile) \
-                 VALUES (?1, ?2, ?3, 'CR2', ?4)",
-                params![image.id, image.copy_name, image.orientation, image.file],
-            )
-            .expect("image row");
-            // Every image carries XMP, so the EXIF writer always has something
-            // to say and the orientation tag is never dropped as a no-op.
-            conn.execute(
-                "INSERT INTO Adobe_AdditionalMetadata (image, xmp) VALUES (?1, ?2)",
-                params![image.id, xmp_blob(XMP)],
-            )
-            .expect("xmp row");
-        }
-    }
-
-    fn write_previews(&self) {
-        let cache = self.cache_root();
-        fs::create_dir_all(&cache).expect("create cache dir");
-        let conn = Connection::open(cache.join("previews.db")).expect("create previews.db");
-        conn.execute_batch(PREVIEWS_SCHEMA)
-            .expect("previews schema");
-
-        for image in IMAGES {
-            let Some(spec) = &image.cache else { continue };
-            // Numeric columns are REAL in real caches (`4062.0`, `1616.0`), so
-            // the fixture stores them that way everywhere.
-            conn.execute(
-                "INSERT INTO ImageCacheEntry (imageId, uuid, digest, orientation) \
-                 VALUES (?1, ?2, ?3, ?4)",
-                params![image.id as f64, spec.uuid, spec.digest, image.orientation],
-            )
-            .expect("cache entry");
-            let (cropped_width, cropped_height) = spec.declared[0];
-            conn.execute(
-                "INSERT INTO Pyramid \
-                 (uuid, digest, colorProfile, quality, croppedWidth, croppedHeight) \
-                 VALUES (?1, ?2, 'ACR', 'HIGH', ?3, ?4)",
-                params![
-                    spec.uuid,
-                    spec.digest,
-                    f64::from(cropped_width),
-                    f64::from(cropped_height)
-                ],
-            )
-            .expect("pyramid");
-            for (level, (width, height)) in spec.declared.iter().enumerate() {
-                conn.execute(
-                    "INSERT INTO PyramidLevel \
-                     (uuid, digest, level, longDimension, lastAccess, width, height) \
-                     VALUES (?1, ?2, ?3, ?4, 0, ?5, ?6)",
-                    params![
-                        spec.uuid,
-                        spec.digest,
-                        level as f64,
-                        f64::from(*width.max(height)),
-                        f64::from(*width),
-                        f64::from(*height)
-                    ],
-                )
-                .expect("pyramid level");
-            }
-        }
-        drop(conn);
-
-        for image in IMAGES {
-            let Some(spec) = &image.cache else { continue };
-            let Some(levels) = spec.levels else { continue };
-            write_payload(&cache, spec.uuid, spec.digest, levels);
-        }
-        // An orphan payload: on disk, claimed by nobody.
-        write_payload(&cache, ORPHAN_UUID, ORPHAN_DIGEST, &[(1024, 683)]);
+        self.vault.out().to_path_buf()
     }
 
     fn plan(&self) -> Plan {
-        let (_snapshot, catalog) =
-            Catalog::open(&self.catalog_path()).expect("open fixture catalog");
-        let index = PreviewIndex::open(&self.cache_root().join("previews.db"))
-            .expect("open fixture previews.db");
-        Plan::build(
-            &catalog,
-            &index,
-            &self.cache_root(),
-            &self.output_root(),
-            &Options::default(),
-        )
-        .expect("build plan")
+        self.vault.plan(&Options::default())
     }
+}
+
+/// A `legacy` vault: every pyramid is an `.lrprev` container, which is the one
+/// layout this version reads.
+fn build() -> Vault {
+    let mut vault = Vault::legacy()
+        .catalog_name("2023")
+        .root_folder(ROOT_FOLDER);
+
+    for spec in IMAGES {
+        let base_name = FILES
+            .iter()
+            .find(|(id, _)| *id == spec.file)
+            .map(|(_, base_name)| *base_name)
+            .expect("a file row for every image");
+
+        let mut image = ImageRow::new(spec.id, base_name)
+            .file(spec.file)
+            .orientation(spec.orientation)
+            // Every image carries XMP, so the EXIF writer always has something
+            // to say and the orientation tag is never dropped as a no-op.
+            .xmp(XMP);
+        if let Some(copy_name) = spec.copy_name {
+            image = image.copy(copy_name);
+        }
+
+        if let Some(cache) = &spec.cache {
+            image = image.cache(cache.uuid);
+
+            let mut pyramid = PyramidRow::new(cache.uuid).profile("ACR").quality("HIGH");
+            for (width, height) in cache.declared {
+                pyramid = pyramid.level(*width, *height);
+            }
+            vault = vault.pyramid(pyramid);
+
+            // Only the levels whose files exist: a declared level with no
+            // entry here is a stale row, which this cache tolerates.
+            for (width, height) in cache.levels.unwrap_or(&[]) {
+                vault = vault.level_file(Level::sized(cache.uuid, *width, *height));
+            }
+        }
+
+        vault = vault.image(image);
+    }
+
+    // An orphan payload: on disk, claimed by nobody.
+    vault
+        .unclaimed(&[Level::sized(ORPHAN_UUID, 1024, 683)])
+        .write()
 }
 
 fn item_for(plan: &Plan, image_id: i64) -> &PlanItem {
@@ -704,87 +608,4 @@ fn orientation_of(bytes: &[u8]) -> u32 {
         .get_field(exif::Tag::Orientation, exif::In::PRIMARY)
         .and_then(|field| field.value.get_uint(0))
         .expect("orientation tag present")
-}
-
-/// Write one payload where Lightroom keeps it:
-/// `<cache>/<uuid[0]>/<uuid[0..4]>/<UUID>-<digest>.lrprev`.
-fn write_payload(cache_root: &Path, uuid: &str, digest: &str, levels: &[(u16, u16)]) -> PathBuf {
-    let first: String = uuid.chars().take(1).collect();
-    let first_four: String = uuid.chars().take(4).collect();
-    let dir = cache_root.join(first).join(first_four);
-    fs::create_dir_all(&dir).expect("create payload dir");
-
-    let path = dir.join(format!("{uuid}-{digest}.lrprev"));
-    let mut bytes = chunk("header", header_text(levels).as_bytes(), 0);
-    for (index, (width, height)) in levels.iter().enumerate() {
-        let padding = if index + 1 == levels.len() { 0 } else { 9 };
-        bytes.extend(chunk(
-            &format!("level_{}", index + 1),
-            &jpeg(*width, *height),
-            padding,
-        ));
-    }
-    fs::write(&path, bytes).expect("write payload");
-    path
-}
-
-/// The Lua-like `header` chunk: a list of level dimensions, nothing reads it
-/// on this path, but a real payload always carries one.
-fn header_text(levels: &[(u16, u16)]) -> String {
-    let mut text = String::from("pyramid = {\n\tlevels = {\n");
-    for (width, height) in levels {
-        text.push_str(&format!("\t\t{{ height = {height}, width = {width}, }},\n"));
-    }
-    text.push_str("\t},\n}\n");
-    text
-}
-
-/// One `AgHg` chunk: magic, u16 header length, version, kind, u64 payload
-/// length, u64 padding length, name, payload, padding.
-fn chunk(name: &str, payload: &[u8], padding: usize) -> Vec<u8> {
-    let header_len = 24 + name.len();
-    let mut bytes = Vec::with_capacity(header_len + payload.len() + padding);
-    bytes.extend_from_slice(b"AgHg");
-    bytes.extend_from_slice(
-        &u16::try_from(header_len)
-            .expect("chunk header fits a u16")
-            .to_be_bytes(),
-    );
-    bytes.push(0); // version
-    bytes.push(0); // kind
-    bytes.extend_from_slice(&(payload.len() as u64).to_be_bytes());
-    bytes.extend_from_slice(&(padding as u64).to_be_bytes());
-    bytes.extend_from_slice(name.as_bytes());
-    bytes.extend_from_slice(payload);
-    // Padding bytes are deliberately not zero: they must be skipped, not read.
-    bytes.resize(bytes.len() + padding, 0xEE);
-    bytes
-}
-
-/// A structurally valid JPEG at `width` x `height`: SOI, APP0, SOF0, SOS, one
-/// entropy byte, EOI. Nothing ever decodes pixels, so the tables stay tiny.
-fn jpeg(width: u16, height: u16) -> Vec<u8> {
-    let mut bytes = vec![0xFF, 0xD8];
-    bytes.extend_from_slice(&[0xFF, 0xE0, 0x00, 0x10]);
-    bytes.extend_from_slice(b"JFIF\0");
-    bytes.extend_from_slice(&[0x01, 0x01, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00]);
-    bytes.extend_from_slice(&[0xFF, 0xC0, 0x00, 0x11, 0x08]);
-    bytes.extend_from_slice(&height.to_be_bytes());
-    bytes.extend_from_slice(&width.to_be_bytes());
-    bytes.extend_from_slice(&[0x03, 0x01, 0x11, 0x00, 0x02, 0x11, 0x01, 0x03, 0x11, 0x01]);
-    bytes.extend_from_slice(&[
-        0xFF, 0xDA, 0x00, 0x0C, 0x03, 0x01, 0x00, 0x02, 0x11, 0x03, 0x11, 0x00, 0x3F, 0x00,
-    ]);
-    bytes.extend_from_slice(&[0x00, 0xFF, 0xD9]);
-    bytes
-}
-
-/// zlib-compress `xml` behind the 4-byte prefix Lightroom uses for XMP blobs.
-fn xmp_blob(xml: &str) -> Vec<u8> {
-    let mut encoder = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
-    encoder.write_all(xml.as_bytes()).expect("compress xmp");
-    let compressed = encoder.finish().expect("finish xmp");
-    let mut blob = vec![0u8; 4];
-    blob.extend_from_slice(&compressed);
-    blob
 }
