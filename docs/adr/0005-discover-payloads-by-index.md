@@ -9,6 +9,7 @@ references:
   - adr-0001-parse-dont-carve
   - adr-0002-map-via-previews-db
   - adr-0004-detect-layout-not-version
+  - adr-0006-degrade-without-guessing
 ---
 
 # Discover payloads by index, widen by name, certify by bytes
@@ -90,6 +91,14 @@ bytes.**
 7. **Coexistence resolves per pyramid, not per cache.** A pyramid with both
    representations uses its modern levels; a `.lrprev` for a pyramid that is
    claimed counts as `superseded` (issue #2, decision 2).
+   **Amended 2026-11-15 by ADR 0006**, which fixes the count and its name: the
+   stat counts **claimed pyramids with both representations** — at least one level
+   file *and* at least one legacy `.lrprev` — never whichever payload is larger. A
+   pyramid whose only representation is a `.lrprev` is legacy and is read from the
+   container, not superseded; one with neither file is `missing-payload`; an
+   unclaimed `.lrprev` is `unmapped`. The stat never moves the exit code, because a
+   superseded container always coexists with the level files its pyramid is written
+   from.
 8. **The orphan sweep counts pyramids.** One `unmapped` item per unclaimed
    `(uuid, digest)`, merging that pyramid's modern levels and any coexisting
    `.lrprev`, reporting the largest level's file as the payload. A

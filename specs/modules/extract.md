@@ -13,6 +13,7 @@ depends-on:
   - report
 references:
   - adr-0003-preserve-preview-bytes
+  - adr-0006-degrade-without-guessing
 ---
 
 # extract
@@ -32,6 +33,12 @@ destination. It decides nothing about which image deserves recovery — that is
 
 ## Decisions
 
+- **Only selected items are written.** An unclaimed payload has no output path,
+  is never selected, and is never written: a file with no catalog row has no name
+  to give it, and inventing one would put an unnamed JPEG in the same tree as the
+  named recoveries. A legacy container superseded by a pyramid's level files is
+  not read at all (`adr-0006-degrade-without-guessing`). Every payload that *is*
+  written goes through this one builder, whatever its layout.
 - **An existing destination is replaced only when it proves it is ours**: its
   EXIF carries our `Software` marker (`lrsalvage <version>`), the file is a
   complete JPEG, and its `SOF` dimensions match the planned item. Anything else —

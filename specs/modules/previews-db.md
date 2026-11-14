@@ -10,6 +10,7 @@ depends-on:
 references:
   - adr-0002-map-via-previews-db
   - adr-0005-discover-payloads-by-index
+  - adr-0006-degrade-without-guessing
   - format-notes
 ---
 
@@ -40,13 +41,20 @@ rows are live, which are stale, and what to do about either is `plan`'s decision
 - **`best_level` ranks by pixel area, with the level number as tie-break.**
   Neither the highest level number nor the longest dimension reliably identifies
   the 1616 px preview: real caches store levels in an arbitrary order.
-- **Only pyramids, levels and cache entries are read.** `MotionPreview` (a poster
-  frame, not a clip), `FacePreview`, and the `Deleted*` tombstones are not
-  consulted; stale rows surface later as `missing-payload` instead.
-- **A missing `previews.db` is the caller's problem to report.** Opening a cache
-  without one yields an empty index, which is exactly what turns every image into
-  `no-cache-entry` and every payload into an orphan — the honest answer per
-  `adr-0002-map-via-previews-db`.
+- **Only pyramids, levels and cache entries are read; tombstones only ever
+  narrate.** `MotionPreview` (a poster frame, not a clip) and `FacePreview` are
+  not consulted. `DeletedPyramid` rows are read into a set of `(uuid, digest)` and
+  deletion times for one purpose: letting a `missing-payload` note quote
+  Lightroom's own record of the deletion. A tombstone never subtracts from a
+  count, never suppresses an orphan and never changes a status
+  (`adr-0005-discover-payloads-by-index`, `adr-0006-degrade-without-guessing`).
+- **A missing or unreadable `previews.db` yields an empty index and a reason, not
+  an error.** Absence is a mode — the caller reports every image as
+  `no-cache-entry` and every payload pyramid as `unmapped` per
+  `adr-0002-map-via-previews-db` — so this module returns `PreviewIndex::default()`
+  plus the reason (missing, or the SQLite error text) for the caller's hint. The
+  running code still fails here; that changes with the indexless mode
+  (`adr-0006-degrade-without-guessing`).
 - **"Derived, never globbed" is the v1 rule, not the final one.**
   `adr-0005-discover-payloads-by-index` keeps the identity here (`(uuid, digest)`
   is this module's key) but widens the *level set* by a glob bounded to a row's
