@@ -13,11 +13,17 @@ references:
 
 ## Shape
 
-Two crates. `lrsalvage-core` is the whole pipeline and the **supported seam**:
+Two crates ship. `lrsalvage-core` is the whole pipeline and the **supported seam**:
 its public API is what a GUI, a script or a test drives, so moving a public item,
 changing a signature or hiding a module is a decision to record here rather than
 a refactor. `lrsalvage-cli` is one adapter over it — arguments, presentation,
 progress, exit codes — and carries no format knowledge.
+
+A third workspace member, `lrsalvage-fixtures`, is test-only: a `publish = false`
+dev-dependency of both crates that builds the synthetic vaults `fixtures`
+requires. Nothing ships with it, neither crate links it into a binary, and it is
+not a module in the table below — it exists so the byte shapes and the catalog
+fixtures have exactly one implementation (`fixtures`).
 
 The pipeline is a straight line, and every stage is pure with respect to the one
 before it:

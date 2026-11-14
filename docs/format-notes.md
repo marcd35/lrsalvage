@@ -699,6 +699,11 @@ stale rows; a cache holding both `.lrprev` and modern payloads (this upgrade
 converted everything in place, so coexistence was not observed); any conversion
 from a catalog newer than `1200001`.
 
+Three of those states are constructed synthetically for the matrix — rows M3 and
+M4 (a row whose file is gone; a file whose row is gone) and X1 (a superseded
+pyramid) of `specs/fixtures.md`, each labelled `unmeasured`. A fixture proves how
+the reader behaves in a state; it never proves Adobe produces that state.
+
 ### 5.6 Consequences
 
 - A stale `previews.db` **level** row whose file is gone is a **pruned level**,
@@ -783,9 +788,13 @@ All 390 payloads of the upgraded cache were read (every file, not a sample) on
   from a name, and the catalog outranks a render-time snapshot of the catalog's
   own facts. Since no `Exif` APP1 appeared in the 390 legacy levels inspected
   (§1.4), the case is new to the modern layout rather than a regression.
-- **TODO:** a fixture payload that already carries EXIF, XMP and ICC (issue #15)
-  is the only executable evidence. It pins the order; it cannot show what Adobe
-  writes.
+- **Decided, and the executable evidence is synthetic:** row M13 of
+  `specs/fixtures.md` builds a payload that already carries an `Exif` APP1, an XMP
+  packet and an `ICC_PROFILE`, and pins the precedence order above. It is a shape
+  this repository chose, not one observed in a Lightroom render, so it pins the
+  order and cannot show what Adobe writes.
+- **TODO:** that payload exists only as a contract; the builder and the assertion
+  land with the v2 reader. Until then no executable evidence exists (issue #15).
 
 ---
 
