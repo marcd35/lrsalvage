@@ -1,3 +1,11 @@
+---
+id: adr-0004-detect-layout-not-version
+type: architecture-design
+title: "ADR 0004: Detect the preview layout; never gate on a version"
+status: active
+parent: architecture
+---
+
 # Detect the preview layout; never gate on a version
 
 **Status:** accepted · **Date:** 2026-11-14

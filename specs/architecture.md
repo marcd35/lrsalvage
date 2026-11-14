@@ -89,9 +89,9 @@ everything else is always compiled.
 
 ## Where the reasoning lives
 
-The three load-bearing decisions are recorded as adopted ADRs and are not
+The four load-bearing decisions are recorded as adopted ADRs and are not
 restated here: `adr-0001-parse-dont-carve`, `adr-0002-map-via-previews-db`,
-`adr-0003-preserve-preview-bytes`. Byte-level facts about the formats, with an
-evidence label per claim, live in `format-notes`; the product vocabulary lives in
-`glossary`. A module spec links to those and carries only what is specific to its
-own boundary.
+`adr-0003-preserve-preview-bytes`, `adr-0004-detect-layout-not-version`. Byte-level
+facts about the formats, with an evidence label per claim, live in `format-notes`;
+the product vocabulary lives in `glossary`. A module spec links to those and
+carries only what is specific to its own boundary.
