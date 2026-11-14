@@ -636,9 +636,7 @@ dependencies = [
  "lrsalvage-core",
  "lrsalvage-fixtures",
  "predicates",
- "rusqlite",
  "serde_json",
- "tempfile",
  "walkdir",
 ]
 
