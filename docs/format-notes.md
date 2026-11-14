@@ -46,9 +46,13 @@ fact gets its label before it gets prose.
 | Small cache | 78-file preview cache, Lightroom Classic ≤ 13.2, Windows | `.lrprev` layout, `root-pixels.db` |
 | Large catalog | Catalog with 3,416 images and 3,420 cache entries, ≤ 13.2 | `previews.db` schema, statistics, orientation |
 | Catalog with AI masks | Catalog whose `<catalog>.lrcat-data` directory is populated | `.lrcat-data` mask decoding |
+| Upgraded 78-image cache | The small catalog above, upgraded in place by Lightroom Classic 16.0 on 2026-11-14 | 13.3+ layout, `previews.db` schema delta |
 
-No 13.3+ catalog was available. That is why section 5 is reported rather than
-verified, and why the tool must not assume the 13.3 layout when it sees one.
+No **freshly built** 13.3+ catalog has been inspected: the modern cache in the
+last row is a *conversion* of a legacy cache. That distinction decides how much
+of section 5 is verified — its layout and contents are measured, but whether a
+fresh render produces different level sets or metadata-bearing payloads is still
+open, so the tool must not assume the 13.3 layout when it sees one.
 
 ---
 
@@ -600,40 +604,109 @@ picture upright without touching a pixel (ADR 0003).
 
 ---
 
-## 5. Lightroom 13.3 and later — REPORTED, not verified
+## 5. Lightroom 13.3 and later — VERIFIED for the upgrade path
 
 > **Implementation status:** not implemented. The tool currently reads only the
-> pre-13.3 `.lrprev` layout, and a 13.3+ cache therefore reports every image as
-> `missing-payload` (or fails if `previews.db` is absent). Tracked in
-> [issue #2](https://github.com/marcd35/lrsalvage/issues/2); this section stays
-> **reported** until a real 13.3+ vault has been measured.
+> pre-13.3 `.lrprev` layout, so on the measured modern cache it reports 78 of 78
+> images as `missing-payload` and exits 3 with nothing recovered. Tracked in
+> [issue #2](https://github.com/marcd35/lrsalvage/issues/2).
 
-Lightroom Classic 13.3 changed preview storage. All of the following is
-**reported**; we had no 13.3+ catalog to inspect. The tool must therefore detect
-the layout rather than assume either one.
+Lightroom Classic 13.3 changed preview storage. Sections 5.1–5.4 are **verified**
+on an upgraded catalog; section 5.5 lists what remains **reported**. The tool
+must still detect the layout rather than assume either one.
+
+### 5.1 What was measured
+
+The 78-image catalog (section 0) opened by Lightroom Classic **16.0**
+(`ProductVersion 16.0 (202611041403-7ac14c66)`) on 2026-11-14 and upgraded **in
+place**:
+
+| Observation | Value |
+|---|---|
+| `Adobe_DBVersion`, before → after | `1200001` → `1504001` |
+| `Adobe_CrsVersion`, before → after | `15.4.0` → `18.0.0` |
+| `.lrprev` files remaining | **0** (every legacy payload was converted) |
+| Payload files after | 390 = 78 images × 5 levels |
+
+The catalog version is not the marketing major: a catalog written by Lightroom
+16.0 reports `1504001`. Do not derive a version gate from these numbers.
+
+### 5.2 Path and names — VERIFIED
+
+```
+<uuid[0]>/<uuid[0..4]>/<UUID>-<digest>_<longedge>
+1/1418/1418F22B-41B0-4786-9DF0-D5081559CAD1-bd012a8e0e0b5b73ddaf34aeceb8bf48_1616
+```
+
+- **The sharding is the legacy sharding.** `<uuid[0]>` then `<uuid[0..4]>`, the
+  same rule `previews_db::payload_path` already implements for `.lrprev`. The
+  leaf directory is a per-image folder, but it is named by the first four
+  characters of the uuid, **not the whole uuid**: any rule that matches the
+  parent directory against a full uuid will find nothing.
+- The leaf is the legacy leaf minus the `.lrprev` extension, plus `_<longedge>`.
+- `_<longedge>` equals `PyramidLevel.longDimension` **and** the JPEG's measured
+  long edge (`_101` is 101 × 68, `_1616` is 1616 × 1077), so the name is
+  derivable from the index rather than discovered by globbing.
+- Level set in this cache: `101, 202, 404, 808, 1616` — the same doubling series
+  as the legacy container it was converted from, not a fresh standard set.
+- **All 78 pyramids share one digest** (`bd012a8e0e0b5b73ddaf34aeceb8bf48`). In
+  this store the digest is store-wide, so it cannot identify a payload; the uuid
+  is the only discriminator. A rule that globs on the digest prefix would match
+  every image.
+
+### 5.3 Content — VERIFIED
+
+- Each file is a complete baseline JPEG, `FF D8 FF DB` at offset 0, with SOF
+  dimensions matching its suffix.
+- The largest level of the image checked (1616 × 1077) carries **no `Exif`, no
+  XMP packet and no `ICC_PROFILE`**: the bytes are a bare level payload.
+- The upgrade **split the legacy container's levels into files; it did not
+  re-render them.** The image in section 1.2 now exists as five files of
+  2,791 + 7,536 + 25,989 + 89,230 + 302,569 bytes, plus the container's 447-byte
+  `header` chunk that makes the documented 428,562-byte payload total. Sizes are
+  verified; byte-for-byte identity is inferred from them, not hashed.
+
+### 5.4 `previews.db` — VERIFIED
+
+- The modern store keeps every legacy table. The only schema addition is
+  **`PyramidLevel.fileSize`** (the 13.2 schema in section 2.1 has no such column).
+- `StoreInfo.version` is `13.0` — so the store format version did **not** follow
+  the catalog to 15/16.
+- Counts: `Pyramid` 78, `PyramidLevel` 390, `ImageCacheEntry` 78,
+  `DeletedPyramid` 0. Every row maps to an existing file: no stale rows and no
+  orphan payloads in this cache.
+- `PyramidLevel.fileSize` is **not** the on-disk size: level 5 reports 311,930
+  against an actual 302,569 bytes. Do not use it as a byte count.
+
+### 5.5 Still reported, not measured
 
 | Claim | Source |
 |---|---|
 | "Changes have been made to how image previews are stored in version 13.3." | Adobe, catalog FAQ |
-| Previews are stored as **per-image folders of extensionless plain JPEG files**; the long edge is in the file name. | Ian Lyons, Adobe Community Expert, July 2024 |
-| Long-edge series observed: 90 / 180 / 360 / 720 / 1440 / 2880, or 105 … 3360, or 320 … 8192. | Ian Lyons, July 2024 |
-| The single-file pyramid is gone; there is no `.lrprev` per image any more. | Ian Lyons, July 2024 |
-| `previews.db` still exists after upgrade, but its rows can be stale. | Ian Lyons, September 2024; upgrade threads |
+| Long-edge series observed elsewhere: 90 / 180 / 360 / 720 / 1440 / 2880, or 105 … 3360, or 320 … 8192. | Ian Lyons, July 2024 |
+| `previews.db` rows can be stale after an upgrade. | Ian Lyons, September 2024; upgrade threads |
 | Extracted filenames now carry the long edge (`DSC06787_6000.jpg`) whereas 13.2 and earlier carried both dimensions (`_MG_0233-360x240.jpg`). | Adobe, "Extract preview for lost images" |
 | Extracted previews contain **no ICC profile**, so re-importing them assumes sRGB. This describes Adobe's own extractor; `lrsalvage` rebuilds a profile from the catalog's name (section 6.4). | Adobe, "Extract preview for lost images" |
 | "It seems that Lightroom totally changed how they store the preview-cache data, around Lr13.3." | regex.info changelog 20240611.65 |
+| Lightroom 14.0 limits preview-cache size and purges in the background; 14.1 can discard standard/1:1 previews. | Ian Lyons, 2024–2025 |
 
-Consequences we can act on today:
+**Not measured at all:** a *freshly built* Lightroom 16 cache (level sets, payload
+metadata, whether renders now carry EXIF/XMP/ICC); a cache with pruned levels or
+stale rows; a cache holding both `.lrprev` and modern payloads (this upgrade
+converted everything in place, so coexistence was not observed); any conversion
+from a catalog newer than `1200001`.
+
+### 5.6 Consequences
 
 - A stale `previews.db` row pointing at a payload that no longer exists is
   indistinguishable, from the DB alone, from a payload the user deleted. Both
   look like "missing payload". Say so in the report; do not claim corruption.
-- If a cache has per-image folders of extensionless JPEGs, `.lrprev` parsing
-  will legitimately find nothing. That is a layout detection result, not an empty
-  catalog, and must be reported as such.
-- Do not write a 13.3+ file-name convention into the extractor until a real
-  13.3+ fixture exists. TODO: obtain one, then replace this entire section with
-  verified byte-level notes.
+- `.lrprev` parsing legitimately finds nothing in a modern cache. That is a
+  layout detection result, not an empty catalog, and must be reported as such.
+- The payload path rule generalises: keep the two shard levels, change the leaf
+  and drop the extension. Discovery can be index-driven (derive the leaf from
+  `PyramidLevel`), with a glob on `<uuid>-<digest>_*` as the fallback when rows
+  are stale.
 
 Why the 1440 number matters: 1440 is the traditional default standard-preview
 long edge, and the measured 1,440 × 960 group (2,696 images) is the bulk of a real
