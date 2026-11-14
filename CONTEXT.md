@@ -40,6 +40,18 @@ The stored bytes of one level, exactly as they sit in the cache, before any
 metadata of ours is wrapped around them.
 _Avoid_: blob, JPEG data, preview bytes
 
+**Preview layout**:
+The way a cache arranges its payloads on disk: a legacy pyramid, one file per
+level, both at once, nothing at all, or something unrecognised. A property of the
+cache, not of an image.
+_Avoid_: format, cache version, schema
+
+**Catalog format version**:
+The number the catalog carries for its schema generation. It changes when Adobe
+rewrites the format and does not follow the marketing release, so it is reported
+and never interpreted.
+_Avoid_: catalog version, Lightroom version, app version
+
 **Cache entry**:
 The catalog's claim that a particular image has a pyramid in the cache, and which
 pyramid that is.
