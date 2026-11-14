@@ -32,11 +32,17 @@ destination. It decides nothing about which image deserves recovery — that is
 
 ## Decisions
 
-- **An existing destination is replaced only when it verifies as ours**: a
-  complete JPEG whose SOF dimensions match the planned item. Anything else is
-  left byte-identical and reported as `failed` unless `--force` explicitly asks
-  for the replacement. Resuming a run therefore costs nothing and destroys
-  nothing it cannot prove it wrote.
+- **An existing destination is replaced only when it proves it is ours**: its
+  EXIF carries our `Software` marker (`lrsalvage <version>`), the file is a
+  complete JPEG, and its `SOF` dimensions match the planned item. Anything else —
+  a foreign same-size JPEG, a file from another tool, output written before the
+  marker existed — is left byte-identical and reported as `failed` unless
+  `--force` explicitly asks for the replacement. Resume proves authorship, not
+  plausibility (`adr-0003-preserve-preview-bytes`).
+- **`--no-metadata` output carries no marker and so is never ours.** It promises
+  the payload's own bytes, which leaves nowhere to record identity; a rerun
+  therefore reports the destination as not a verified extraction and asks for
+  `--force`. The flag's help says so.
 - **Temp-then-rename, never delete-then-rename.** The write goes to a unique
   `.<stem>.<pid>-<n>.partial` beside the destination, is flushed with `sync_all`,
   and is renamed into place; `rename` replaces an existing file on both Windows
@@ -52,7 +58,10 @@ destination. It decides nothing about which image deserves recovery — that is
 - **Metadata is a segment-level edit.** The payload's compressed image data is
   copied verbatim; `--no-metadata` writes it with nothing added
   (`adr-0003-preserve-preview-bytes`). A profile name with no built-in profile
-  yields a note, not a substitute.
+  yields a note, not a substitute. A payload that already carries an ICC profile
+  keeps it, and one that carries an XMP packet keeps that too — the outcome says
+  which segment came from where, and the effective orientation is reported as
+  written, not as the catalog claimed.
 - **Capture time becomes the file modification time** unless `--no-timestamps` is
   given or the date is missing or unparseable — in which case the mtime is left
   as written rather than guessed.
