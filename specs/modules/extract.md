@@ -39,17 +39,28 @@ destination. It decides nothing about which image deserves recovery — that is
   named recoveries. A legacy container superseded by a pyramid's level files is
   not read at all (`adr-0006-degrade-without-guessing`). Every payload that *is*
   written goes through this one builder, whatever its layout.
+- **The item's payload is written, not re-chosen.** A `LevelFile` payload is the
+  level: its bytes are read whole and written verbatim. A `Container` payload is
+  written at the `level_N` chunk the plan certified — never "the chunk whose
+  dimensions happen to match", and never the largest as a fallback. Both are
+  re-certified from the bytes actually read (`SOI` … `FF D9`, `SOF` dimensions
+  equal to the item's), so a cache edited between `scan` and `extract` fails
+  loudly instead of writing something no plan ever approved.
 - **An existing destination is replaced only when it proves it is ours**: its
   EXIF carries our `Software` marker (`lrsalvage <version>`), the file is a
   complete JPEG, and its `SOF` dimensions match the planned item. Anything else —
   a foreign same-size JPEG, a file from another tool, output written before the
   marker existed — is left byte-identical and reported as `failed` unless
   `--force` explicitly asks for the replacement. Resume proves authorship, not
-  plausibility (`adr-0003-preserve-preview-bytes`).
-- **`--no-metadata` output carries no marker and so is never ours.** It promises
-  the payload's own bytes, which leaves nowhere to record identity; a rerun
-  therefore reports the destination as not a verified extraction and asks for
-  `--force`. The flag's help says so.
+  plausibility (`adr-0003-preserve-preview-bytes`). The marker is read by `exif`
+  from the destination's own `APP1`; the comparison is a prefix — any version of
+  `lrsalvage ` counts — so a tool upgrade keeps the files it wrote.
+- **`--no-metadata` output carries no marker, so a metadata-free run never
+  verifies anything.** Verification is not attempted at all when the run writes
+  no metadata: its own earlier output has nowhere to record identity, and a
+  metadata-bearing file must not be silently kept by a run that promised the
+  payload's bytes. Either way the destination is reported as not a verified
+  extraction and asks for `--force`. The flag's help says so.
 - **Temp-then-rename, never delete-then-rename.** The write goes to a unique
   `.<stem>.<pid>-<n>.partial` beside the destination, is flushed with `sync_all`,
   and is renamed into place; `rename` replaces an existing file on both Windows
@@ -67,8 +78,10 @@ destination. It decides nothing about which image deserves recovery — that is
   (`adr-0003-preserve-preview-bytes`). A profile name with no built-in profile
   yields a note, not a substitute. A payload that already carries an ICC profile
   keeps it, and one that carries an XMP packet keeps that too — the outcome says
-  which segment came from where, and the effective orientation is reported as
-  written, not as the catalog claimed.
+  which segment came from where. The orientation written is the item's
+  `effective_orientation` — the payload's own value when its EXIF declares one,
+  else the catalog's — so the file states what describes its own pixels and the
+  report prints the value actually written.
 - **Capture time becomes the file modification time** unless `--no-timestamps` is
   given or the date is missing or unparseable — in which case the mtime is left
   as written rather than guessed.

@@ -47,8 +47,11 @@ and has no production consumer.
 
 ## Limits
 
-The `.lrprev` pyramid is the only storage read. Lightroom 13.3 and later write
-per-image folders of extensionless JPEGs instead; that format is unimplemented,
-so such a cache reports `missing-payload` for every image and the run exits 3.
-That is a refusal to guess, not a partial success: a wrong mapping here would be
-worse than no mapping (`adr-0002-map-via-previews-db`).
+A `.lrprev` is one of two payload kinds. Lightroom 13.3 and later write per-image
+folders of extensionless level files instead, and those never pass through this
+module: a level file is one JPEG, certified and written as a file by `plan` and
+`extract` (`adr-0005-discover-payloads-by-index`). Parse a container only for a
+`Payload::Container` item. Until the modern reader lands, such a cache reports
+`missing-payload` for every image and the run exits 3 — a refusal to guess, not a
+partial success: a wrong mapping here would be worse than no mapping
+(`adr-0002-map-via-previews-db`).

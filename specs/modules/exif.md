@@ -6,6 +6,7 @@ status: draft
 parent: architecture
 depends-on:
   - model
+  - jpeg
 references:
   - adr-0003-preserve-preview-bytes
   - format-notes
@@ -25,9 +26,12 @@ the tool and its version.
 
 Bytes in, bytes out. No file I/O, no pixel work, no catalog access — the facts
 arrive as `MetadataInput`, built from `XmpMetadata` and the orientation `plan`
-put on the item. It reads one fact back out of the payload: the `Orientation` tag
-the payload's own EXIF declares, because that value describes the payload's
-pixels and the catalog's describes the original.
+put on the item. It also reads back the three facts a payload states about
+itself: whether it carries an EXIF, XMP or ICC segment (`PayloadMetadata`), the
+`Orientation` tag its own EXIF declares, because that value describes the
+payload's pixels and the catalog's describes the original, and the `Software`
+marker that proves an existing output is ours. All three come from the segment
+list `jpeg::certify` already produced — no second walk.
 
 ## Decisions
 
@@ -58,7 +62,13 @@ pixels and the catalog's describes the original.
 - **Every output names itself.** `Software` (IFD0 `0x0131`) is set to
   `lrsalvage <version>` whenever metadata is written, even when the catalog holds
   nothing else, so the segment exists for its marker alone. `extract` verifies
-  that marker on resume; without it a file is not ours.
+  that marker on resume; without it a file is not ours. Reading it back is this
+  module's `software`, and the prefix — not the whole string — is what `extract`
+  compares, so a tool upgrade keeps the files it wrote.
+- **The inventory is naming, not judging.** `inventory` turns the segment list
+  into `exif, xmp, icc` in that fixed order, empty when the payload is bare. It
+  never becomes a status, and it is the evidence behind a report saying a file's
+  profile came from the payload rather than from the catalog's name.
 - **A payload's orientation is honoured, never applied.** If the payload's EXIF
   declares an `Orientation`, the output carries that value; the catalog's
   orientation applies only when the payload states none. Pixels are still never
