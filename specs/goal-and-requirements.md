@@ -39,8 +39,12 @@ without an Adobe toolchain.
 - **Survey** (`scan`) — read-only. Places every catalog image in exactly one
   status, counts them by size tier, and reports totals; `--verbose` adds one line
   per plan item, `--json` emits one machine-readable object, and `--contact-sheet`
-  writes the one artifact `scan` is allowed to write: a self-contained HTML page
-  of the images `extract` would produce.
+  writes a self-contained HTML page of the images `extract` would produce.
+  `--report` writes the one artifact meant to leave the machine: a path-free
+  verification report of the detected layout, the version strings, the counts and
+  the filename shapes, so any user can contribute a result without publishing a
+  single path of their own (`adr-0007-publish-a-verification-report`). Both are
+  artifacts the caller named, and `scan` writes nothing else.
 - **Recover** (`extract`) — writes the largest level of each pyramid as a JPEG
   under a destination that mirrors the catalog's own folder structure, plus
   `report.csv`, `manifest.json` and `extract.csv`. Same options as `scan`, plus

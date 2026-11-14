@@ -9,9 +9,11 @@ depends-on:
   - lrprev
   - jpeg
   - model
+  - previews-db
 references:
   - adr-0005-discover-payloads-by-index
   - adr-0006-degrade-without-guessing
+  - adr-0007-publish-a-verification-report
 ---
 
 # report
@@ -19,14 +21,19 @@ references:
 ## Responsibility
 
 Say what a plan means, for a human and for a script: the one-block summary, one
-line per plan item, `report.csv`, `manifest.json`, and a self-contained HTML
-contact sheet.
+line per plan item, `report.csv`, `manifest.json`, a self-contained HTML contact
+sheet, and the path-free verification report `scan --report` writes.
 
 ## Boundary
 
 Reads a plan and, for the contact sheet, the payload files it needs. Writes to the
 path its caller named and invents no path of its own; the numbered-name rule for
 report files belongs to `cli`. It decides nothing and adds no metadata.
+
+The verification report is the one artifact here that leaves the machine, so it is
+built from a struct of its own — the curated fields below — rather than from a
+filtered plan or a filtered `--json` object. Nothing in this module ever hands that
+struct a path.
 
 ## Decisions
 
@@ -52,8 +59,9 @@ report files belongs to `cli`. It decides nothing and adds no metadata.
   a surviving pyramid says which level is stale and which level was used instead.
   Neither claims a cause.
 - **`superseded` is one summary line, only when it is non-zero.** `superseded  3
-  legacy .lrprev ignored; level files used`, mirrored as `superseded` in `--json`
-  and `manifest.json` and never in `report.csv`, which stays per-image. It is a
+  legacy .lrprev ignored; level files used`, mirrored as `superseded` in
+  `--json`, `manifest.json` and the verification report's `stats`, and never in
+  `report.csv`, which stays per-image. It is a
   property of the cache, not of an item: a superseded container always coexists
   with the level files its pyramid was written from, so the number reports what
   was set aside, never a loss.
@@ -61,10 +69,10 @@ report files belongs to `cli`. It decides nothing and adds no metadata.
   `superseded`.** `deleted` counts the `missing-payload` items whose pyramid
   carries a `DeletedPyramid` row — Lightroom's own record, never a cause — and
   `unrecognised` counts the payload-like files no shape matched in an `unknown`
-  layout. Each is a summary line only when non-zero, a field in `--json` and
-  `manifest.json`, and never a column in `report.csv`: neither belongs to an
-  image, and neither moves an exit code (`adr-0004-detect-layout-not-version`,
-  `adr-0006-degrade-without-guessing`).
+  layout. Each is a summary line only when non-zero, a field in `--json`,
+  `manifest.json` and the verification report's `stats`, and never a column in
+  `report.csv`: neither belongs to an image, and neither moves an exit code
+  (`adr-0004-detect-layout-not-version`, `adr-0006-degrade-without-guessing`).
 - **The summary counts images and names the floor actually applied.** The default
   summary assumes 640, so a caller that changed the floor calls
   `summary_with_floor`; a summary that reports a `below_floor` count for a floor
@@ -86,6 +94,47 @@ report files belongs to `cli`. It decides nothing and adds no metadata.
   the run; the sheet is a convenience over a plan that has already been made.
 - **The manifest carries a schema version** so a consumer can tell which facts a
   file is expected to contain.
+- **The verification report is a curated field set, frozen here.**
+  `scan --report <file>` writes one JSON object: `schema`
+  `lrsalvage.verification`, the tool `version` that wrote it, `generated_unix`;
+  then `layout`, `db_version` and `crs_version` (ADR 0004's five words and two
+  verbatim strings), `options` (`min_long_edge`, `all_levels`,
+  `include_present`), `stats`, and `shapes`. `stats` carries exactly `images`,
+  `recovered`, `suspect`, `missing_payload`, `no_cache_entry`, `unmapped`,
+  `failed`, `original_present`, `below_floor`, `bytes`, `levels`,
+  `selected_items`, `selected_images`, `tiers`, `superseded`, `deleted` and
+  `unrecognised`. It is not `--json` with fields removed: there is no `catalog`,
+  no `previews`, no `items` and no note, so a reader cannot mistake it for a
+  summary of one machine. The list is frozen here, which is what makes two
+  strangers' reports comparable and what turns a new stat into a decision rather
+  than a field that appears in a published file.
+- **Nothing in the report identifies a cache, a folder or a payload.** Its only
+  names are grammar templates with `<uuid…>`, `<digest>` and `<longedge>`
+  placeholders. Two things enforce that instead of intending it: the writer's
+  struct has no path, leaf, uuid or digest field to fill, and the fixture matrix
+  asserts the written bytes contain none of a vault's absolute paths, uuids,
+  digests, shard folder names or leaf names (`adr-0007-publish-a-verification-report`).
+- **`shapes` counts the class each payload took, and carries that class's
+  grammar.** `level_file` holds its `count` and `suffix_matches_sof` — how many of
+  those leaves name the long edge the `SOF` measured, the one claim derived from
+  the index that can rot — and `container` holds its `count`. Each class also
+  carries the template it stands for, printed verbatim from the constants
+  `previews_db` owns: a mixed cache therefore publishes both grammars, which one
+  cache-wide string could only get wrong. A class with no file reports `count: 0`
+  and no grammar, because a template for a shape the cache never showed is an
+  example nobody asked for. `unrecognised` has no class here on purpose: it counts
+  files that took no shape, and it already has a `stats` field
+  (`adr-0005-discover-payloads-by-index`).
+- **`--json` stays the stdout surface; the report is the only path-free one.** A
+  redaction switch would leave two ways to produce one object and a flag whose
+  whole job is to be remembered, so there is none: `--json` gains only what
+  ADR 0004 and ADR 0006 already promise it, keeps its paths, and the two surfaces
+  never mix — `--verbose` lines already go to stderr under `--json`, and the
+  report goes to a path the caller named.
+- **A run that recovered nothing still writes the report it was asked for.** The
+  file describes a plan, and the plans most worth handing over are the degraded
+  ones: an `unknown` layout, a missing index, an empty cache. When the write
+  happens is `cli`'s decision; what it says is this module's.
 - **`payload_metadata` is one token list, in a fixed order.** `exif,xmp,icc` for
   the segments the payload itself carried, empty when it is bare: a field on the
   item, an optional manifest member, and a trailing CSV column. `color_profile`

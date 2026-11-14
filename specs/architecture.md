@@ -32,6 +32,7 @@ before it:
 snapshot ─┬─► catalog ──────┐
           └─► previews.db ──┴─► plan ─┬─► extract ─► output tree
                                       └─► report  ─► summary / CSV / JSON / sheet
+                                                  ─► verification report
 ```
 
 `plan` is the hinge. It is cheap, printable, and write-free — which is why `scan`
@@ -55,7 +56,7 @@ listed for it:
 | `plan` | `catalog`, `previews_db`, `lrprev`, `jpeg`, `exif`, `model`, `error` |
 | `extract` | `plan`, `exif`, `jpeg`, `lrprev`, `model`, `report`, `error` |
 | `exif` | `model`, `jpeg`, `error` |
-| `report` | `plan`, `lrprev`, `jpeg`, `model`, `error` |
+| `report` | `plan`, `lrprev`, `jpeg`, `model`, `previews-db`, `error` |
 | `masks` | `error` |
 | `error` | — |
 | `cli` | any of the above, as a consumer |
@@ -68,15 +69,19 @@ segment walk that both a payload's certification and its metadata reading use, a
 resume marker — which is why both edges appear. `previews_db` borrows `snapshot`'s
 read-only opener for the cache's own database, which is why it appears in the
 table. `masks` is gated behind the `masks` cargo feature (`png` is optional);
-everything else is always compiled.
+everything else is always compiled. `report` reads its two name templates from
+`previews_db` rather than restating a naming rule in a presentation module.
 
 ## Invariants the code enforces
 
 - **Ownership of side effects.** `extract` is the only module that writes
   user-visible output. `report` writes only to a path its caller named, and
-  `scan` produces exactly one artifact at most: an explicitly requested contact
-  sheet. `snapshot` is the only module that copies a catalog file, and it copies
-  into its own temporary directory.
+  `scan` writes only the artifacts the caller named — an explicitly requested
+  contact sheet and an explicitly requested verification report — each validated
+  and claimed, and never one it invented. The verification report is path-free by
+  construction: no module hands it a path, and no field it carries could hold one
+  (`adr-0007-publish-a-verification-report`). `snapshot` is the only module that
+  copies a catalog file, and it copies into its own temporary directory.
 - **Format knowledge stays in the module named after the format.** Nothing else
   parses bytes: `lrprev` owns the `AgHg` container, `previews_db` owns the index
   database, `catalog` owns the `.lrcat` schema, `jpeg` owns marker framing,
@@ -98,10 +103,11 @@ everything else is always compiled.
 
 ## Where the reasoning lives
 
-The six load-bearing decisions are recorded as adopted ADRs and are not
+The seven load-bearing decisions are recorded as adopted ADRs and are not
 restated here: `adr-0001-parse-dont-carve`, `adr-0002-map-via-previews-db`,
 `adr-0003-preserve-preview-bytes`, `adr-0004-detect-layout-not-version`,
-`adr-0005-discover-payloads-by-index`, `adr-0006-degrade-without-guessing`.
+`adr-0005-discover-payloads-by-index`, `adr-0006-degrade-without-guessing`,
+`adr-0007-publish-a-verification-report`.
 Byte-level facts about the formats, with an evidence label per claim, live in
 `format-notes`; the product vocabulary lives in `glossary`. A module spec links
 to those and carries only what is specific to its own boundary.
