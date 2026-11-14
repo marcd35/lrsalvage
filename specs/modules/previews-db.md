@@ -34,6 +34,14 @@ rows are live, which are stale, and what to do about either is `plan`'s decision
 - **The path rule is derived, never globbed**: `<uuid[0]>/<uuid[0..4]>/<UUID>-<digest>.lrprev`
   under the cache root. The exact case of the uuid and digest matters on a
   case-sensitive filesystem, so both are used verbatim.
+- **A level file's path is derived the same way, from its row.**
+  `<uuid[0]>/<uuid[0..4]>/<UUID>-<digest>_<round(longDimension)>` — the rounded
+  integer, because the columns come back `REAL` (`101.0`). Enumerating a
+  pyramid's levels is what `candidates` is for, and it hands each candidate the
+  row that derived it: `Some(&PyramidLevel)` for a row-derived path, `None` for a
+  file only the bounded glob found. The row travels with the file because it is
+  the claim `plan` compares `suspect` against; that is the one place it can be
+  attached without a second matcher (`adr-0005-discover-payloads-by-index` ¶2–3).
 - **`imageId` is not assumed unique.** No table in the schema declares a primary
   key, so `all_entries` keeps every row. `entries` is the last row wins map used
   for lookup; the full list exists so that a payload belonging to a duplicate row
@@ -58,5 +66,8 @@ rows are live, which are stale, and what to do about either is `plan`'s decision
 - **"Derived, never globbed" is the v1 rule, not the final one.**
   `adr-0005-discover-payloads-by-index` keeps the identity here (`(uuid, digest)`
   is this module's key) but widens the *level set* by a glob bounded to a row's
-  own identity and folder, and moves per-file certification into `jpeg`. This
-  spec describes the running code and changes with the reader.
+  own identity and folder, and moves per-file certification into `jpeg`. The
+  enumeration is `candidates(cache_root, uuid, digest)` returning each candidate
+  file with its row; `payload_path` keeps resolving one row's container. This
+  spec describes the decided shape next to the running v1 code, and the code
+  catches up with the reader.

@@ -46,6 +46,11 @@ edge of the level it holds, as the modern layout stores them — as opposed to a
 level inside a legacy container.
 _Avoid_: loose JPEG, preview file, payload file
 
+**Container**:
+One file holding a whole pyramid: a header describing the levels and every level
+beside it, as the legacy layout stores them.
+_Avoid_: archive, bundle, lrprev file
+
 **Preview layout**:
 The way a cache arranges its payloads on disk: a legacy pyramid, one file per
 level, both at once, nothing at all, or something unrecognised. A property of the

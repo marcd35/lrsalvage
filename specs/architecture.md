@@ -46,9 +46,9 @@ listed for it:
 | `jpeg` | `error` |
 | `header` | `error` |
 | `model` | — (no internal dependencies, no I/O) |
-| `plan` | `catalog`, `previews_db`, `lrprev`, `jpeg`, `model`, `error` |
+| `plan` | `catalog`, `previews_db`, `lrprev`, `jpeg`, `exif`, `model`, `error` |
 | `extract` | `plan`, `exif`, `jpeg`, `lrprev`, `model`, `report`, `error` |
-| `exif` | `model`, `error` |
+| `exif` | `model`, `jpeg`, `error` |
 | `report` | `plan`, `lrprev`, `jpeg`, `model`, `error` |
 | `masks` | `error` |
 | `error` | — |
@@ -56,7 +56,10 @@ listed for it:
 
 Two edges are easy to miss and are real: `lrprev` calls `jpeg` to measure each
 declared payload, and `extract` calls `report::escape_csv` so the run CSV is
-escaped by the same rules as `report.csv`. `previews_db` borrows `snapshot`'s
+escaped by the same rules as `report.csv`. `exif` calls `jpeg` for the one
+segment walk that both a payload's certification and its metadata reading use, and
+`plan` calls `exif` for the inventory, the payload's declared orientation and the
+resume marker — which is why both edges appear. `previews_db` borrows `snapshot`'s
 read-only opener for the cache's own database, which is why it appears in the
 table. `masks` is gated behind the `masks` cargo feature (`png` is optional);
 everything else is always compiled.

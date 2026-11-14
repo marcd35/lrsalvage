@@ -40,7 +40,12 @@ report files belongs to `cli`. It decides nothing and adds no metadata.
   `payload` member for every item, `report.csv` carries `payload` as a trailing
   column after `note`, and the one-line-per-item view shows it where an image's
   relative output path would otherwise print `-`. A script triaging orphans must
-  not have to parse an English sentence out of a note.
+  not have to parse an English sentence out of a note. The value is
+  `Payload::path()` — a level file, or the container a payload lives in — so the
+  report never needs to know which kind it is. `payload_metadata` follows
+  `payload` as the last column, so the two trailing facts from
+  `adr-0006-degrade-without-guessing` and `adr-0003-preserve-preview-bytes` never
+  move an existing column.
 - **`missing-payload` names the missing thing, not a suspect.** Its note says which
   pyramid was declared and that no file of it is on disk, and quotes a
   `DeletedPyramid` timestamp when Lightroom recorded one. A stale level row inside
@@ -64,7 +69,11 @@ report files belongs to `cli`. It decides nothing and adds no metadata.
 - **The contact sheet is recognition, not resolution.** Each image is shown with
   the *smallest* level in its pyramid, and the page is one self-contained HTML
   file with data URIs — a sheet that needs a folder of sidecar files would be a
-  worse bug than a small picture.
+  worse bug than a small picture. A container payload is walked for its smallest
+  level, as today; a level-file payload is inlined from the item's
+  `smallest_level`, the smallest file the plan's own level enumeration found,
+  after a completeness check — inlining the item's payload instead would put the
+  largest level in every figure and multiply the page by two orders of magnitude.
 - **A missing or unparseable payload makes the sheet skip the image**, not fail
   the run; the sheet is a convenience over a plan that has already been made.
 - **The manifest carries a schema version** so a consumer can tell which facts a
