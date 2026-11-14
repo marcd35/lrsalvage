@@ -751,6 +751,33 @@ All 390 payloads of the upgraded cache were read (every file, not a sample) on
   **unverified**; until it is measured, a payload-shaped motion preview will be
   counted as an orphan.
 
+### 5.8 Payloads that carry their own metadata — UNVERIFIED
+
+- **Verified, 2026-11-15:** no cache on this machine can show what a *render*
+  carries. The only `.lrdata` holding payload files is the converted 2023 cache
+  (390 files, all catalogued in §5.7); every other `* Previews.lrdata` here holds
+  no payloads at all — only `previews.db`, `root-pixels.db`, `PackageIcon.ico`
+  and `desktop.ini`. A fresh 13.3+ render exists nowhere on this machine, so
+  nothing local can measure it.
+- **Unverified:** whether a fresh render embeds an `Exif` APP1, an XMP packet or
+  an `ICC_PROFILE`; whether its pixels are stored rotated with the rotation in
+  EXIF; and the level set it produces (§5.5). All of it stays unmeasured until a
+  catalog is rendered from scratch where its originals are present.
+- **Verified, and why the case needs a rule at all:** a payload's own metadata is
+  only observable by walking its segments. No table records it — `Pyramid` keeps
+  a profile *name* and no bytes (§6.4) — so an inventory read from the file is the
+  only evidence available, which is the same walk ADR 0005 already requires for
+  certification.
+- **Decided, not measured:** the precedence order for a payload that does carry
+  metadata (`adr-0003-preserve-preview-bytes`). It rests on the two labels above
+  rather than on a file: a real embedded profile outranks a reconstruction built
+  from a name, and the catalog outranks a render-time snapshot of the catalog's
+  own facts. Since no `Exif` APP1 appeared in the 390 legacy levels inspected
+  (§1.4), the case is new to the modern layout rather than a regression.
+- **TODO:** a fixture payload that already carries EXIF, XMP and ICC (issue #15)
+  is the only executable evidence. It pins the order; it cannot show what Adobe
+  writes.
+
 ---
 
 ## 6. Useful queries — VERIFIED
