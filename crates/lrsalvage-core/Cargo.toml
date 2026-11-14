@@ -26,6 +26,7 @@ default = ["masks"]
 masks = ["dep:png"]
 
 [dev-dependencies]
+lrsalvage-fixtures = { path = "../lrsalvage-fixtures", version = "0.1.0" }
 serde_json.workspace = true
 kamadak-exif = "0.6"
 proptest.workspace = true
