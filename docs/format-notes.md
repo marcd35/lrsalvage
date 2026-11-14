@@ -608,8 +608,11 @@ picture upright without touching a pixel (ADR 0003).
 
 > **Implementation status:** not implemented. The tool currently reads only the
 > pre-13.3 `.lrprev` layout, so on the measured modern cache it reports 78 of 78
-> images as `missing-payload` and exits 3 with nothing recovered. Tracked in
-> [issue #2](https://github.com/marcd35/lrsalvage/issues/2).
+> images as `missing-payload` and exits 3 with nothing recovered. A cache with no
+> `previews.db` fares worse: it warns that the cache "holds no previews", then
+> dies with a SQLite error and exit 1 — neither the degraded mode nor the
+> indexless discovery rule is built yet. Both re-measured 2026-11-15 with a local
+> build. Tracked in [issue #2](https://github.com/marcd35/lrsalvage/issues/2).
 
 Lightroom Classic 13.3 changed preview storage. Sections 5.1–5.4 are **verified**
 on an upgraded catalog; section 5.5 lists what remains **reported**. The tool
@@ -698,9 +701,15 @@ from a catalog newer than `1200001`.
 
 ### 5.6 Consequences
 
-- A stale `previews.db` row pointing at a payload that no longer exists is
-  indistinguishable, from the DB alone, from a payload the user deleted. Both
-  look like "missing payload". Say so in the report; do not claim corruption.
+- A stale `previews.db` **level** row whose file is gone is a **pruned level**,
+  not a missing payload: the item recovers the largest level that exists
+  (ADR 0005 §Decision 5), and the note says the row is stale. The two are only
+  confusable once a whole pyramid has no file at all. Then a pruned pyramid and
+  one whose files the user deleted are indistinguishable from the index: the row
+  is the only claim and the file is absent either way. A `DeletedPyramid`
+  tombstone records that Lightroom deleted the *row*, not the payload (§2 marks
+  the payload question unverified), so the report may quote it and must not infer
+  a cause from it. Say what was seen; do not claim corruption (ADR 0006).
 - `.lrprev` parsing legitimately finds nothing in a modern cache. That is a
   layout detection result, not an empty catalog, and must be reported as such.
 - The payload path rule generalises: keep the two shard levels, change the leaf

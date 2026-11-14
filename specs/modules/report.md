@@ -9,6 +9,9 @@ depends-on:
   - lrprev
   - jpeg
   - model
+references:
+  - adr-0005-discover-payloads-by-index
+  - adr-0006-degrade-without-guessing
 ---
 
 # report
@@ -27,6 +30,28 @@ report files belongs to `cli`. It decides nothing and adds no metadata.
 
 ## Decisions
 
+- **A degraded run says what it saw, in one hint.** Every line that talks about a
+  payload the run could not name is a fact about this run — counts filled from the
+  plan, never hard-coded — and no line calls an unclaimed payload recovered,
+  recoverable or salvage. The hint names the missing or unreadable file, says that
+  unmapped payloads are never written, and points at the surface that lists their
+  paths (`adr-0006-degrade-without-guessing`).
+- **An unclaimed payload's path is a field, not prose.** `manifest.json` carries a
+  `payload` member for every item, `report.csv` carries `payload` as a trailing
+  column after `note`, and the one-line-per-item view shows it where an image's
+  relative output path would otherwise print `-`. A script triaging orphans must
+  not have to parse an English sentence out of a note.
+- **`missing-payload` names the missing thing, not a suspect.** Its note says which
+  pyramid was declared and that no file of it is on disk, and quotes a
+  `DeletedPyramid` timestamp when Lightroom recorded one. A stale level row inside
+  a surviving pyramid says which level is stale and which level was used instead.
+  Neither claims a cause.
+- **`superseded` is one summary line, only when it is non-zero.** `superseded  3
+  legacy .lrprev ignored; level files used`, mirrored as `superseded` in `--json`
+  and `manifest.json` and never in `report.csv`, which stays per-image. It is a
+  property of the cache, not of an item: a superseded container always coexists
+  with the level files its pyramid was written from, so the number reports what
+  was set aside, never a loss.
 - **The summary counts images and names the floor actually applied.** The default
   summary assumes 640, so a caller that changed the floor calls
   `summary_with_floor`; a summary that reports a `below_floor` count for a floor

@@ -261,7 +261,7 @@ live catalog image claims is listed as `unmapped`.
 | **no-cache-entry** | The catalog has the image, but `previews.db` has no row for it. Nothing was ever rendered, or the row is gone. |
 | **missing-payload** | `previews.db` has a row, but the payload file it names is not on disk. |
 | **failed** | A payload exists but is truncated, unreadable, not a `.lrprev`, contains no readable JPEG level, or the level does not end at an end-of-image marker. |
-| **unmapped** | A payload exists in the cache but no live catalog image claims it. Listed with its payload path; never renamed into your photo tree. |
+| **unmapped** | A payload exists in the cache but no live catalog image claims it. It is listed with its payload path in `report.csv` and `manifest.json`, and never written: a payload with no catalog row has no file name to give it. |
 
 `missing-payload` is worth reading twice. It means Lightroom believed a preview
 existed and it is not on disk — either the cache was partially deleted, or you

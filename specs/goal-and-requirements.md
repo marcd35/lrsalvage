@@ -68,8 +68,11 @@ without an Adobe toolchain.
    written.
 5. **A miss is stated, not guessed.** A wrong image is worse than a missing one,
    so a damaged payload fails loudly with a reason and a partial recovery is
-   reported as partial, never as success. The same rule governs a resume: a file
-   we cannot prove we wrote is not ours, and is never kept in place of a
+   reported as partial, never as success. A cache whose index is missing or
+   unreadable is reported the same way — payloads listed as unmapped, nothing
+   written for them — rather than refused, and no mapping is invented to fill the
+   gap. See `adr-0006-degrade-without-guessing`. The same rule governs a resume: a
+   file we cannot prove we wrote is not ours, and is never kept in place of a
    recovery.
 6. **Only what the catalog recorded.** No invented timestamps, no substituted
    colour profile, no merged XMP packet — an absent fact stays absent.
