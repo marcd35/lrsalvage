@@ -1,3 +1,11 @@
+---
+id: adr-0002-map-via-previews-db
+type: architecture-design
+title: "ADR 0002: Map via previews.db, never re-derive hashes"
+status: active
+parent: architecture
+---
+
 # Map via `previews.db`, never re-derive hashes
 
 **Status:** accepted · **Date:** 2026-11-12

@@ -1,3 +1,14 @@
+---
+id: glossary
+type: architecture-design
+title: "lrsalvage domain glossary"
+status: active
+parent: lrsalvage
+tags:
+  - domain
+  - glossary
+---
+
 # lrsalvage
 
 The vocabulary of Lightroom preview salvage: what survives when the photographs
