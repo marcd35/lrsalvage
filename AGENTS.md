@@ -81,5 +81,8 @@ real catalog bytes are never committed to the repo.
 
 - `docs/format-notes.md` — byte layouts, evidence labels, the `.lrcat-data` trap.
 - `docs/adr/` — decisions and their consequences; read before changing a seam.
+- `specs/` — the spec graph: the product goal, the architecture and its
+  invariants, and one spec per module. It is the ground truth for what a module
+  owns and where its boundary runs.
 - `CONTEXT.md` — glossary. Keep it free of implementation detail.
 - `README.md` — the user-facing truth about what a preview is worth.

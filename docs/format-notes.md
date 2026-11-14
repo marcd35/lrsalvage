@@ -1,3 +1,14 @@
+---
+id: format-notes
+type: architecture-design
+title: "Lightroom preview formats: engineering notes"
+status: active
+parent: architecture
+tags:
+  - format
+  - reference
+---
+
 # Lightroom preview formats: engineering notes
 
 > Findings below were established by inspecting real catalogs in November 2026.

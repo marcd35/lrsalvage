@@ -1,3 +1,11 @@
+---
+id: adr-0001-parse-dont-carve
+type: architecture-design
+title: "ADR 0001: Parse, don't carve"
+status: active
+parent: architecture
+---
+
 # Parse, don't carve
 
 **Status:** accepted · **Date:** 2026-11-12

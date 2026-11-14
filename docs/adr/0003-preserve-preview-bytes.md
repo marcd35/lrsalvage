@@ -1,3 +1,11 @@
+---
+id: adr-0003-preserve-preview-bytes
+type: architecture-design
+title: "ADR 0003: Preserve preview bytes"
+status: active
+parent: architecture
+---
+
 # Preserve preview bytes
 
 **Status:** accepted · **Date:** 2026-11-12
