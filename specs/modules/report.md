@@ -57,6 +57,14 @@ report files belongs to `cli`. It decides nothing and adds no metadata.
   property of the cache, not of an item: a superseded container always coexists
   with the level files its pyramid was written from, so the number reports what
   was set aside, never a loss.
+- **`deleted` and `unrecognised` are cache counts on the same surface as
+  `superseded`.** `deleted` counts the `missing-payload` items whose pyramid
+  carries a `DeletedPyramid` row — Lightroom's own record, never a cause — and
+  `unrecognised` counts the payload-like files no shape matched in an `unknown`
+  layout. Each is a summary line only when non-zero, a field in `--json` and
+  `manifest.json`, and never a column in `report.csv`: neither belongs to an
+  image, and neither moves an exit code (`adr-0004-detect-layout-not-version`,
+  `adr-0006-degrade-without-guessing`).
 - **The summary counts images and names the floor actually applied.** The default
   summary assumes 640, so a caller that changed the floor calls
   `summary_with_floor`; a summary that reports a `below_floor` count for a floor

@@ -58,7 +58,9 @@ nothing — not one byte, not one directory. Everything that ends up on disk is
   a level file the user deleted are indistinguishable — the row is the only claim
   and the file is absent either way — so the item reports what was seen. A
   `DeletedPyramid` tombstone adds one quotable fact (Lightroom recorded deleting
-  *this pyramid's row*), never an inference about who removed the file
+  *this pyramid's row*), never an inference about who removed the file. It is also
+  the `deleted` stat: one per `missing-payload` item whose pyramid carries a
+  tombstone, reported beside `missing_payload`, never a status
   (`adr-0006-degrade-without-guessing`).
 - **An unclaimed payload is listed, never selected.** It has no catalog image, so
   there is no original path, no capture time, no rating, and no output path to

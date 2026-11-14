@@ -80,6 +80,21 @@ without an Adobe toolchain.
    is one adapter over it, so a GUI or a script can drive the same verified
    pipeline. See `architecture`.
 
+## Verification
+
+Every promise above is proved by a synthetic **vault**: one temporary catalog plus
+one preview cache, built at test time by the one shared builder in
+`crates/lrsalvage-fixtures`, never a committed binary. The matrix in `fixtures`
+names, row by row, the byte shape, the status, the statistic, the exit code and
+the regression each row pins, so a status or a statistic arrives with its row.
+
+Real catalogs are evidence, not fixtures: they are reached only from `#[ignore]`d
+tests through `LRSALVAGE_TEST_CATALOG` and `LRSALVAGE_TEST_PREVIEWS`, and no real
+catalog byte is ever committed. A byte fact learned from a real file is recorded
+in `format-notes` with its evidence label before a fixture builds on it; a shape
+nobody has observed is labelled `synthetic` in the matrix and never presented as
+Adobe's.
+
 ## Non-goals
 
 - **Restoring originals.** A preview is a derivative; the RAW is not inside it.
