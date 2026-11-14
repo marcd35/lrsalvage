@@ -44,3 +44,9 @@ report files belongs to `cli`. It decides nothing and adds no metadata.
   the run; the sheet is a convenience over a plan that has already been made.
 - **The manifest carries a schema version** so a consumer can tell which facts a
   file is expected to contain.
+- **`payload_metadata` is one token list, in a fixed order.** `exif,xmp,icc` for
+  the segments the payload itself carried, empty when it is bare: a field on the
+  item, an optional manifest member, and a trailing CSV column. `color_profile`
+  stays the catalog's claim, so a reconstruction is never implied where the file
+  carries the payload's own profile; the prose reasons live in the item's note,
+  which is for humans and is never the field a fixture asserts against.

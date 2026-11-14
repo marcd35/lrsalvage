@@ -53,7 +53,11 @@ without an Adobe toolchain.
 
 1. **The payload is the preview.** Compressed image data is copied verbatim;
    only metadata segments are added or replaced. No re-encoding, no pixel
-   rotation — see `adr-0003-preserve-preview-bytes`.
+   rotation — see `adr-0003-preserve-preview-bytes`. Where a segment is about to
+   be written, the payload's own wins when it is the stronger evidence: a real
+   ICC profile or a payload-declared orientation outranks anything rebuilt from
+   the catalog, while our EXIF supersedes a render-time snapshot of the same
+   catalog facts, and the trade is reported rather than silent.
 2. **Parse, don't carve.** Container lengths are authoritative; a marker scan can
    return an embedded thumbnail — see `adr-0001-parse-dont-carve`.
 3. **The catalog is the map.** Adobe's `(uuid, digest)` rows are the only
@@ -64,7 +68,9 @@ without an Adobe toolchain.
    written.
 5. **A miss is stated, not guessed.** A wrong image is worse than a missing one,
    so a damaged payload fails loudly with a reason and a partial recovery is
-   reported as partial, never as success.
+   reported as partial, never as success. The same rule governs a resume: a file
+   we cannot prove we wrote is not ours, and is never kept in place of a
+   recovery.
 6. **Only what the catalog recorded.** No invented timestamps, no substituted
    colour profile, no merged XMP packet — an absent fact stays absent.
 7. **Library first.** The core crate's public API is the supported seam; the CLI

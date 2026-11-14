@@ -61,6 +61,17 @@ nothing — not one byte, not one directory. Everything that ends up on disk is
 - **Name collisions are resolved, not overwritten.** Two images resolving to one
   output path get ` (2)`, ` (3)` … with case folding on Windows, where `IMG.jpg`
   and `img.jpg` are one file.
+- **The payload's own segment inventory travels with the item.** `exif`, `xmp`,
+  `icc` — which of those the chosen payload already carries, empty when it is
+  bare — recorded by the certification walk discovery already performs, so the
+  field costs no second read. It is what lets a report say a file's profile came
+  from the payload rather than from the catalog's name, and it never becomes a
+  status: `suspect` stays reserved for bytes that disagree with the row's
+  dimensions.
+- **The payload's own orientation outranks the catalog's.** The item carries the
+  catalog's orientation and the report shows the value actually written, which is
+  the payload's when its EXIF declares one. Pixels are never rotated, so the tag
+  cannot be applied twice.
 - **The output path is re-validated here.** Even though `model` sanitises every
   component, the join to the output root refuses anything that is not ordinary
   relative components: `starts_with` alone would accept `out/../escaped`.
