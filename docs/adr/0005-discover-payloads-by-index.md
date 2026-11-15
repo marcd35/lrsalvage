@@ -113,6 +113,13 @@ bytes.**
    report every pyramid as `unmapped`, exit 3, one hint (issue #2, decision 3).
    This is the only mode with no row behind discovery, and it is why it can list
    payloads but never claim a filename.
+   **Clarified 2026-02-19 (issue #29):** the measured rank is the one rule for an
+   unclaimed pyramid, in *every* mode — an orphan in an indexed cache is ranked
+   the same way, since it is exactly the pyramid for which no row is the claim.
+   A leaf's `_<n>` is a tie-break, and it is all a file whose frame cannot be read
+   has. Nothing is written for either, so no output name depends on it; `plan`
+   measures in the same pass that publishes `shapes.suffix_matches_sof`, so the
+   rank costs no second read.
 
 **ADR 0002 is amended in scope, not in substance.** It governs the image → payload
 mapping, which remains the row's alone. It never governed which of a pyramid's own

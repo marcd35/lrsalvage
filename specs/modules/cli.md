@@ -45,7 +45,9 @@ it needs to know about an image comes from a `Plan`.
   SQLite message escapes as a fatal error for a cache that is present but
   damaged; the hint carries the reason instead. A `--previews` path that is not an
   existing directory is the opposite case — `1`, because there is nothing there to
-  salvage and a mistyped path must not read as an empty cache.
+  salvage and a mistyped path must not read as an empty cache. That check is the
+  first thing a run does and it happens before either store is opened, so a
+  mistyped cache path can never be reported as a bad catalog.
 - **The degraded hints are one block each, and they name the file.** Missing
   index:
 

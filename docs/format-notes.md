@@ -610,9 +610,10 @@ picture upright without touching a pixel (ADR 0003).
 > from its `PyramidLevel` row, a level the index forgot is found by widening
 > inside the pyramid's own `(uuid, digest)` and never beyond it, the chosen level
 > is certified by its own bytes, and the cache's `layout` is reported as one of
-> five words. Still not built: the indexless mode (a missing `previews.db` does
-> not yet degrade to `unmapped` payloads and exit 3) and the path-free `--report`
-> artifact a stranger would hand over. Tracked in
+> five words. A cache with no readable `previews.db` degrades: every image is
+> `no-cache-entry`, every payload pyramid is listed as `unmapped`, and the run
+> exits 3 with one hint. Still not built: the path-free `--report` artifact a
+> stranger would hand over. Tracked in
 > [issue #2](https://github.com/marcd35/lrsalvage/issues/2).
 
 Lightroom Classic 13.3 changed preview storage. Sections 5.1–5.4 are **verified**

@@ -98,6 +98,24 @@ is `unknown`:
 | `none` | an index and no payload files | every image is `no-cache-entry`, exit 3 |
 | `unknown` | payload-like files, none of a known shape | one hint naming how many matched no shape, exit 3 |
 
+A sixth state sits beside those five and is not a layout word: a cache whose
+`previews.db` is **missing or unreadable**. No index is no *mapping*, not no
+previews, so the run does not stop. Every image whose original is not on disk
+comes back `no-cache-entry`, every payload pyramid is listed as `unmapped`, the
+layout is still detected from the tree, and the run exits 3 with one hint naming
+the file:
+
+```text
+hint: D:/old/Photos/Photos Previews.lrdata/previews.db is missing, so 2 payloads cannot be matched to any of the 2 catalog images.
+      They are listed as unmapped and never written; scan --verbose prints each path, extract records them in report.csv.
+```
+
+A damaged file degrades identically and prints `could not be read (sqlite error:
+…)` in place of `is missing`. No JPEG is ever written for a payload no catalog
+image names. A `--previews` path that is not a directory is the opposite case: a
+usage error, exit 1, because a typo must not read as an empty cache. See
+[ADR 0006](docs/adr/0006-degrade-without-guessing.md).
+
 What those rows mean in practice:
 
 - **Verified**: Lightroom Classic 11 catalogs, the ones this tool was built and
@@ -253,10 +271,12 @@ so the extra levels do not collide with the best one.
 Three report files are written in the output root, beside the recovered tree:
 `report.csv` (one row per plan item), `manifest.json` (the same facts with a
 schema and version), and `extract.csv` (one row per attempted write, with its
-SHA-256 and any per-file note). They are written after extraction, only on a run
-that selected something and is not a dry run. None of them ever overwrites an
-existing file: if `report.csv` is already there, the run writes `report (2).csv`
-and says so. The numbered name applies to all three.
+SHA-256 and any per-file note). A dry run writes none of them. `extract.csv`
+needs a run that selected something; `report.csv` and `manifest.json` are also
+written when the run selected nothing but found payloads no image claims, because
+that orphan list is the only thing such a run has to hand over. None of them ever
+overwrites an existing file: if `report.csv` is already there, the run writes
+`report (2).csv` and says so. The numbered name applies to all three.
 
 `report.csv` ends with a `payload` column, and every item in `manifest.json` has
 a `payload` member: the file a preview was read from. For a `unmapped` payload
@@ -367,9 +387,9 @@ segment already in the payload is replaced, never duplicated. With
 | Code | Meaning |
 |---|---|
 | 0 | Success. Also what `--help` and `--version` return. |
-| 1 | Usage or input error: bad arguments, or the catalog / preview cache is missing, unreadable, or not a catalog. |
+| 1 | Usage or input error: bad arguments, a catalog that is missing, unreadable or not a catalog, or a `--previews` path that is not a directory. |
 | 2 | `extract` completed with some failures: at least one selected image could not be written. The run did real work and also hit something it could not do. `scan` never returns 2. |
-| 3 | Nothing selected to do: no image was selected to write — for example, every original is still present, or every preview is below the floor. `scan` and `extract` use the same test, so they agree on this code. `masks` returns 3 when it finds no `.dat` file or decodes none. |
+| 3 | Nothing selected to do: no image was selected to write — for example, every original is still present, every preview is below the floor, or the cache has no readable `previews.db` so no payload could be named. `scan` and `extract` use the same test, so they agree on this code. `masks` returns 3 when it finds no `.dat` file or decodes none. |
 | 4 | Unsafe or unwritable destination: `--out` (or the contact-sheet directory) resolves inside the catalog or preview cache — or, for `masks`, inside the `.lrcat-data` directory — or cannot be created or written. |
 
 `2` is the one to pay attention to in scripts: the report says which items failed

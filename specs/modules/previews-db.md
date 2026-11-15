@@ -83,10 +83,14 @@ which are stale, and what to do about either is `plan`'s decision.
 - **A missing or unreadable `previews.db` yields an empty index and a reason, not
   an error.** Absence is a mode — the caller reports every image as
   `no-cache-entry` and every payload pyramid as `unmapped` per
-  `adr-0002-map-via-previews-db` — so this module returns `PreviewIndex::default()`
-  plus the reason (missing, or the SQLite error text) for the caller's hint. The
-  running code still fails here; that changes with the indexless mode
-  (`adr-0006-degrade-without-guessing`).
+  `adr-0002-map-via-previews-db` — so `open` returns an `Opened`: the index
+  (`PreviewIndex::default()` when there was nothing to read) plus an
+  `IndexProblem` — `Missing`, or `Unreadable` with SQLite's own error text — for
+  the caller's one hint. The rows are read by a private `PreviewIndex::read`, so
+  the only public way in degrades and no caller can mistake "no index" for a
+  failure. A `previews.db` that exists and a directory by that name both take the
+  `Unreadable` arm; only an absent path is `Missing`
+  (`adr-0006-degrade-without-guessing` ¶1–¶2).
 - **The two name templates live here, beside the rule they describe.**
   `CONTAINER_GRAMMAR` is `<uuid[0]>/<uuid[0..4]>/<UUID>-<digest>.lrprev`, and
   `LEVEL_FILE_GRAMMAR` is that path with `_<longedge>` in place of the extension.
@@ -122,8 +126,10 @@ which are stale, and what to do about either is `plan`'s decision.
   non-members, so each is offered `jpeg`'s two-byte sniff and nothing more: one
   that opens `FF D8` comes back as **unrecognised** — reported, never ignored,
   and never an orphan (`adr-0005-discover-payloads-by-index` ¶6). No member's
-  byte is read, so `largest_level()` ranks by the `_<n>` the name carries and
-  can never certify a payload. Which of these pyramids an image claims, whether
-  a claimed one is `superseded`, and what an unclaimed one becomes, is `plan`'s
-  decision (`adr-0005-discover-payloads-by-index` ¶8,
+  byte is read here, so this module never ranks a pyramid's levels: which level
+  of an unclaimed pyramid is its payload is `plan`'s decision, taken from each
+  file's own `SOF` and never from its name
+  (`adr-0005-discover-payloads-by-index` ¶8–¶9). Which of these pyramids an
+  image claims, whether a claimed one is `superseded`, and what an unclaimed one
+  becomes, is `plan`'s decision too (`adr-0005-discover-payloads-by-index` ¶8,
   `adr-0006-degrade-without-guessing`).

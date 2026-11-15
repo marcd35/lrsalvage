@@ -86,7 +86,10 @@ nothing — not one byte, not one directory. Everything that ends up on disk is
   image is then `no-cache-entry` and every payload pyramid `unmapped` — the
   honest answer per `adr-0002-map-via-previews-db` — and the run exits 3 with one
   hint (`adr-0006-degrade-without-guessing`). No mapping is invented to fill the
-  gap, and nothing is written for the payloads.
+  gap, and nothing is written for the payloads. The plan needs no mode literal
+  for this: with no rows the claim set is empty, so every pyramid the sweep finds
+  becomes an orphan item, and the layout word comes from that same sweep rather
+  than from rows that are not there.
 - **Statistics count images; items count levels.** `--all-levels` emits one item
   per level but must not inflate how many photographs were recovered. Every item
   is judged by the same per-level rule — its own bytes against its own row — and
@@ -107,11 +110,11 @@ nothing — not one byte, not one directory. Everything that ends up on disk is
   `SOF` does not match, and an incomplete one still does: a truncated frame that
   declares its size has named its long edge. What they are for is the
   verification report a stranger can hand over
-  (`adr-0007-publish-a-verification-report`); `shapes` reads a payload only for
-  `suffix_matches_sof`, and nothing else in the plan depends on it. That is the
-  one cost the histogram adds to a `scan`: every level file is read whole, because
-  a bounded prefix could cut an `APPn` segment in half and turn a frame that is
-  really there into a mismatch.
+  (`adr-0007-publish-a-verification-report`). That one measured pass is also what
+  ranks an unclaimed pyramid, so the histogram and the orphan list come from the
+  same bytes, and the cost is the same one: every level file is read whole,
+  because a bounded prefix could cut an `APPn` segment in half and turn a frame
+  that is really there into a mismatch.
 - **A suspect payload is recovered, not discarded.** Width and height may be
   swapped before calling it a disagreement, because the stored render is
   unrotated; a real photograph at the wrong declared size is still worth having,
@@ -158,11 +161,15 @@ one. The layout word and the version strings are observations, never gates
   parses and whose two shard folders agree with it, merging its level files and
   any coexisting `.lrprev`. An unclaimed entry becomes exactly one `unmapped`
   item — never one per file, because one orphan is one lost photograph — whose
-  payload is `Payload::LevelFile` of the largest level it holds (`_<n>`
-  descending, no read) or `Payload::Container { level: None }` when it holds only
-  a container. Nothing is selected or written for it, and the note names its
-  path. A **claimed** entry holding both representations is not an item at all:
-  it is the `superseded` cache stat.
+  payload is `Payload::LevelFile` of the largest level it holds or
+  `Payload::Container { level: None }` when it holds only a container. **Largest
+  by the `SOF` its own bytes declare**, with the leaf's `_<n>` only as a
+  tie-break and as the rank for a file whose frame cannot be read at all: the
+  same rule in every mode, index or none, because a name is its author's word and
+  the bytes are the verdict (`adr-0005-discover-payloads-by-index` ¶5, ¶9).
+  Nothing is selected or written for it, and the note names its path. A
+  **claimed** entry holding both representations is not an item at all: it is the
+  `superseded` cache stat.
 - **A cache payload is never trusted at its declared size, and never discarded
   for disagreeing** (`adr-0001-parse-dont-carve`): a chunk or level file that
   fails to parse, or does not end at an end-of-image marker, makes the image
