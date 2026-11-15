@@ -133,9 +133,15 @@ nothing — not one byte, not one directory. Everything that ends up on disk is
 - **The orphan sweep is seeded from live rows only, and counts pyramids.** A row
   whose `imageId` no longer exists in `Adobe_images` must not suppress the sweep:
   that stale row's payload is exactly what salvage is for
-  (`adr-0002-map-via-previews-db`). One item per unclaimed `(uuid, digest)`,
-  merging its level files and any coexisting `.lrprev` and naming the largest
-  level as the payload.
+  (`adr-0002-map-via-previews-db`). The enumeration is
+  `previews_db::pyramids_on_disk`: one entry per `(uuid, digest)` whose leaf
+  parses and whose two shard folders agree with it, merging its level files and
+  any coexisting `.lrprev`. An unclaimed entry becomes exactly one `unmapped`
+  item — never one per file, because one orphan is one lost photograph — whose
+  payload is `Payload::LevelFile` of the largest level it holds (`_<n>`
+  descending, no read) or `Payload::Container { level: None }` when it holds only
+  a container. Nothing is selected or written for it, and the note names its
+  path.
 - **A cache payload is never trusted at its declared size, and never discarded
   for disagreeing** (`adr-0001-parse-dont-carve`): a chunk or level file that
   fails to parse, or does not end at an end-of-image marker, makes the image

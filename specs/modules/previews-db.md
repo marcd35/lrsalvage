@@ -20,30 +20,35 @@ references:
 ## Responsibility
 
 Load the cache's `previews.db` into an in-memory index — `imageId → CacheEntry`,
-`uuid → Pyramid`, `uuid → [PyramidLevel]` — and derive the paths its rows name:
-the container file of a pyramid, each level file of one, and the best level of a
-pyramid.
+`uuid → Pyramid`, `uuid → [PyramidLevel]` — derive the paths its rows name: the
+container file of a pyramid, each level file of one, and the best level of a
+pyramid; and enumerate the cache tree once into the pyramids present on disk.
 
 ## Boundary
 
 Knows the index schema and the cache's directory layout; knows nothing about
-catalog rows beyond the `imageId` it is given, never reads a payload byte, and
-never writes. The database is opened through `snapshot`'s read-only opener. Which
-rows are live, which are stale, and what to do about either is `plan`'s decision.
+catalog rows beyond the `imageId` it is given, reads directory entries and names
+and never a payload byte, and never writes. The database is opened through
+`snapshot`'s read-only opener. Which rows are live, which are stale, and what to
+do about either is `plan`'s decision.
 
 ## Decisions
 
-- **The path rule is derived, never globbed**: `<uuid[0]>/<uuid[0..4]>/<UUID>-<digest>.lrprev`
+- **A payload's address is derived, never globbed**: `<uuid[0]>/<uuid[0..4]>/<UUID>-<digest>.lrprev`
   under the cache root. The exact case of the uuid and digest matters on a
-  case-sensitive filesystem, so both are used verbatim.
+  case-sensitive filesystem, so both are used verbatim. Only a pyramid's *level
+  set* is widened by a directory read, and only inside that pyramid's own
+  address (`adr-0005-discover-payloads-by-index` ¶3).
 - **A level file's path is derived the same way, from its row.**
   `<uuid[0]>/<uuid[0..4]>/<UUID>-<digest>_<round(longDimension)>` — the rounded
   integer, because the columns come back `REAL` (`101.0`). Enumerating a
   pyramid's levels is what `candidates` is for, and it hands each candidate the
-  row that derived it: `Some(&PyramidLevel)` for a row-derived path, `None` for a
-  file only the bounded glob found. The row travels with the file because it is
-  the claim `plan` compares `suspect` against; that is the one place it can be
-  attached without a second matcher (`adr-0005-discover-payloads-by-index` ¶2–3).
+  row that derived it — `Some(&PyramidLevel)` for a row-derived path, `None` for
+  a file only the bounded read of that pyramid's folder found — together with the
+  long edge its leaf names, which is what ranks a file that has no row. The row
+  travels with the file because it is the claim `plan` compares `suspect`
+  against; that is the one place it can be attached without a second matcher
+  (`adr-0005-discover-payloads-by-index` ¶2–3).
 - **`imageId` is not assumed unique.** No table in the schema declares a primary
   key, so `all_entries` keeps every row. `entries` is the last row wins map used
   for lookup; the full list exists so that a payload belonging to a duplicate row
@@ -74,13 +79,29 @@ rows are live, which are stale, and what to do about either is `plan`'s decision
   substitutes a known `(uuid, digest)` and asserts each template agrees with the
   path the derivation returns, so a template cannot drift from the rule it stands
   for (`adr-0007-publish-a-verification-report`).
-- **The level set is enumerated here, and one widening is still to come.**
+- **The level set is enumerated here, and it widens inside the row's identity.**
   `adr-0005-discover-payloads-by-index` keeps the identity here (`(uuid, digest)`
   is this module's key) and moves per-file certification into `jpeg`, which owns
-  the one walk a payload is believed by. The enumeration is
-  `candidates(cache_root, uuid, digest)`: one leaf per `PyramidLevel` row, carrying
-  the row that derived it, while `payload_path` keeps resolving one row's
-  container. The glob that also accepts a file whose row was pruned is that ADR's
-  ¶3 and a separate change; until it lands, a pyramid whose rows are all stale has
-  no candidate and is `missing-payload`, which is the honest answer to "no file of
-  this pyramid exists at its own address".
+  the one walk a payload is believed by. `candidates(cache_root, uuid, digest)`
+  returns one leaf per `PyramidLevel` row, carrying the row that derived it, and
+  then reads **that pyramid's own** shard folder — `<cache>/<uuid[0]>/<uuid[0..4]>`
+  and nothing else — accepting only a file whose name is exactly
+  `<UUID>-<digest>_<digits>` for this uuid **and** this digest, with `row: None`.
+  A differing digest is not a member (¶6), so the widening finds a level the
+  index forgot — a pruned `PyramidLevel` row beside a surviving file — and cannot
+  invent a mapping. A path a row already named appears once and keeps its row,
+  the order is by path, only names are read (never a payload byte), and a missing
+  folder is a pyramid with nothing on disk rather than an error. `payload_path`
+  keeps resolving one row's container.
+- **The cache tree is enumerated once, and a pyramid is one `(uuid, digest)`.**
+  `pyramids_on_disk(cache_root)` walks the cache and returns one entry per
+  `(uuid, digest)` present on disk, grouping that pyramid's level files and any
+  coexisting `<UUID>-<digest>.lrprev`. A file is a member only when its leaf
+  parses to a uuid, a 32-character lower-case hex digest and — for a level file —
+  a numeric suffix, **and** both shard folders agree with that uuid, because the
+  folder is an address and never an identity (§5.2). Everything else is ignored
+  without a sniff: `previews.db` and its `-wal`/`-shm` neighbours, a leaf in the
+  wrong shard, a leaf that does not parse. No byte is read, so `largest_level()`
+  ranks by the `_<n>` the name carries and can never certify a payload. Which of
+  these pyramids an image claims, and what an unclaimed one becomes, is `plan`'s
+  decision (`adr-0005-discover-payloads-by-index` ¶8).

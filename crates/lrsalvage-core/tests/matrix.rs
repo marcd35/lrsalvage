@@ -17,7 +17,7 @@
 //! `below_floor`, `levels` and `selected_images`; for `legacy`, everything but
 //! `unmapped 1`. Rows still without a test are M6 (the `deleted` stat), M13 and
 //! M14 (`payload_metadata`, `effective_orientation`), X1 (the `superseded`
-//! stat), and every `unrecognised`/layout row.
+//! stat), and every `unrecognised`/layout row but N1's `unmapped 0`.
 //!
 //! `modern` holds only the rows asserted below, so its `images` count is the
 //! count of this file's rows, not the thirteen the spec pins.
