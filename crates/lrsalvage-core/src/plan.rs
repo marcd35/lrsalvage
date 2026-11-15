@@ -455,11 +455,12 @@ fn level_file_levels(
     let mut ranked = candidates;
     // Pixel area as the row declares it, with the level number as tie-break. A
     // file with no row — the widened glob's business — ranks below every claim,
-    // so a claim is never beaten by a guess.
-    ranked.sort_by_key(|candidate| {
-        candidate
-            .row
-            .map(|row| (u64::from(row.width) * u64::from(row.height), row.level))
+    // so a claim is never beaten by a guess, and ranks among its own kind by
+    // the long edge its leaf names: nothing is invented to compare it with
+    // (`adr-0005-discover-payloads-by-index` ¶5).
+    ranked.sort_by_key(|candidate| match candidate.row {
+        Some(row) => (1u8, u64::from(row.width) * u64::from(row.height), row.level),
+        None => (0, 0, candidate.long_edge),
     });
 
     let smallest_level = ranked.first().map(|candidate| candidate.path.clone());
@@ -497,7 +498,9 @@ fn level_file_levels(
                 failure,
                 // The row that derived this leaf is the claim, and its own row
                 // is all it is compared against, so a stale neighbour cannot
-                // make a surviving level look wrong.
+                // make a surviving level look wrong. A file the widening found
+                // has no row: there is nothing to disagree with, so it cannot
+                // be `suspect` however small it is.
                 declared: candidate.row.map(|row| (row.width, row.height)),
                 claim: candidate.row.map(|row| (row.width, row.height)),
                 bytes,
