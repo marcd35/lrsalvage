@@ -512,7 +512,7 @@ fn distinct_selected_images(items: &[PlanItem]) -> usize {
 /// `_<n>` is only its author's word; a file whose frame cannot be read at all
 /// ranks below one that can, then by that name, then by path, so the choice is
 /// never arbitrary.
-fn unclaimed_payload(pyramid: &PyramidOnDisk, measured: &Measured) -> Option<Payload> {
+fn unclaimed_payload(pyramid: &PyramidOnDisk, measured: &Measurements) -> Option<Payload> {
     if let Some(level) = measured.largest_level(pyramid) {
         return Some(Payload::LevelFile {
             path: level.to_path_buf(),
@@ -534,14 +534,14 @@ fn unclaimed_payload(pyramid: &PyramidOnDisk, measured: &Measured) -> Option<Pay
 /// nobody claims (`adr-0005-discover-payloads-by-index` ¶9,
 /// `adr-0007-publish-a-verification-report`).
 #[derive(Debug, Default)]
-struct Measured {
+struct Measurements {
     shapes: Shapes,
     /// `<cache>/<uuid[0]>/<uuid[0..4]>/<UUID>-<digest>_<n>` → the pixel area its
     /// own `SOF` declared. Absent when the bytes declared no readable frame.
     areas: HashMap<PathBuf, u64>,
 }
 
-impl Measured {
+impl Measurements {
     /// The largest level file of this pyramid, by measured area, then by the
     /// `_<n>` the leaf names, then by path.
     fn largest_level<'a>(&self, pyramid: &'a PyramidOnDisk) -> Option<&'a Path> {
@@ -572,8 +572,8 @@ impl Measured {
 /// Each level file is read whole, and that is the cost this pass adds to a scan:
 /// a bounded prefix could cut an `APPn` segment in half and lose a frame that is
 /// really there, and a frame that cannot be read counts as no match.
-fn measure(sweep: &CacheSweep) -> Measured {
-    let mut measured = Measured::default();
+fn measure(sweep: &CacheSweep) -> Measurements {
+    let mut measured = Measurements::default();
     for pyramid in &sweep.pyramids {
         measured.shapes.level_file += pyramid.levels.len() as u64;
         measured.shapes.container += u64::from(pyramid.container.is_some());

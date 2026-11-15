@@ -17,6 +17,10 @@ use walkdir::WalkDir;
 use crate::error::Result;
 use crate::model::{CacheEntry, Pyramid, PyramidLevel};
 
+/// The index file at a cache root. The one place its name is written, so the CLI
+/// that opens it and the hint that names it cannot disagree.
+pub const INDEX_FILE: &str = "previews.db";
+
 /// The container name template: `<uuid[0]>/<uuid[0..4]>/<UUID>-<digest>.lrprev`.
 ///
 /// Placeholders only, never a name. `report` prints it verbatim so the shape of
@@ -276,7 +280,8 @@ impl PreviewIndex {
 }
 
 /// One pyramid the cache tree holds, identified by the `(uuid, digest)` its own
-/// leaves name — the key legacy and modern layouts share.///
+/// leaves name — the key legacy and modern layouts share.
+///
 /// It merges both representations of one pyramid: every level file and, when the
 /// cache holds one, the coexisting `.lrprev`. No byte was read to build it.
 #[derive(Debug, Clone, PartialEq, Eq)]

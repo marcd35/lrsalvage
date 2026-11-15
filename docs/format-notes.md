@@ -610,9 +610,10 @@ picture upright without touching a pixel (ADR 0003).
 > from its `PyramidLevel` row, a level the index forgot is found by widening
 > inside the pyramid's own `(uuid, digest)` and never beyond it, the chosen level
 > is certified by its own bytes, and the cache's `layout` is reported as one of
-> five words. A cache with no readable `previews.db` degrades: every image is
-> `no-cache-entry`, every payload pyramid is listed as `unmapped`, and the run
-> exits 3 with one hint. Still not built: the path-free `--report` artifact a
+> five words. A cache with no readable `previews.db` degrades: every image whose
+> original is not on disk is `no-cache-entry`, every payload pyramid is listed as
+> `unmapped`, and the run exits 3 with one hint. Still not built: the path-free
+> `--report` artifact a
 > stranger would hand over. Tracked in
 > [issue #2](https://github.com/marcd35/lrsalvage/issues/2).
 

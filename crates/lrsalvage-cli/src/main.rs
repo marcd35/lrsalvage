@@ -162,21 +162,29 @@ fn open_plan(
     Plan,
     Option<IndexProblem>,
 )> {
-    // A path that is not a directory has nothing to salvage, which is a different
-    // fact from an empty cache: a typo must never read as one
-    // (`adr-0006-degrade-without-guessing` ¶3).
-    if !previews.is_dir() {
-        return Err(Error::PreviewsNotADirectory {
-            path: previews.to_path_buf(),
-        });
-    }
+    require_cache_directory(previews)?;
 
     let (snapshot, catalog) = Catalog::open(catalog_path)?;
     // A missing or unreadable index is a mode, never a fatal error: the plan is
     // built from an empty index and the reason is carried out for the hint.
-    let opened = previews_db::open(&previews.join("previews.db"));
+    let opened = previews_db::open(&previews.join(previews_db::INDEX_FILE));
     let plan = Plan::build(&catalog, &opened.index, previews, output_root, options)?;
     Ok((snapshot, plan, opened.problem))
+}
+
+/// A `--previews` path that is not a directory has nothing to salvage, which is a
+/// different fact from an empty cache: a typo must never read as one
+/// (`adr-0006-degrade-without-guessing` ¶3).
+///
+/// `extract` asks this before it touches `--out`, so a mistyped cache path can
+/// never leave a directory behind or be outranked by a destination refusal.
+fn require_cache_directory(previews: &Path) -> Result<()> {
+    if previews.is_dir() {
+        return Ok(());
+    }
+    Err(Error::NotAPreviewCache {
+        path: previews.to_path_buf(),
+    })
 }
 
 fn scan(args: ScanArgs) -> Result<u8> {
@@ -239,7 +247,7 @@ fn index_hint(plan: &Plan, problem: Option<&IndexProblem>, previews: &Path) {
         return;
     };
     let file = previews
-        .join("previews.db")
+        .join(previews_db::INDEX_FILE)
         .to_string_lossy()
         .replace('\\', "/");
     let stats = &plan.stats;
@@ -325,6 +333,10 @@ fn extract(args: ExtractArgs) -> Result<u8> {
         all_levels: args.all_levels,
         include_present: args.include_present,
     };
+
+    // The inputs are checked before the destination: `--out` is only created
+    // for a run that can read its cache.
+    require_cache_directory(&args.previews)?;
 
     // Validate before creating: a refused destination must leave no directory
     // behind inside the catalog or the cache. A dry run creates nothing.

@@ -537,7 +537,7 @@ fn u3_a_previews_path_that_is_not_a_directory_is_a_usage_error() {
     assert_eq!(output.status.code(), Some(1));
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("not a directory"),
+        stderr.contains("is not a preview cache directory"),
         "a real message, not a SQLite one:\n{stderr}"
     );
     assert!(!stderr.contains("sqlite error"), "{stderr}");
@@ -554,7 +554,28 @@ fn u3_a_previews_path_that_is_not_a_directory_is_a_usage_error() {
     command
         .assert()
         .code(1)
-        .stderr(predicate::str::contains("not a directory"));
+        .stderr(predicate::str::contains("is not a preview cache directory"));
+
+    // `extract` asks the same question before it touches `--out`, so a run that
+    // cannot read its cache leaves no directory behind.
+    let uncreated = vault.dir().join("not created");
+    let mut command = lrsalvage();
+    command
+        .arg("extract")
+        .arg("--catalog")
+        .arg(vault.catalog())
+        .arg("--previews")
+        .arg(vault.catalog())
+        .arg("--out")
+        .arg(&uncreated);
+    command
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains("is not a preview cache directory"));
+    assert!(
+        !uncreated.exists(),
+        "a refused cache path creates no output directory"
+    );
 }
 
 #[test]
