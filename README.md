@@ -74,7 +74,7 @@ them.
 | LrC 4 – 9 | `legacy` — one `.lrprev` pyramid per image | not measured | same reader, **untested** |
 | LrC 10 – 12 | `legacy` | `1200001` (see below) | **v11 verified** on real catalogs |
 | LrC 13.0 – 13.2 | `legacy` | not measured | same reader, **untested** |
-| LrC 13.3 and later | `modern` — one extensionless JPEG per level, no `.lrprev` | `1504001` (see below) | **`scan` verified**: 78/78 recovered; `extract` untested |
+| LrC 13.3 and later | `modern` — one extensionless JPEG per level, no `.lrprev` | `1504001` (see below) | **verified**: 78 of 78 recovered, then written |
 
 Exactly two `Adobe_DBVersion` values have been read off real files: `1200001`,
 and `1504001` on that same catalog after Lightroom Classic 16.0 upgraded it in
@@ -118,16 +118,18 @@ usage error, exit 1, because a typo must not read as an empty cache. See
 
 What those rows mean in practice:
 
-- **Verified**: Lightroom Classic 11 catalogs, the ones this tool was built and
-  tested against — a 3,416-image catalog (2,659 previews recovered) and a
-  78-image one (78/78).
-- **`scan` verified** for 13.3 and later means the tool read a real cache of that
-  generation: the 78-image catalog upgraded in place by Lightroom Classic 16.0,
-  where it reports `layout modern`, 78 of 78 images recovered, no failure and no
-  unmapped payload, and a shape histogram of 390 level files whose leaves all
-  name the long edge their own frames declare (section 5.7 of the notes).
-  `extract` has not been run against that cache, so writing files is the half
-  that remains untested.
+- **Verified** for 11: Lightroom Classic 11 catalogs, the ones this tool was
+  built and tested against — a 3,416-image catalog (2,659 previews recovered)
+  and a 78-image one (78/78).
+- **Verified** for 13.3 and later means the tool read *and wrote* a real cache of
+  that generation: the 78-image catalog upgraded in place by Lightroom Classic
+  16.0, where `scan` reports `layout modern`, 78 of 78 images recovered, no
+  failure and no unmapped payload, and a shape histogram of 390 level files whose
+  leaves all name the long edge their own frames declare. `extract` then wrote 78
+  JPEGs, a second run found all 78 already ours and skipped them, and
+  `--all-levels` wrote the 156 levels at or above the floor (section 5.9 of the
+  notes). What that does not prove: whether a **freshly built** 16 cache renders
+  the same shapes, since this cache is a conversion (section 5.5).
 - **Same reader, untested**: 4 – 10, 12 and 13.0 – 13.2 use the `.lrprev`
   pyramid this tool parses. Nothing known stops them working; nobody has run it
   on one.
@@ -509,6 +511,20 @@ Nothing in CI reads this README, so two of its tables are asserted by tests
 instead: `lrsalvage-cli`'s `tests/readme.rs` checks the flag list and the
 `--json` field list against the binary itself, and `lrsalvage-core`'s
 `tests/spec_graph.rs` checks each module's spec against the modules it reaches.
+
+### What this repository is not
+
+`lrsalvage` is a command-line binary you build from this tree. Packaging it is a
+separate concern, and none of it lives here: there is no installer, no signed or
+notarised bundle, no auto-updater, no package-manager formula, and no release
+workflow — CI runs the gates above on every push and pull request and publishes
+nothing. Those are their own decisions with their own platform and provenance
+questions, and they are out of scope for the reader.
+
+A graphical interface is separate in the same way. Reading, planning and writing
+live in `crates/lrsalvage-core` behind a library interface, so a future UI would
+drive that library rather than change it — but there is no UI today, and none is
+planned here. See the map at [issue #6](https://github.com/marcd35/lrsalvage/issues/6).
 
 ## Licence
 
