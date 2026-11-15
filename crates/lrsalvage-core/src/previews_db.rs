@@ -1,8 +1,9 @@
 //! `previews.db` — the authoritative map from catalog image to payload file.
 //!
 //! Reads the cache's index into memory and derives the paths its rows name: one
-//! container per pyramid, one level file per `PyramidLevel` row. Whether a
-//! derived file exists is the caller's question — this module reads no payload.
+//! container per pyramid, one level file per `PyramidLevel` row, widened by the
+//! names in that pyramid's own shard folder. Whether a derived file exists is
+//! the caller's question — this module reads no payload byte.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -11,6 +12,17 @@ use rusqlite::types::ValueRef;
 
 use crate::error::Result;
 use crate::model::{CacheEntry, Pyramid, PyramidLevel};
+
+/// The container name template: `<uuid[0]>/<uuid[0..4]>/<UUID>-<digest>.lrprev`.
+///
+/// Placeholders only, never a name. `report` prints it verbatim so the shape of
+/// a cache can be published without publishing one of its files
+/// (`adr-0007-publish-a-verification-report`).
+pub const CONTAINER_GRAMMAR: &str = "<uuid[0]>/<uuid[0..4]>/<UUID>-<digest>.lrprev";
+
+/// The level file name template: the container path with `_<longedge>` in place
+/// of the extension.
+pub const LEVEL_FILE_GRAMMAR: &str = "<uuid[0]>/<uuid[0..4]>/<UUID>-<digest>_<longedge>";
 
 /// In-memory view of a `previews.db`.
 #[derive(Debug, Clone, Default)]
@@ -34,6 +46,9 @@ pub struct Candidate<'a> {
     /// The `PyramidLevel` row that derived the path, `None` for a file only
     /// the bounded glob found (`adr-0005-discover-payloads-by-index` ¶3).
     pub row: Option<&'a PyramidLevel>,
+    /// The long edge the leaf names: the rounded `longDimension` for a
+    /// row-derived name, the parsed suffix for a file only the glob found.
+    pub long_edge: u32,
 }
 
 impl PreviewIndex {
@@ -114,32 +129,68 @@ impl PreviewIndex {
         shard(cache_root, &entry.uuid).join(format!("{}-{}.lrprev", entry.uuid, entry.digest))
     }
 
-    /// Every level file this pyramid's own rows name, in path order.
+    /// Every level file of this pyramid, in path order: one leaf per
+    /// `PyramidLevel` row, then any file in *this pyramid's own* shard folder
+    /// named exactly `<UUID>-<digest>_<digits>`.
     ///
-    /// The path is derived from the row, never globbed: the suffix is the
+    /// The row-derived path is derived, never globbed: the suffix is the
     /// rounded `longDimension`, because the column comes back `REAL` (`101.0`)
     /// and formatting the float would match nothing (§5.7). Two rows that round
     /// to one leaf name one file, so the lower level number keeps it.
     ///
+    /// The widening is bounded by this uuid **and** digest in this uuid's own
+    /// folder, so it can find a level whose `PyramidLevel` row was pruned and
+    /// cannot invent a mapping: a file whose digest differs is not a member
+    /// (`adr-0005-discover-payloads-by-index` ¶3, ¶6). A row-derived path is
+    /// kept over the same path the widening found, because the row is the claim
+    /// `plan` compares against. Only names are read — never a payload byte — and
+    /// a missing folder is a pyramid with nothing on disk, not an error.
+    ///
     /// Whether a candidate is on disk is the caller's question: this module
-    /// reads no payload and stats no file, so `plan` decides existence.
+    /// stats no file and reads no payload, so `plan` decides existence.
     pub fn candidates(&self, cache_root: &Path, uuid: &str, digest: &str) -> Vec<Candidate<'_>> {
-        let Some(rows) = self.levels.get(uuid) else {
-            return Vec::new();
-        };
-        let mut named: Vec<Candidate<'_>> = rows
-            .iter()
-            .map(|row| Candidate {
-                path: shard(cache_root, uuid)
-                    .join(format!("{uuid}-{digest}_{}", row.long_dimension)),
-                row: Some(row),
+        let mut named: Vec<Candidate<'_>> = self
+            .levels
+            .get(uuid)
+            .map(|rows| {
+                rows.iter()
+                    .map(|row| Candidate {
+                        path: shard(cache_root, uuid)
+                            .join(format!("{uuid}-{digest}_{}", row.long_dimension)),
+                        row: Some(row),
+                        long_edge: row.long_dimension,
+                    })
+                    .collect()
             })
-            .collect();
-        // Path first so the order never depends on the database's row order;
-        // the level number breaks a tie between two rows naming one leaf.
+            .unwrap_or_default();
+
+        // The widening, inside the row's own identity: this pyramid's shard
+        // folder and nothing else. A level the index forgot is a file here.
+        if let Ok(entries) = std::fs::read_dir(shard(cache_root, uuid)) {
+            for entry in entries.flatten() {
+                if !entry.file_type().is_ok_and(|kind| kind.is_file()) {
+                    continue;
+                }
+                let Ok(name) = entry.file_name().into_string() else {
+                    continue;
+                };
+                if let Some(long_edge) = level_leaf_long_edge(&name, uuid, digest) {
+                    named.push(Candidate {
+                        path: entry.path(),
+                        row: None,
+                        long_edge,
+                    });
+                }
+            }
+        }
+
+        // Path first so the order never depends on the database's row order or
+        // on `read_dir`; a row keeps a path the widening also found, and the
+        // level number breaks a tie between two rows naming one leaf.
         named.sort_by(|a, b| {
             a.path
                 .cmp(&b.path)
+                .then_with(|| a.row.is_none().cmp(&b.row.is_none()))
                 .then_with(|| a.row.map(|row| row.level).cmp(&b.row.map(|row| row.level)))
         });
         named.dedup_by(|a, b| a.path == b.path);
@@ -166,6 +217,23 @@ fn shard(cache_root: &Path, uuid: &str) -> PathBuf {
     let first: String = uuid.chars().take(1).collect();
     let first_four: String = uuid.chars().take(4).collect();
     cache_root.join(first).join(first_four)
+}
+
+/// The long edge a level file's leaf names, when the name is exactly
+/// `<UUID>-<digest>_<digits>` for this uuid and digest.
+///
+/// Case is significant: both are compared verbatim, because the exact case of a
+/// uuid and a digest matters on a case-sensitive filesystem.
+fn level_leaf_long_edge(name: &str, uuid: &str, digest: &str) -> Option<u32> {
+    let suffix = name
+        .strip_prefix(uuid)?
+        .strip_prefix('-')?
+        .strip_prefix(digest)?
+        .strip_prefix('_')?;
+    if suffix.is_empty() || !suffix.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    suffix.parse().ok()
 }
 
 /// Text column, tolerating odd storage classes.
@@ -203,6 +271,7 @@ fn signed(value: ValueRef<'_>) -> i64 {
 #[cfg(test)]
 mod tests {
     use std::fs;
+    use std::path::PathBuf;
 
     use rusqlite::Connection;
 
@@ -418,6 +487,154 @@ mod tests {
             index
                 .candidates(Path::new("C:/cache"), "nope", "d")
                 .is_empty()
+        );
+    }
+
+    /// The shard folder a uuid derives, created under `root`.
+    fn shard_dir(root: &Path, uuid: &str) -> PathBuf {
+        let first: String = uuid.chars().take(1).collect();
+        let first_four: String = uuid.chars().take(4).collect();
+        let dir = root.join(first).join(first_four);
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    fn names(candidates: &[Candidate<'_>]) -> Vec<String> {
+        candidates
+            .iter()
+            .map(|candidate| {
+                candidate
+                    .path
+                    .file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .into_owned()
+            })
+            .collect()
+    }
+
+    #[test]
+    fn the_widening_accepts_only_this_pyramids_own_level_files() {
+        let uuid = "1A2B3C4D-5E6F";
+        let digest = "deadbeef";
+        let dir = tempfile::tempdir().unwrap();
+        let shard = shard_dir(dir.path(), uuid);
+        let write = |name: &str| fs::write(shard.join(name), b"not read").unwrap();
+
+        write(&format!("{uuid}-{digest}_1616"));
+        write(&format!("{uuid}-{digest}_640"));
+        // A container is not a level file.
+        write(&format!("{uuid}-{digest}.lrprev"));
+        // A differing digest is another pyramid, not this one's level (¶6).
+        write(&format!("{uuid}-0000beef_1616"));
+        // No numeric suffix, no digits, and a trailing underscore.
+        write(&format!("{uuid}-{digest}"));
+        write(&format!("{uuid}-{digest}_"));
+        write(&format!("{uuid}-{digest}_640.old"));
+        write(&format!("{uuid}-{digest}_wide"));
+        // Another pyramid's leaf, sitting in this folder.
+        write("OTHER0000-0000-0000-0000-000000000000-deadbeef_640");
+
+        // No `PyramidLevel` row at all: the widening alone finds these.
+        let index = index_with(|conn| base_pyramid(conn, uuid));
+        let candidates = index.candidates(dir.path(), uuid, digest);
+
+        assert_eq!(
+            names(&candidates),
+            vec![
+                format!("{uuid}-{digest}_1616"),
+                format!("{uuid}-{digest}_640")
+            ],
+            "only this uuid and digest, in path order"
+        );
+        assert!(
+            candidates.iter().all(|candidate| candidate.row.is_none()),
+            "a file only the widening found carries no claim"
+        );
+        assert_eq!(
+            candidates
+                .iter()
+                .map(|candidate| candidate.long_edge)
+                .collect::<Vec<_>>(),
+            vec![1616, 640],
+            "the suffix is the long edge the leaf names"
+        );
+    }
+
+    #[test]
+    fn a_file_a_row_already_named_is_one_candidate_and_keeps_its_row() {
+        let uuid = "1A2B3C4D-5E6F";
+        let digest = "deadbeef";
+        let dir = tempfile::tempdir().unwrap();
+        let shard = shard_dir(dir.path(), uuid);
+        fs::write(shard.join(format!("{uuid}-{digest}_640")), b"not read").unwrap();
+
+        let index = index_with(|conn| {
+            base_pyramid(conn, uuid);
+            conn.execute_batch(&format!(
+                "INSERT INTO PyramidLevel (uuid, digest, level, longDimension, lastAccess, width, height)
+                 VALUES ('{uuid}', 'd', 1, 640.0, 0, 640, 427);"
+            ))
+            .unwrap();
+        });
+
+        let candidates = index.candidates(dir.path(), uuid, digest);
+        assert_eq!(names(&candidates), vec![format!("{uuid}-{digest}_640")]);
+        assert_eq!(
+            candidates[0]
+                .row
+                .map(|row| (row.level, row.width, row.height)),
+            Some((1, 640, 427)),
+            "the row that derived the path is the claim, not the widened copy"
+        );
+    }
+
+    #[test]
+    fn the_name_templates_agree_with_the_paths_they_stand_for() {
+        let uuid = "1A2B3C4D-5E6F";
+        let digest = "deadbeef";
+        let dir = tempfile::tempdir().unwrap();
+        let shard = shard_dir(dir.path(), uuid);
+        fs::write(shard.join(format!("{uuid}-{digest}_1616")), b"not read").unwrap();
+
+        let index = index_with(|conn| {
+            conn.execute(
+                "INSERT INTO ImageCacheEntry (imageId, uuid, digest, orientation) \
+                 VALUES (4062.0, '1A2B3C4D-5E6F', 'deadbeef', 'AB')",
+                [],
+            )
+            .unwrap();
+            base_pyramid(conn, uuid);
+            conn.execute_batch(&format!(
+                "INSERT INTO PyramidLevel (uuid, digest, level, longDimension, lastAccess, width, height)
+                 VALUES ('{uuid}', 'deadbeef', 0, 1616.0, 0, 1616, 1077);"
+            ))
+            .unwrap();
+        });
+
+        let entry = &index.entries[&4062];
+        // Substituting a known pair into a template is what the verification
+        // report will do; the template must then describe the derived path.
+        let fill = |template: &str, long_edge: &str| {
+            template
+                .replace("<uuid[0]>", &uuid[..1])
+                .replace("<uuid[0..4]>", &uuid[..4])
+                .replace("<UUID>", uuid)
+                .replace("<digest>", digest)
+                .replace("<longedge>", long_edge)
+        };
+
+        assert_eq!(
+            slashed(&index.payload_path(dir.path(), entry)),
+            slashed(&dir.path().join(fill(CONTAINER_GRAMMAR, ""))),
+            "CONTAINER_GRAMMAR must describe the path payload_path derives"
+        );
+        let candidates = index.candidates(dir.path(), uuid, digest);
+        assert_eq!(candidates.len(), 1, "{candidates:?}");
+        assert_eq!(
+            slashed(&candidates[0].path),
+            slashed(&dir.path().join(fill(LEVEL_FILE_GRAMMAR, "1616"))),
+            "LEVEL_FILE_GRAMMAR must describe the path candidates derives"
         );
     }
 
