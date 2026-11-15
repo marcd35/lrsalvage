@@ -428,9 +428,7 @@ fn ifd0_entry<'a>(jpeg: &'a [u8], segments: &[jpeg::Segment], tag: u16) -> Optio
 
     for index in 0..count {
         let at = ifd + 2 + index * 12;
-        let Some(entry) = tiff.get(at..at + 12) else {
-            return None;
-        };
+        let entry = tiff.get(at..at + 12)?;
         if order.u16(&entry[0..2]) != tag {
             continue;
         }
@@ -2021,10 +2019,7 @@ mod tests {
         assert_eq!(profiles.len(), 1);
         assert!(profiles[0].ends_with(theirs));
         assert!(
-            result
-                .notes
-                .iter()
-                .any(|note| note.contains("ICC profile")),
+            result.notes.iter().any(|note| note.contains("ICC profile")),
             "{:?}",
             result.notes
         );

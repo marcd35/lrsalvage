@@ -249,26 +249,31 @@ fn extract_names_each_payload_in_the_csv_and_the_manifest() {
 
     extract(&vault).assert().code(0);
 
-    // `report.csv` ends with `payload`, after `note`, and an unclaimed payload
-    // carries its own path where an output would be.
+    // `report.csv` ends with `payload` and then `payload_metadata`, after
+    // `note`, and an unclaimed payload carries its own path where an output
+    // would be.
     let csv = fs::read_to_string(vault.out().join("report.csv")).expect("report.csv");
     let mut rows = csv.lines();
     let header = rows.next().expect("a header");
     assert!(
-        header.ends_with(",note,payload"),
-        "the trailing column is the payload:\n{header}"
+        header.ends_with(",note,payload,payload_metadata"),
+        "the trailing columns are the payload and its own metadata:\n{header}"
     );
     let orphan = rows
         .find(|row| row.starts_with("unmapped"))
         .expect("the unclaimed pyramid");
     let fields: Vec<&str> = orphan.split(',').collect();
-    assert_eq!(fields.len(), 15, "{orphan}");
+    assert_eq!(fields.len(), 16, "{orphan}");
     assert_eq!(fields[9], "", "nothing is written for an orphan");
     assert_eq!(fields[10], "", "and it has no original path");
     assert!(
         fields[14].contains(&uuid(20)) && fields[14].ends_with("_640"),
         "the payload column names the largest level it holds: {}",
         fields[14]
+    );
+    assert_eq!(
+        fields[15], "",
+        "a cache payload of this shape carries no metadata of its own"
     );
 
     // The manifest carries the cache's shape too, and one `payload` member per
