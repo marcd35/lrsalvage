@@ -22,8 +22,14 @@ about a caller it cannot see.
 ## Decisions
 
 - **One type, not a hierarchy.** A caller matches on variants that name the actual
-  failure — `NotACatalog`, `LrprevTruncated { offset }`, `UnsafeDestination`,
-  `IccTooLarge` — instead of unwrapping a boxed cause chain.
+  failure — `NotACatalog`, `NotAPreviewCache`, `LrprevTruncated { offset }`,
+  `UnsafeDestination`, `IccTooLarge` — instead of unwrapping a boxed cause chain.
+- **A degraded cache is not a variant at all.** A missing or unreadable
+  `previews.db` is a mode, so `previews_db::open` returns the empty index and its
+  reason as data; nothing here reports it and nothing here decides that the run
+  stops. Only a `--previews` that is not a directory — a path there is nothing to
+  salvage at, which is `NotAPreviewCache` — is an error of this type, and it is a
+  usage one.
 - **Every I/O error carries its path.** `IoContext::at` exists so a report can say
   which file failed, which is the difference between a usable report and a bare
   "permission denied".
