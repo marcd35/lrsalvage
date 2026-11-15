@@ -37,6 +37,10 @@ no byte offset and decides nothing about bytes. It reads payload files but write
 nothing — not one byte, not one directory. Everything that ends up on disk is
 `extract`'s work, which is what makes `scan` a true rehearsal of `extract`.
 
+A plan records what the run decided, not the knobs that shaped it: the `Options`
+the caller passed stay the caller's, so a surface that echoes them takes them
+from the run rather than from the plan.
+
 ## Decisions
 
 - **One status per catalog image, and the statuses are a partition.** Every image

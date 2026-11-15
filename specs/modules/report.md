@@ -139,12 +139,13 @@ struct a path.
   the one claim derived from the index that can rot — and its grammar.
   `container` is `{"count", "template"}`, because a container's own size is
   nothing the cache publishes. Each class's `template` is printed verbatim from
-  the constants `previews_db` owns: a mixed cache therefore publishes both
-  grammars, which one cache-wide string could only get wrong. A class with no
-  file reports `count: 0` and **no** `template` key, because a template for a
-  shape the cache never showed is an example nobody asked for. `unrecognised`
-  has no class here on purpose: it counts files that took no shape, and it
-  already has a `stats` field (`adr-0005-discover-payloads-by-index`).
+  the constants `previews_db` owns — `LEVEL_FILE_GRAMMAR` and
+  `CONTAINER_GRAMMAR` — so a mixed cache publishes both grammars, which one
+  cache-wide string could only get wrong. A class with no file reports
+  `count: 0` and **no** `template` key, because a template for a shape the
+  cache never showed is an example nobody asked for. `unrecognised` has no class
+  here on purpose: it counts files that took no shape, and it already has a
+  `stats` field (`adr-0005-discover-payloads-by-index`).
 - **`--json` stays the stdout surface; the report is the only path-free one.** A
   redaction switch would leave two ways to produce one object and a flag whose
   whole job is to be remembered, so there is none: `--json` gains only what

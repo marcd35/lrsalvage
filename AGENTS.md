@@ -109,6 +109,7 @@ compatibility table calls verified.
 
 ## Docs
 
+- `docs/agents/issue-tracker.md` — how to read a ticket before implementing it.
 - `docs/format-notes.md` — byte layouts, evidence labels, the `.lrcat-data` trap.
 - `docs/adr/` — decisions and their consequences; read before changing a seam.
 - `specs/` — the spec graph: the product goal, the architecture and its
