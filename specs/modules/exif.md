@@ -36,9 +36,10 @@ list `jpeg::certify` already produced — no second walk.
 ## Decisions
 
 - **The payload is never re-encoded; only metadata segments are added or
-  replaced** (`adr-0003-preserve-preview-bytes`). An EXIF or ICC segment already
-  in the payload is replaced, never duplicated, and the compressed image data is
-  untouched.
+  replaced** (`adr-0003-preserve-preview-bytes`). Our EXIF segment replaces any
+  EXIF segment the payload carries, never sitting beside it; an ICC segment the
+  payload carries is kept, and ours is not embedded then. The compressed image
+  data is untouched either way.
 - **A payload that carries its own XMP is left byte-identical.** No merge is
   attempted: a partial merge would be worse than an honest gap. The rating still
   lands in EXIF, and the omission goes into the per-file note.
@@ -73,6 +74,9 @@ list `jpeg::certify` already produced — no second walk.
   declares an `Orientation`, the output carries that value; the catalog's
   orientation applies only when the payload states none. Pixels are still never
   rotated, so the tagged value cannot be wrong the way a re-derived one could.
+  `orientation` returns nothing usable for a mirrored value (2, 4, 5, 7): the
+  catalog can record only the four rotations, this writer cannot restate a
+  mirror, and guessing one would be worse than falling back to the catalog's.
 - **Orientation is a tag, not a rotation.** A viewer that ignores EXIF shows the
   picture sideways, and that is accepted: rotating pixels would be a permanent
   loss in exchange for a temporary convenience. Any future pixel-changing

@@ -805,8 +805,12 @@ All 390 payloads of the upgraded cache were read (every file, not a sample) on
   packet and an `ICC_PROFILE`, and pins the precedence order above. It is a shape
   this repository chose, not one observed in a Lightroom render, so it pins the
   order and cannot show what Adobe writes.
-- **TODO:** that payload exists only as a contract; the builder and the assertion
-  land with the v2 reader. Until then no executable evidence exists (issue #15).
+- **Executable, and still synthetic:** the contract above is built and asserted
+  — row M13 of `specs/fixtures.md` composes the payload, `lrsalvage-fixtures`
+  writes its bytes, and both matrix suites pin the precedence order (issue #31).
+  It remains evidence of the *decision*, never of an Adobe render: no payload on
+  this machine has been measured with an `Exif` APP1 (§1.4), so what Lightroom
+  writes stays **unverified**.
 
 ---
 

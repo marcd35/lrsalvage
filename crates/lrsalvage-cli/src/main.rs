@@ -91,6 +91,10 @@ struct ExtractArgs {
     #[arg(long)]
     include_present: bool,
     /// Do not add EXIF, XMP rating or the ICC profile to the recovered JPEGs.
+    ///
+    /// Such output carries no marker, so a later run cannot prove it wrote the
+    /// file: every destination is reported as not a verified extraction and is
+    /// left untouched unless --force is given.
     #[arg(long)]
     no_metadata: bool,
     /// Do not set file modification times to the capture time.

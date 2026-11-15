@@ -64,9 +64,10 @@ listed for it:
 Two edges are easy to miss and are real: `lrprev` calls `jpeg` to measure each
 declared payload, and `extract` calls `report::escape_csv` so the run CSV is
 escaped by the same rules as `report.csv`. `exif` calls `jpeg` for the one
-segment walk that both a payload's certification and its metadata reading use, and
-`plan` calls `exif` for the inventory, the payload's declared orientation and the
-resume marker — which is why both edges appear. `previews_db` borrows `snapshot`'s
+segment walk that both a payload's certification and its metadata reading use;
+`plan` calls `exif` for the inventory and the payload's declared orientation, and
+`extract` calls it to write the resume marker and to read it back — which is why
+both edges appear. `previews_db` borrows `snapshot`'s
 read-only opener for the cache's own database, which is why it appears in the
 table. `masks` is gated behind the `masks` cargo feature (`png` is optional);
 everything else is always compiled. `report` reads its two name templates from
