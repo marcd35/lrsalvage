@@ -64,9 +64,10 @@ listed for it:
 Two edges are easy to miss and are real: `lrprev` calls `jpeg` to measure each
 declared payload, and `extract` calls `report::escape_csv` so the run CSV is
 escaped by the same rules as `report.csv`. `exif` calls `jpeg` for the one
-segment walk that both a payload's certification and its metadata reading use, and
-`plan` calls `exif` for the inventory, the payload's declared orientation and the
-resume marker — which is why both edges appear. `previews_db` borrows `snapshot`'s
+segment walk that both a payload's certification and its metadata reading use;
+`plan` calls `exif` for the inventory and the payload's declared orientation, and
+`extract` calls it to write the resume marker and to read it back — which is why
+both edges appear. `previews_db` borrows `snapshot`'s
 read-only opener for the cache's own database, which is why it appears in the
 table. `masks` is gated behind the `masks` cargo feature (`png` is optional);
 everything else is always compiled. `report` reads its two name templates from
@@ -91,6 +92,13 @@ everything else is always compiled. `report` reads its two name templates from
   and writes nothing; `extract` writes and decides nothing about which image
   deserves to be recovered. A scan and an extract for the same inputs therefore
   agree by construction.
+- **A module's prose states only what it observed or performed.** An item note or
+  a report line names the facts the module itself holds and the act the module
+  itself takes. `plan` decides and never writes, so it can say a payload carries
+  its own EXIF and what writing metadata does with it, while replacing that
+  segment is `extract`'s to report. A note that claims another module's act
+  becomes a lie the moment a flag — `--no-metadata`, say — changes what that
+  module does, and the note is what a stranger reads instead of the cache.
 - **One error type.** Every fallible core function returns `error::Error`, with
   the path context that produced it. Exit codes are the CLI's mapping of that
   type, never a status smuggled through the core.

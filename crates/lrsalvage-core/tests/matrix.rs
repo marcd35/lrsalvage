@@ -10,10 +10,9 @@
 //! **The image totals stay open, and shape facts do not.** `images`,
 //! `recovered`, `suspect`, `missing_payload`, `no_cache_entry`,
 //! `original_present`, `below_floor`, `levels` and `selected_images` belong to
-//! the slice that completes each vault, because they include rows this file does
-//! not build: `modern` is missing M13 and M14. So `modern` holds only the rows
-//! asserted below, and its `images` count is the count of this file's rows, not
-//! the thirteen the spec pins.
+//! the slice that completes each vault. So `modern` holds only the rows asserted
+//! below, and its `images` count is the count of this file's rows, not the
+//! thirteen the spec pins.
 //!
 //! What is asserted per vault is every **cache-level** fact, because ADR 0004
 //! decides those once per cache: the layout word, the two version strings, the
@@ -23,13 +22,13 @@
 //! builder that writes one file fewer fails the row instead of silently
 //! shrinking it.
 //!
-//! Rows still without a test are M13 and M14 (`payload_metadata`,
-//! `effective_orientation`). `unindexed` is here because an absent index is a
-//! mode: `Vault::plan` builds one the same way it builds any other.
+//! `unindexed` is here because an absent index is a mode: `Vault::plan` builds
+//! one the same way it builds any other.
 
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use lrsalvage_core::Orientation;
 use lrsalvage_core::extract::{self, ExtractOptions, Outcome};
 use lrsalvage_core::jpeg;
 use lrsalvage_core::plan::{Options, Payload, Plan, PlanItem, Status, Tier};
@@ -52,6 +51,36 @@ const XMP: &str = r#"<x:xmpmeta xmlns:x="adobe:ns:meta/">
     tiff:Make="SONY"/>
  </rdf:RDF>
 </x:xmpmeta>"#;
+
+/// The XMP packet M13's payload carries.
+///
+/// A foreign packet: it is left byte-identical, so it can never be the one our
+/// writer would produce for the rating.
+const PAYLOAD_XMP: &str = r#"<x:xmpmeta xmlns:x="adobe:ns:meta/">
+ <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+  <rdf:Description rdf:about="" xmlns:xmp="http://ns.adobe.com/xap/1.0/" xmp:Rating="2"/>
+ </rdf:RDF>
+</x:xmpmeta>"#;
+
+/// The ICC profile M13's payload carries.
+///
+/// Deliberately not one of the two this repository builds: a reconstruction may
+/// never displace it, so the bytes themselves prove which won.
+const PAYLOAD_ICC: &[u8] = b"a profile this repository did not build";
+
+/// Every APP segment M13's payload carries, in the order it carries them.
+fn m13_segments() -> [Vec<u8>; 3] {
+    [
+        bytes::exif_app1(6),
+        bytes::xmp_app1(PAYLOAD_XMP),
+        bytes::icc_app2(PAYLOAD_ICC),
+    ]
+}
+
+/// M13's payload: its own EXIF, XMP and ICC, in front of a bare frame.
+fn m13_payload() -> Vec<u8> {
+    bytes::jpeg_with(1616, 1077, &m13_segments())
+}
 
 /// One distinct uuid per row, so no two pyramids share an address.
 fn uuid(row: u32) -> String {
@@ -92,6 +121,8 @@ const DIGEST_B: &str = "b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0";
 /// | 10 | M4 level file found only by the widening, its 1616 row's file absent |
 /// | 11 | M11 row digestA, file digestB: missing-payload plus one orphan |
 /// | 12 | M6 missing-payload whose pyramid carries a tombstone |
+/// | 13 | M13 payload carrying its own EXIF, XMP and ICC |
+/// | 14 | M14 bare payload, catalog claims the orientation and the profile |
 /// | — | M10 an unclaimed pyramid of two level files (uuid 20) |
 fn modern() -> Vault {
     let (m1, m2) = (uuid(1), uuid(2));
@@ -100,6 +131,7 @@ fn modern() -> Vault {
     let (m9, m12) = (uuid(8), uuid(9));
     let (m4, m11) = (uuid(10), uuid(11));
     let m6 = uuid(12);
+    let (m13, m14) = (uuid(13), uuid(14));
     let m10 = uuid(20);
 
     Vault::modern()
@@ -164,6 +196,22 @@ fn modern() -> Vault {
         .image(ImageRow::new(12, "IMG_0012").cache(&m6))
         .pyramid(PyramidRow::new(&m6).level(1616, 1077))
         .tombstone(&m6, 700_000_000.0)
+        // M13: the payload carries its own EXIF, XMP and ICC profile. The
+        // catalog claims an upright image and a different profile, so both
+        // precedence decisions are visible in the bytes.
+        .image(ImageRow::new(13, "IMG_0013").cache(&m13).xmp(XMP))
+        .pyramid(PyramidRow::new(&m13).profile("AdobeRGB").level(1616, 1077))
+        .level_file(Level::sized(&m13, 1616, 1077).raw(&m13_payload()))
+        // M14: a bare payload; the catalog supplies the orientation and the
+        // profile name, and neither is the payload's own.
+        .image(
+            ImageRow::new(14, "IMG_0014")
+                .cache(&m14)
+                .orientation("BC")
+                .xmp(XMP),
+        )
+        .pyramid(PyramidRow::new(&m14).profile("AdobeRGB").level(1616, 1077))
+        .level_file(Level::sized(&m14, 1616, 1077))
         // M10: a pyramid no image claims, two level files, one orphan.
         .unclaimed(&[Level::sized(&m10, 640, 427), Level::sized(&m10, 1616, 1077)])
         .write()
@@ -322,6 +370,43 @@ fn run_extract(vault: &Vault, plan: &Plan) -> Vec<Outcome> {
 fn written(item: &PlanItem) -> Vec<u8> {
     let output = item.output.as_ref().expect("a selected item has an output");
     fs::read(output).unwrap_or_else(|error| panic!("read {}: {error}", output.display()))
+}
+
+/// The ICC profile a JPEG carries, reassembled from its `ICC_PROFILE` APP2
+/// segments by the same signature the writer uses.
+fn embedded_icc(bytes: &[u8]) -> Option<Vec<u8>> {
+    let certified = jpeg::certify(bytes).expect("a written file is a JPEG");
+    let mut profile = Vec::new();
+    for segment in &certified.segments {
+        let payload = segment.payload(bytes);
+        if segment.marker == 0xE2 && payload.starts_with(b"ICC_PROFILE\0") {
+            profile.extend_from_slice(&payload[14..]);
+        }
+    }
+    (!profile.is_empty()).then_some(profile)
+}
+
+/// An IFD0 integer read by an independent parser, not by `exif`'s own reader.
+fn ifd0_uint(bytes: &[u8], tag: exif::Tag) -> Option<u32> {
+    exif::Reader::new()
+        .read_from_container(&mut std::io::Cursor::new(bytes))
+        .ok()?
+        .get_field(tag, exif::In::PRIMARY)?
+        .value
+        .get_uint(0)
+}
+
+/// An IFD0 ASCII value read by an independent parser.
+fn ifd0_text(bytes: &[u8], tag: exif::Tag) -> Option<String> {
+    let parsed = exif::Reader::new()
+        .read_from_container(&mut std::io::Cursor::new(bytes))
+        .ok()?;
+    match &parsed.get_field(tag, exif::In::PRIMARY)?.value {
+        exif::Value::Ascii(values) => values
+            .first()
+            .map(|value| String::from_utf8_lossy(value).into_owned()),
+        _ => None,
+    }
 }
 
 /// Payloads of every `FF E1` segment that opens with `Exif\0\0`.
@@ -754,6 +839,111 @@ fn m12_a_real_long_dimension_names_the_leaf_and_the_floor_only_excludes() {
         slashed(&expected)
     );
     assert!(expected.is_file(), "{}", expected.display());
+}
+
+#[test]
+fn m13_a_payload_that_carries_metadata_keeps_the_stronger_evidence() {
+    let vault = modern();
+    let plan = vault.plan(&Options::default());
+    let item = item_for(&plan, 13);
+
+    assert_eq!(item.status, Status::Recoverable);
+    assert_eq!(
+        item.payload_metadata.to_string(),
+        "exif,xmp,icc",
+        "the inventory names what the payload already carried"
+    );
+    assert_eq!(
+        item.orientation,
+        Orientation::Normal,
+        "the catalog's own claim stays on the item"
+    );
+    assert_eq!(
+        item.effective_orientation,
+        Orientation::Rotate90,
+        "the payload's own EXIF orientation describes these pixels and wins"
+    );
+
+    run_extract(&vault, &plan);
+    let output = written(item);
+    let certified = jpeg::certify(&output).expect("a complete JPEG");
+    assert!(certified.complete);
+
+    // Ours replaces the payload's segment, never beside it, and it names us.
+    let ours: Vec<jpeg::Segment> = certified
+        .segments
+        .iter()
+        .filter(|segment| {
+            segment.marker == 0xE1 && segment.payload(&output).starts_with(b"Exif\0\0")
+        })
+        .cloned()
+        .collect();
+    assert_eq!(ours.len(), 1, "exactly one EXIF segment: {ours:#?}");
+    let software = ifd0_text(&output, exif::Tag::Software).expect("the marker");
+    assert!(
+        software.starts_with("lrsalvage "),
+        "the output names itself: {software}"
+    );
+    assert_eq!(
+        ifd0_uint(&output, exif::Tag::Orientation),
+        Some(6),
+        "the payload's value is what the file states"
+    );
+
+    // The profile and the packet are the payload's own, byte for byte.
+    assert_eq!(
+        embedded_icc(&output).as_deref(),
+        Some(PAYLOAD_ICC),
+        "a reconstruction never displaces a real profile"
+    );
+    let segments = m13_segments();
+    let mut tail = segments[1].clone();
+    tail.extend_from_slice(&segments[2]);
+    tail.extend_from_slice(&bytes::jpeg(1616, 1077)[2..]);
+    assert_eq!(
+        &output[ours[0].range.end..],
+        &tail[..],
+        "everything after our EXIF is the payload's own bytes (ADR 0003)"
+    );
+}
+
+#[test]
+fn m14_a_bare_payload_takes_the_catalogs_orientation_and_profile() {
+    let vault = modern();
+    let plan = vault.plan(&Options::default());
+    let item = item_for(&plan, 14);
+
+    assert_eq!(item.status, Status::Recoverable);
+    assert!(
+        item.payload_metadata.is_empty(),
+        "ours is not the payload's: {}",
+        item.payload_metadata
+    );
+    assert_eq!(
+        item.orientation,
+        Orientation::Rotate90,
+        "the catalog says BC"
+    );
+    assert_eq!(
+        item.effective_orientation,
+        Orientation::Rotate90,
+        "with no payload claim the catalog's orientation is the effective one"
+    );
+
+    run_extract(&vault, &plan);
+    let output = written(item);
+
+    assert_eq!(
+        ifd0_uint(&output, exif::Tag::Orientation),
+        Some(6),
+        "0x0112 is written from the catalog's code"
+    );
+    let profile = lrsalvage_core::exif::icc_profile("AdobeRGB").expect("a built-in profile");
+    assert_eq!(
+        embedded_icc(&output).as_deref(),
+        Some(profile),
+        "our reconstructed profile is embedded when the payload carries none"
+    );
 }
 
 // ---------------------------------------------------------------------------

@@ -238,8 +238,8 @@ names which command each flag belongs to:
 | `--verbose` | `scan` only: print one line per plan item instead of only totals. |
 | `--json` | `scan` only: emit one machine-readable object instead of the table. |
 | `--dry-run` | Do everything except write files, report files included. |
-| `--force` | Replace a destination file that does not verify as ours: a complete JPEG whose dimensions match the planned item. Without it, such a file is reported as failed and left byte-identical. |
-| `--no-metadata` | Do not add any metadata to the recovered JPEGs: no EXIF (so no orientation or rating), no rating XMP packet, no ICC profile. |
+| `--force` | Replace a destination file that does not verify as ours. A file is ours only when it carries the `Software` marker `lrsalvage <version>`, is a complete JPEG, and its dimensions match the planned item. Anything else — a same-size file another tool wrote, or one of our own outputs from before the marker existed — is reported as failed and left byte-identical. |
+| `--no-metadata` | Do not add any metadata to the recovered JPEGs: no EXIF (so no orientation or rating), no rating XMP packet, no ICC profile, and no marker. Such output carries no proof of authorship, so a later run reports every destination as not a verified extraction and leaves it alone unless `--force` is given. |
 | `--no-timestamps` | Leave the file modification time at the time of writing, instead of setting it to the capture time. |
 
 ### What lands on disk
@@ -280,10 +280,14 @@ that orphan list is the only thing such a run has to hand over. None of them eve
 overwrites an existing file: if `report.csv` is already there, the run writes
 `report (2).csv` and says so. The numbered name applies to all three.
 
-`report.csv` ends with a `payload` column, and every item in `manifest.json` has
-a `payload` member: the file a preview was read from. For a `unmapped` payload
-that is the only path there is — no image, no output name — so it is a column to
-sort on rather than a sentence to parse out of `note`.
+`report.csv` ends with a `payload` column and then `payload_metadata`, and every
+item in `manifest.json` has a `payload` member: the file a preview was read from.
+For a `unmapped` payload that is the only path there is — no image, no output
+name — so it is a column to sort on rather than a sentence to parse out of
+`note`. `payload_metadata` names the segments the payload itself already carried
+— `exif,xmp,icc`, in that order, empty when it is bare — and is absent from
+`manifest.json` when there are none. It is what tells a reader whether a file's
+colour profile is the payload's own or one rebuilt from the catalog's name.
 
 The run ends with a line on stderr such as
 `78 evaluated, 78 written, 0 skipped, 0 failed, 25.3 MiB`. Sizes there are
@@ -313,10 +317,13 @@ The catalog is the only copy of the map. It is treated as read-only evidence:
 - **Atomic writes.** Each JPEG is written to a temporary file, flushed, and
   renamed into place, so an interrupted run leaves no half-JPEG masquerading as
   a recovered one.
-- **Resumable.** Re-running `extract` skips an output only when it verifies as
-  ours: a complete JPEG whose dimensions match the planned item. An existing
-  file that does not verify is left byte-identical and reported as failed;
-  `--force` is the explicit way to replace it. Interrupting a run costs nothing.
+- **Resumable.** Re-running `extract` skips an output only when it proves it is
+  ours: it carries the `Software` marker `lrsalvage <version>`, is a complete
+  JPEG, and its dimensions match the planned item. A same-size file somebody else
+  wrote, or one written before the marker existed, is left byte-identical and
+  reported as failed; `--force` is the explicit way to replace it. Output written
+  with `--no-metadata` can never be proven ours, by design. Interrupting a run
+  costs nothing.
 
 ## What the statuses mean
 
@@ -356,7 +363,9 @@ The preview's pixels are only half of what the catalog knows. With metadata on
   already has is not attempted: that packet is left byte-identical and the
   omission is recorded in the run's per-file note, while the rating still lands
   in EXIF.
-- **ICC** — a profile reconstructed from `Pyramid.colorProfile`. The catalog
+- **ICC** — unless the payload carries a profile of its own, in which case that
+  profile is copied verbatim and none is rebuilt. Otherwise, a profile
+  reconstructed from `Pyramid.colorProfile`. The catalog
   records the profile's name and never its bytes, so `sRGB` becomes a
   2,084-byte `sRGB IEC61966-2.1` profile and `AdobeRGB` a 560-byte
   `Adobe RGB (1998)` profile. Names are matched case-insensitively and ignoring
@@ -364,8 +373,19 @@ The preview's pixels are only half of what the catalog knows. With metadata on
   no built-in ICC profile; none embedded` — and none is embedded: a wrong profile
   is worse than none for colour-critical work.
 
-That ICC profile identifies the colour space; it is a reconstruction, not the
-profile the original file carried, and should not be presented as the original.
+That ICC profile identifies the colour space; when it was rebuilt, it is a
+reconstruction rather than the profile the original file carried, and should not
+be presented as the original.
+
+A payload is sometimes a rendered JPEG that already carries metadata of its own,
+and the stronger evidence wins: its own orientation tag describes *its* pixels,
+so that value is written rather than the catalog's; its own ICC profile is kept
+and ours is not embedded beside it; its own XMP packet is left byte-identical,
+with the rating in EXIF instead. What the catalog knows better is replaced rather
+than merged: our EXIF segment supersedes the payload's, so render-time tags such
+as maker notes are lost, and the run's per-file note says so. `payload_metadata`
+reports what the payload carried, and `orientation` in both machine surfaces is
+the value actually written.
 
 Only what the catalog actually recorded is written. Missing fields stay missing —
 no guessed timestamps, no invented camera names. An explicit `xmp:Rating = 0` is
@@ -379,9 +399,11 @@ Unless `--no-timestamps` is given, the file's modification time is set to the
 capture time; if that date is missing or unparseable, the mtime is left alone.
 
 The compressed image data is copied byte for byte. The only bytes added or
-replaced are metadata segments: EXIF and XMP APP1, ICC APP2. An EXIF or ICC
-segment already in the payload is replaced, never duplicated. With
-`--no-metadata`, the payload is written unchanged. See
+replaced are metadata segments: EXIF and XMP APP1, ICC APP2. A payload's EXIF
+segment is replaced by ours, never duplicated; its ICC and XMP segments are kept
+as they are. Every output carries our `Software` marker (`lrsalvage <version>`),
+which is how a later run proves it wrote the file. With `--no-metadata`, the
+payload is written unchanged and carries no marker. See
 [ADR 0003](docs/adr/0003-preserve-preview-bytes.md).
 
 ## Exit codes

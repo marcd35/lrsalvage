@@ -80,7 +80,10 @@ payload's own EXIF carries `Orientation` (IFD0 `0x0112`), that value describes
 says nothing. Pixels are still never rotated, so honouring the tag a render
 carried cannot rotate wrongly. A disagreement is a note, never a status:
 `suspect` keeps its meaning, bytes against the row's dimensions
-(`adr-0001-parse-dont-carve`).
+(`adr-0001-parse-dont-carve`). A value this writer cannot restate — a mirrored
+orientation (2, 4, 5, 7), which Lightroom's catalog has no code for — states
+nothing usable, so the catalog's orientation applies rather than a mirror being
+silently restated as a rotation.
 5. **Every output names itself.** Whenever metadata is written, our EXIF carries
 `Software` (IFD0 `0x0131`) set to `lrsalvage <version>` — even when the catalog
 recorded nothing else, so the segment exists for its marker alone. That is the

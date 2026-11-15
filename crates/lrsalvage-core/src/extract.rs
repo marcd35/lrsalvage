@@ -1,9 +1,11 @@
 //! The only module that writes to disk.
 //!
 //! A destination is never clobbered on faith. An existing file is skipped only
-//! when it verifies as one of our own outputs — a complete JPEG (SOI … EOI)
-//! whose SOF dimensions match the item being extracted; anything else is left
-//! byte-identical unless `--force` asked for a replacement.
+//! when it verifies as one of our own outputs: its `Exif` `Software` marker says
+//! `lrsalvage <version>`, it is a complete JPEG (SOI … EOI), and its SOF
+//! dimensions match the item being extracted. Anything else is left
+//! byte-identical unless `--force` asked for a replacement, so a same-size
+//! foreign JPEG is never mistaken for ours.
 //!
 //! A write goes to a unique `.<stem>.<pid>-<n>.partial` beside the destination,
 //! is flushed with `sync_all`, and is then renamed into place. There is no
@@ -277,11 +279,18 @@ pub const DESTINATION_NOT_OURS: &str =
 
 /// Is `bytes` one of our own past outputs for an item of `expected` size?
 ///
-/// A resume must prove the whole file survived: end-of-image present, frame
-/// parseable, and the frame the size the plan expects. A truncated file whose
-/// SOF happens to be intact therefore fails.
+/// A resume must prove authorship, not plausibility: the `Software` marker
+/// `exif` writes is present, the whole file survived (`FF D9` at EOF), and the
+/// frame is the size the plan expects. A same-size foreign JPEG fails, and so
+/// does an output written before the marker shipped (§5, `adr-0003`).
 fn verifies_as_ours(bytes: &[u8], expected: (u32, u32)) -> bool {
-    jpeg::is_complete(bytes) && jpeg::dimensions(bytes).is_ok_and(|dims| dims == expected)
+    let Ok(certified) = jpeg::certify(bytes) else {
+        return false;
+    };
+    certified.complete
+        && certified.dimensions == expected
+        && exif::software(bytes, &certified.segments)
+            .is_some_and(|software| software.starts_with(exif::SOFTWARE_PREFIX))
 }
 
 fn extract_one(item: &PlanItem, options: &ExtractOptions) -> Outcome {
@@ -296,16 +305,21 @@ fn extract_one(item: &PlanItem, options: &ExtractOptions) -> Outcome {
 
     // Resume: an existing file is skipped only when it verifies as ours.
     // Anything else is somebody else's file until `--force` says otherwise.
+    // A metadata-free run verifies nothing at all: its own output has nowhere to
+    // record identity, and a metadata-bearing file must not be silently kept by
+    // a run that promised the payload's bytes (`adr-0003` §6).
     if output.exists() {
-        if let Ok(existing) = fs::read(output) {
-            if verifies_as_ours(&existing, expected) {
-                return Outcome {
-                    output: output.clone(),
-                    status: OutcomeStatus::Skipped,
-                    bytes: existing.len() as u64,
-                    sha256: None,
-                    note: Some("already recovered and verified".into()),
-                };
+        if options.write_metadata {
+            if let Ok(existing) = fs::read(output) {
+                if verifies_as_ours(&existing, expected) {
+                    return Outcome {
+                        output: output.clone(),
+                        status: OutcomeStatus::Skipped,
+                        bytes: existing.len() as u64,
+                        sha256: None,
+                        note: Some("already recovered and verified".into()),
+                    };
+                }
             }
         }
         if !options.force {
@@ -379,19 +393,22 @@ fn extract_one(item: &PlanItem, options: &ExtractOptions) -> Outcome {
             .and_then(|i| i.xmp.clone())
             .unwrap_or_default();
         let orientation = if options.write_orientation {
-            item.orientation
+            item.effective_orientation
         } else {
             Orientation::Normal
         };
-        let meta = exif::from_catalog_with_profile(&xmp, orientation, item.color_profile.clone());
-        if !meta.is_empty() {
-            match exif::inject_full(&bytes, &meta) {
-                Ok(injection) => {
-                    bytes = injection.jpeg;
-                    notes.extend(injection.notes);
-                }
-                Err(e) => return failed(output.clone(), format!("exif injection failed: {e}")),
+        // The workspace version: the same string `manifest.json` records, so a
+        // file's marker and the run that wrote it agree. The marker is what makes
+        // this input never empty, so metadata is written whenever it is asked
+        // for — a segment always exists, if only to say who wrote the file.
+        let meta = exif::from_catalog_with_profile(&xmp, orientation, item.color_profile.clone())
+            .with_marker(env!("CARGO_PKG_VERSION"));
+        match exif::inject_full(&bytes, &meta) {
+            Ok(injection) => {
+                bytes = injection.jpeg;
+                notes.extend(injection.notes);
             }
+            Err(e) => return failed(output.clone(), format!("exif injection failed: {e}")),
         }
     }
 
@@ -643,6 +660,8 @@ mod tests {
                     color_profile: None,
                     quality: None,
                     orientation: Orientation::Normal,
+                    effective_orientation: Orientation::Normal,
+                    payload_metadata: exif::PayloadMetadata::default(),
                     tier: None,
                     declared: None,
                     smallest_level: None,
@@ -719,9 +738,11 @@ mod tests {
     fn a_preexisting_verified_file_is_skipped_and_its_bytes_untouched() {
         let fixture = Fixture::new();
         fs::create_dir_all(fixture.output.parent().unwrap()).expect("create output dir");
-        // Same dimensions, different bytes: verification is about the file
-        // being one of ours, not about matching a payload byte for byte.
-        let ours = jpeg(1600, 1200);
+        // Same dimensions, different bytes: verification is about the file being
+        // one of ours — the marker, completeness and the frame — not about
+        // matching a payload byte for byte. The fixture writes the marker in the
+        // other byte order, which is exactly the case a reader must accept.
+        let ours = lrsalvage_fixtures::bytes::our_output(1600, 1200, "0.1.0");
         fs::write(&fixture.output, &ours).expect("pre-existing extraction");
 
         let outcomes = fixture.run(true);
@@ -729,6 +750,75 @@ mod tests {
         assert_eq!(outcomes[0].status, OutcomeStatus::Skipped);
         assert!(outcomes[0].sha256.is_none(), "a skip has no digest");
         assert_eq!(fs::read(&fixture.output).unwrap(), ours);
+    }
+
+    #[test]
+    fn a_same_size_foreign_jpeg_is_not_ours() {
+        let fixture = Fixture::new();
+        fs::create_dir_all(fixture.output.parent().unwrap()).expect("create output dir");
+        // Complete, right size, and written by somebody else: without the marker
+        // the old rule kept it, which is the bug the marker closes.
+        let foreign = jpeg(1600, 1200);
+        fs::write(&fixture.output, &foreign).expect("a foreign picture");
+
+        let outcomes = fixture.run(false);
+
+        assert_eq!(outcomes[0].status, OutcomeStatus::Failed);
+        assert_eq!(outcomes[0].note.as_deref(), Some(DESTINATION_NOT_OURS));
+        assert_eq!(
+            fs::read(&fixture.output).unwrap(),
+            foreign,
+            "somebody else's same-size file is left byte-identical"
+        );
+    }
+
+    #[test]
+    fn a_metadata_free_run_never_verifies_anything() {
+        let fixture = Fixture::new();
+        let mut options = fixture.options(false);
+        options.write_metadata = false;
+
+        let first = extract(&fixture.plan, &options, &mut |_| {}).expect("first extract");
+        assert_eq!(first[0].status, OutcomeStatus::Written);
+        let written = fs::read(&fixture.output).expect("read the output");
+        assert_eq!(
+            written,
+            jpeg(1600, 1200),
+            "`--no-metadata` writes the payload's own bytes"
+        );
+
+        // A metadata run must not silently keep it: there is no marker to prove
+        // authorship, so the destination is reported and left alone.
+        let second = fixture.run(false);
+        assert_eq!(second[0].status, OutcomeStatus::Failed);
+        assert_eq!(second[0].note.as_deref(), Some(DESTINATION_NOT_OURS));
+        assert_eq!(fs::read(&fixture.output).unwrap(), written);
+    }
+
+    #[test]
+    fn a_written_output_carries_the_marker_and_the_effective_orientation() {
+        let mut fixture = Fixture::new();
+        // The catalog claims an upright image; the payload states otherwise.
+        let item = &mut fixture.plan.items[0];
+        item.orientation = Orientation::Normal;
+        item.effective_orientation = Orientation::Rotate90;
+
+        let outcomes = fixture.run(false);
+        assert_eq!(outcomes[0].status, OutcomeStatus::Written);
+
+        let written = fs::read(&fixture.output).expect("read the output");
+        let certified = jpeg::certify(&written).expect("a complete JPEG");
+        assert!(certified.complete);
+        assert!(
+            exif::software(&written, &certified.segments)
+                .is_some_and(|software| software.starts_with(exif::SOFTWARE_PREFIX)),
+            "every output names itself"
+        );
+        assert_eq!(
+            exif::orientation(&written, &certified.segments),
+            Some(Orientation::Rotate90),
+            "the value written is the effective orientation, not the catalog's"
+        );
     }
 
     #[test]

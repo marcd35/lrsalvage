@@ -42,7 +42,8 @@ segments.
   resume verification, `--force` policy.
 - `exif` — inserts EXIF, XMP and ICC segments around the untouched payload. ICC
   profiles are reconstructed from the catalog's profile name, never copied from a
-  source file; an unknown name gets a note, not a guess.
+  source file; a payload that already carries one keeps it, and an unknown name
+  gets a note, not a guess.
 - `report` — terminal summary, `report.csv`, `manifest.json`, contact sheet.
 - `masks` — decodes `.lrcat-data` AI mask layers to PNG.
 - `error` — the single error type and its I/O path context.
@@ -75,6 +76,12 @@ not allowed.
   `typos` through `scripts/check.sh`, which is the only place they are written.
   A fresh clone installs it with `git config core.hooksPath .githooks`; skip it
   deliberately with `git commit --no-verify`.
+- **`spec_validate` is the gate no script can run.** It reports dangling links,
+  duplicate ids and parent cycles across `specs/`, and it is an in-app tool, so
+  neither `scripts/check.sh` nor CI can call it. A slice that adds, moves or
+  re-links a spec ends by asking it for a clean graph — the link resolving and
+  the design agreeing are two different questions, and `tests/spec_graph.rs`
+  only answers the second.
 - **The tests assert more than behaviour.** `tests/spec_graph.rs` checks each
   module's `depends-on` against the modules it actually reaches, and
   `lrsalvage-cli`'s `tests/readme.rs` checks the README's flag and `--json`
