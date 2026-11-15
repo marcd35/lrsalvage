@@ -31,4 +31,4 @@ pub mod snapshot;
 
 pub use error::{Error, Result};
 pub use model::{CacheEntry, CatalogImage, Orientation, Pyramid, PyramidLevel, XmpMetadata};
-pub use plan::{Plan, PlanItem, Status};
+pub use plan::{Payload, Plan, PlanItem, Status};
