@@ -9,8 +9,8 @@ use std::path::{Component, Path, PathBuf};
 use crate::catalog::Catalog;
 use crate::error::Result;
 use crate::model::{CatalogImage, Orientation, Pyramid, PyramidLevel};
-use crate::previews_db::{Candidate, PreviewIndex};
-use crate::{jpeg, lrprev};
+use crate::previews_db::{Candidate, PreviewIndex, PyramidOnDisk};
+use crate::{jpeg, lrprev, previews_db};
 
 /// Where a payload lives, decided once so no reader has to sniff it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -348,22 +348,24 @@ impl Plan {
             }
         }
 
-        // Payloads with no cache entry: recoverable, but unmappable.
-        for name in payload_names(cache_root) {
-            let stem = name.rsplit('/').next().unwrap_or(&name);
-            if claimed.contains(stem) {
+        // Payloads with no cache entry: recoverable, but unmappable. One item
+        // per pyramid, never one per level file: one orphan is one lost
+        // photograph, whatever its level set looks like
+        // (`adr-0005-discover-payloads-by-index` ¶8). The enumeration is
+        // `previews_db`'s; which of these pyramids an image claims is decided
+        // by the claim set above.
+        for pyramid in previews_db::pyramids_on_disk(cache_root) {
+            if claimed.contains(&format!("{}-{}", pyramid.uuid, pyramid.digest)) {
                 continue;
             }
-            let payload = cache_root.join(&name).with_extension("lrprev");
+            let Some(payload) = unclaimed_payload(&pyramid) else {
+                continue;
+            };
+            let named = payload.path().to_string_lossy().replace('\\', "/");
             items.push(PlanItem {
                 status: Status::Unmapped,
                 image: None,
-                // A container no image claims: listed and never written, so no
-                // level was ever certified in it.
-                payload: Some(Payload::Container {
-                    path: payload.clone(),
-                    level: None,
-                }),
+                payload: Some(payload),
                 // Nothing is extracted, so there is no output path to report;
                 // the payload's own path is the useful fact.
                 output: None,
@@ -377,8 +379,7 @@ impl Plan {
                 smallest_level: None,
                 selected: false,
                 note: Some(format!(
-                    "payload exists but previews.db has no entry for it: {}",
-                    payload.to_string_lossy().replace('\\', "/")
+                    "payload exists but previews.db has no entry for it: {named}"
                 )),
             });
             stats.unmapped += 1;
@@ -412,6 +413,25 @@ fn distinct_selected_images(items: &[PlanItem]) -> usize {
         .filter_map(|item| item.image.as_ref().map(|image| image.id_local))
         .collect::<HashSet<i64>>()
         .len()
+}
+
+/// What an unclaimed pyramid is reported as: the largest level file it holds
+/// (`_<n>` descending, no read), or the `.lrprev` when it holds no level file.
+///
+/// Nothing is selected or written for either arm: an unclaimed payload has no
+/// catalog image, so there is no output path to plan for it.
+fn unclaimed_payload(pyramid: &PyramidOnDisk) -> Option<Payload> {
+    if let Some(level) = pyramid.largest_level() {
+        return Some(Payload::LevelFile {
+            path: level.to_path_buf(),
+        });
+    }
+    pyramid.container.as_ref().map(|path| Payload::Container {
+        path: path.clone(),
+        // A container no image claims: listed and never written, so no
+        // level was ever certified in it.
+        level: None,
+    })
 }
 
 /// One level of one pyramid, as the plan found it.
@@ -738,23 +758,6 @@ fn unique_path(used: &mut HashMap<String, u32>, path: PathBuf) -> PathBuf {
         .map(|s| s.to_string_lossy().into_owned())
         .unwrap_or_default();
     path.with_file_name(format!("{stem} ({}).jpg", *count))
-}
-
-/// `<uuid[0]>/<uuid[0..4]>/<UUID>-<digest>` for every `.lrprev` on disk.
-fn payload_names(cache_root: &Path) -> Vec<String> {
-    use walkdir::WalkDir;
-
-    WalkDir::new(cache_root)
-        .into_iter()
-        .filter_map(std::result::Result::ok)
-        .filter(|e| e.file_type().is_file() && e.path().extension().is_some_and(|x| x == "lrprev"))
-        .filter_map(|e| {
-            e.path()
-                .strip_prefix(cache_root)
-                .ok()
-                .map(|rel| rel.with_extension("").to_string_lossy().replace('\\', "/"))
-        })
-        .collect()
 }
 
 /// Join `relative` onto `output_root`, refusing anything that lands outside it.
@@ -1205,6 +1208,11 @@ mod tests {
         assert_eq!(plan.stats.recoverable, 1);
     }
 
+    /// A uuid and digest that are shaped like a real payload address, so the
+    /// tree walk recognises the file as a pyramid (§5.2).
+    const ORPHAN_UUID: &str = "0BAD0999-1111-4111-8111-000000000999";
+    const ORPHAN_DIGEST: &str = "0bad0bad0bad0bad0bad0bad0bad0bad";
+
     #[test]
     fn a_cache_row_for_a_deleted_image_does_not_hide_its_payload() {
         let fixture = Fixture::new(vec![ImageRow::new(1, "IMG_0001").cache(
@@ -1216,8 +1224,8 @@ mod tests {
         // A stale row: `imageId` 999 has no row in Adobe_images any more.
         let stale = CacheEntry {
             image_id: 999,
-            uuid: "ZZZZ0999-1111-4111-8111-000000000999".to_string(),
-            digest: "0bad".to_string(),
+            uuid: ORPHAN_UUID.to_string(),
+            digest: ORPHAN_DIGEST.to_string(),
             orientation: None,
         };
         fixture.write_payload(&stale.uuid, &stale.digest, &[(1024, 683)]);
@@ -1326,11 +1334,7 @@ mod tests {
             &[(1616, 1077)],
             &[(1616, 1077)],
         )]);
-        fixture.write_payload(
-            "ZZZZ0999-1111-4111-8111-000000000999",
-            "0bad",
-            &[(1024, 683)],
-        );
+        fixture.write_payload(ORPHAN_UUID, ORPHAN_DIGEST, &[(1024, 683)]);
 
         let plan = fixture.plan(&Options::default());
         let unmapped: Vec<&PlanItem> = plan
@@ -1345,8 +1349,11 @@ mod tests {
             unmapped[0].output
         );
         let note = unmapped[0].note.as_deref().expect("note");
-        assert!(note.contains("ZZZZ0999"), "note names the payload: {note}");
-        assert!(note.contains("0bad"), "note names the payload: {note}");
+        assert!(note.contains("0BAD0999"), "note names the payload: {note}");
+        assert!(
+            note.contains(ORPHAN_DIGEST),
+            "note names the payload: {note}"
+        );
     }
 
     #[test]
