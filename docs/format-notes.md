@@ -606,20 +606,22 @@ picture upright without touching a pixel (ADR 0003).
 
 ## 5. Lightroom 13.3 and later — VERIFIED for the upgrade path
 
-> **Implementation status:** the modern layout is read. A level file is derived
-> from its `PyramidLevel` row, a level the index forgot is found by widening
-> inside the pyramid's own `(uuid, digest)` and never beyond it, the chosen level
-> is certified by its own bytes, and the cache's `layout` is reported as one of
+> **Implementation status:** built, and run end to end against this cache
+> (section 5.9). The modern layout is read. A level file is derived from its
+> `PyramidLevel` row, a level the index forgot is found by widening inside the
+> pyramid's own `(uuid, digest)` and never beyond it, the chosen level is
+> certified by its own bytes, and the cache's `layout` is reported as one of
 > five words. A cache with no readable `previews.db` degrades: every image whose
 > original is not on disk is `no-cache-entry`, every payload pyramid is listed as
-> `unmapped`, and the run exits 3 with one hint. Still not built: the path-free
-> `--report` artifact a
-> stranger would hand over. Tracked in
-> [issue #2](https://github.com/marcd35/lrsalvage/issues/2).
+> `unmapped`, and the run exits 3 with one hint. `scan --report` writes the
+> path-free verification artifact a stranger can hand over, and `extract` writes
+> one JPEG per image with the same metadata treatment legacy payloads get.
+> Delivery: [issue #2](https://github.com/marcd35/lrsalvage/issues/2).
 
-Lightroom Classic 13.3 changed preview storage. Sections 5.1–5.4 are **verified**
-on an upgraded catalog; section 5.5 lists what remains **reported**. The tool
-must still detect the layout rather than assume either one.
+Lightroom Classic 13.3 changed preview storage. Sections 5.1–5.4, 5.7 and 5.9 are
+**verified** on an upgraded catalog; sections 5.5 and 5.8 list what remains
+unmeasured, which is not the same as untested software. The tool must still
+detect the layout rather than assume either one.
 
 ### 5.1 What was measured
 
@@ -681,8 +683,14 @@ The catalog version is not the marketing major: a catalog written by Lightroom
 - Counts: `Pyramid` 78, `PyramidLevel` 390, `ImageCacheEntry` 78,
   `DeletedPyramid` 0. Every row maps to an existing file: no stale rows and no
   orphan payloads in this cache.
-- `PyramidLevel.fileSize` is **not** the on-disk size: level 5 reports 311,930
-  against an actual 302,569 bytes. Do not use it as a byte count.
+- `PyramidLevel.fileSize` equals the on-disk byte count. Measured across all
+  390 rows on 2026-11-15: every row's `fileSize` matched its file exactly
+  (delta 0, 390 of 390), and the `1418F22B…` pyramid's level 5 is `302569`
+  declared and `302569` on disk. An earlier revision of this note paired
+  `311,930`, the `fileSize` of a *different* pyramid in the same cache, with
+  that file and concluded the column was unusable. The pairing was wrong, not
+  the column. It is still a declaration rather than a measurement: a truncated or
+  pruned file can disagree with it, and no such state was measured (§5.5).
 
 ### 5.5 Still reported, not measured
 
@@ -702,10 +710,25 @@ stale rows; a cache holding both `.lrprev` and modern payloads (this upgrade
 converted everything in place, so coexistence was not observed); any conversion
 from a catalog newer than `1200001`.
 
-Three of those states are constructed synthetically for the matrix — rows M3 and
-M4 (a row whose file is gone; a file whose row is gone) and X1 (a superseded
-pyramid) of `specs/fixtures.md`, each labelled `unmeasured`. A fixture proves how
-the reader behaves in a state; it never proves Adobe produces that state.
+Every state above that a fixture *can* construct has a row in
+`specs/fixtures.md`. Those rows are labelled `unmeasured` — `unverified` for
+M13 — because a fixture proves how the reader behaves in a state and never that
+Adobe produces it:
+
+| Unmeasured state | Row that pins the reader | What the row cannot show |
+|---|---|---|
+| Pruned level: the row's file is gone, a smaller level survives | `M3` | that a Lightroom upgrade prunes this way |
+| Level file with no row (found by the bounded glob) | `M4` | that the index ever forgets a row |
+| Both representations for one pyramid (`superseded`) | `X1` | that this upgrade leaves a `.lrprev` behind |
+| Coexistence, resolved per pyramid rather than per cache | `X2` | that Adobe produces a mixed cache at all |
+| A freshly built render's payload metadata | `M13` (§5.8) | everything about what Adobe writes |
+
+So the software's behaviour in those states is tested; the claim that Lightroom
+produces them is not. Two states have no row at all: the level set a fresh render
+chooses, which nothing measures yet
+([issue #40](https://github.com/marcd35/lrsalvage/issues/40)), and a conversion
+from a catalog newer than `1200001`, which is a fact about Adobe's upgrader
+rather than about the reader.
 
 ### 5.6 Consequences
 
@@ -762,15 +785,12 @@ All 390 payloads of the upgraded cache were read (every file, not a sample) on
   declared payload, so a walk of the top-level chain never reaches its `SOF`.
   This is a property of the layout, not something observed in situ: no payload in
   this cache carries an `APP1` segment at all.
-- **The reader reproduces every fact above — verified, 2026-11-15.** A `scan` of
-  this same cache with the current build reports `layout modern`,
-  `db_version 1504001`, `crs_version 18.0.0`, `images 78`, `recovered 78`,
-  `failed 0`, `unmapped 0`, `unrecognised 0`, and `shapes` of
-  `level_file 390`, `suffix_matches_sof 390`, `container 0`. The last pair is
-  §5.7's 390-of-390 measurement read back through the tool: each leaf's `_<n>`
-  matched the long edge its own `SOF` declared, on every file in the cache, so
-  the histogram is a measurement and not a second reading of the name. `extract`
-  was not run against it; `scan` writes nothing.
+- **The reader reproduces every fact above — verified, 2026-11-15.** A `scan`
+  with the build from this tree reports `shapes` of `level_file 390` and
+  `suffix_matches_sof 390`: §5.7's 390-of-390 measurement read back through the
+  tool, because each leaf's `_<n>` matched the long edge its own `SOF` declared,
+  on every file in the cache. The histogram is a measurement, not a second
+  reading of the name. §5.9 records that run in full.
 - **TODO**: `MotionPreview` and `FacePreview` (with their `Deleted*` and
   `CacheEntry` siblings) exist in this store and hold 0 rows. No video or
   face-preview cache has been inspected, so their modern payload shape is
@@ -811,6 +831,57 @@ All 390 payloads of the upgraded cache were read (every file, not a sample) on
   It remains evidence of the *decision*, never of an Adobe render: no payload on
   this machine has been measured with an `Exif` APP1 (§1.4), so what Lightroom
   writes stays **unverified**.
+- **Verified, 2026-11-15:** `payload_metadata` was blank in all 78 items of
+  §5.9's `extract`, and a fresh walk of all 390 level files found no `APP1` and
+  no `APP2` segment. The payloads on this machine are the converted legacy
+  levels, so the metadata-bearing state of M13 cannot come from here; it needs a
+  cache Lightroom rendered from scratch, which
+  [issue #40](https://github.com/marcd35/lrsalvage/issues/40) tracks.
+
+### 5.9 The build from this tree, run against this cache — VERIFIED
+
+On 2026-11-15 the binary built from this tree (`0.1.0`) was run against the
+upgraded catalog and its cache, read-only, with every write going to a scratch
+root outside both trees. No path appears below: the numbers are the runs' own
+output and the `--report` file, which is path-free by construction.
+
+| Run | Exit | What it reported |
+|---|---|---|
+| `scan` | 0 | `cache layout: modern`, `catalog images 78`, `recovered 78 25.1 MiB`, `standard 78` |
+| `scan --json` | 0 | `layout modern`, `db_version 1504001`, `crs_version 18.0.0`, `images 78`, `recovered 78`, `bytes 26330281`, `tiers {standard: 78}`, `shapes {level_file: 390, suffix_matches_sof: 390, container: 0}`, and `0` for every other count — `suspect`, `missing_payload`, `no_cache_entry`, `unmapped`, `failed`, `original_present`, `below_floor`, `superseded`, `deleted`, `unrecognised` |
+| `scan --report <file>` | 0 | `schema lrsalvage.verification`, `version 0.1.0`, `layout modern`, both version strings, `options {min_long_edge: 640, all_levels: false, include_present: false}`, the same stats plus `levels 78`, `selected_images 78`, `selected_items 78`, `shapes.level_file` as `{count: 390, suffix_matches_sof: 390, template: "<uuid[0]>/<uuid[0..4]>/<UUID>-<digest>_<longedge>"}`, and `shapes.container` as `{count: 0}` with no template |
+| `extract --out <root>` | 0 | `78 evaluated, 78 written, 0 skipped, 0 failed, 25.3 MiB` |
+| the same `extract` again | 0 | `78 evaluated, 0 written, 78 skipped, 0 failed, 0.0 MiB` — resume proves each output ours by its `Software` marker, completeness and `SOF`, and writes no preview; its three report files are re-emitted as `(2)` copies |
+| `extract --all-levels --out <second root>` | 0 | `recovered 78 32.6 MiB`, tiers `standard 78`, `small 78`, `thumbnail 234`, `below floor (640px) 234`, `156 evaluated, 156 written, 0 skipped, 0 failed, 33.0 MiB` |
+
+What those numbers pinned, beyond the sections above:
+
+- **One file per image, and it is the largest level.** All 78 items are
+  `standard` at 1616 × 1077, the pyramid's own largest level. `--all-levels`
+  lists all 390 level rows — five per image, at 101 / 202 / 404 / 808 / 1616 —
+  and selects the 156 at or above the 640-pixel floor.
+- **The compressed data is copied byte for byte.** In 78 of 78 outputs the
+  payload's bytes after `SOI` appear contiguously at a fixed offset and run to
+  exactly EOF at the output's last byte. The carried bytes sum to 26,330,281,
+  which is the `bytes` stat both `scan` surfaces report. That is ADR 0003 on the
+  modern layout measured rather than inferred.
+- **Only metadata segments are added, and always the same three.** Every output
+  is its payload plus exactly 2,753 bytes of segments: a 330-byte `Exif` APP1, a
+  321-byte rating XMP APP1, and a 2,102-byte `ICC_PROFILE` APP2 whose length
+  field is 2,100 and whose payload is the 2,084-byte `sRGB` profile rebuilt from
+  `Pyramid.colorProfile` (§6.4). The level file carries none of its own, so
+  `payload_metadata` is empty everywhere and the rebuild is the one that lands.
+- **The catalog half of the metadata arrives.** 78 of 78 rows carry a capture
+  time, a rating (`0`, written as EXIF `0x4746`), an orientation (`AB` 75, `DA`
+  3) and `color_profile sRGB`, and all 78 outputs carry the `lrsalvage 0.1.0`
+  marker.
+- **`scan` wrote nothing** on the runs that named no file, and every file it did
+  write — the verification report — obeys the destination rule.
+
+Not reachable from this machine, and therefore still §5.5's business: a freshly
+rendered cache, a pruned level, a stale row, and a cache holding both layouts.
+The fixture matrix pins the reader's behaviour in those states synthetically; no
+run here can claim Adobe produces them.
 
 ---
 

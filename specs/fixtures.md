@@ -353,4 +353,6 @@ which medium proves each promise, and where the bytes come from.
   non-zero, `--json`, `manifest.json`, never `report.csv`), beside `superseded`.
 - `format-notes` §5.8 — the metadata-bearing-payload TODO becomes a pointer to
   row M13, which pins the order and cannot show what Adobe writes; §5.5 gains a
-  cross-reference to rows M3, M4 and X1 as the unmeasured states.
+  cross-reference from each state it leaves unmeasured to the row that pins the
+  reader's behaviour in it — M3, M4, X1 and X2 — and to M13 as the `unverified`
+  one.
