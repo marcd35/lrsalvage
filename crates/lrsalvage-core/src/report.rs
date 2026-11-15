@@ -11,8 +11,12 @@ use serde_json::{Map, Value, json};
 
 use crate::error::{IoContext, Result};
 use crate::model::Orientation;
-use crate::plan::{Payload, Plan, PlanItem, Shapes, Tier};
+use crate::plan::{Options, Payload, Plan, PlanItem, Shapes, Stats, Tier};
+use crate::previews_db::{self, Layout};
 use crate::{jpeg, lrprev};
+
+/// The tag a consumer reads to know which facts a verification report holds.
+const VERIFICATION_SCHEMA: &str = "lrsalvage.verification";
 
 /// One-line-per-status summary for the terminal, using the default 640 px floor.
 pub fn summary(plan: &Plan) -> String {
@@ -345,8 +349,12 @@ fn orientation_code(orientation: Orientation) -> &'static str {
     }
 }
 
-/// Versioned JSON manifest, the stable contract for downstream tools.
-pub fn write_json(plan: &Plan, path: &Path, version: &str) -> Result<()> {
+/// The tier histogram, in a fixed order, with an absent tier absent.
+///
+/// Shared by all three machine surfaces — `--json`, `manifest.json` and the
+/// verification report — so a new tier cannot appear on one and vanish from
+/// another.
+pub fn tiers_json(stats: &Stats) -> Value {
     let mut tiers = Map::new();
     for tier in [
         Tier::Full,
@@ -355,11 +363,15 @@ pub fn write_json(plan: &Plan, path: &Path, version: &str) -> Result<()> {
         Tier::Small,
         Tier::Thumbnail,
     ] {
-        if let Some(count) = plan.stats.tiers.get(tier.as_str()) {
+        if let Some(count) = stats.tiers.get(tier.as_str()) {
             tiers.insert(tier.as_str().to_string(), json!(count));
         }
     }
+    Value::Object(tiers)
+}
 
+/// Versioned JSON manifest, the stable contract for downstream tools.
+pub fn write_json(plan: &Plan, path: &Path, version: &str) -> Result<()> {
     let items: Vec<Value> = plan.items.iter().map(item_json).collect();
     let manifest = json!({
         "schema": "lrsalvage.manifest",
@@ -372,7 +384,7 @@ pub fn write_json(plan: &Plan, path: &Path, version: &str) -> Result<()> {
             "images": plan.stats.images,
             "recovered": plan.stats.recoverable,
             "bytes": plan.stats.bytes,
-            "tiers": Value::Object(tiers),
+            "tiers": tiers_json(&plan.stats),
             "superseded": plan.stats.superseded,
             "deleted": plan.stats.deleted,
             "unrecognised": plan.stats.unrecognised,
@@ -473,6 +485,135 @@ pub fn shapes_json(shapes: &Shapes) -> Value {
         "suffix_matches_sof": shapes.suffix_matches_sof,
         "container": shapes.container,
     })
+}
+
+/// The verification report's contents, as a struct of its own.
+///
+/// Not a filtered plan and not a filtered `--json` object: there is no field
+/// here a path, a leaf name, a uuid or a digest could be put in, so no module
+/// can hand this report one (`adr-0007-publish-a-verification-report`). The
+/// field set is frozen in this module's spec; adding one is a decision, not an
+/// edit.
+struct Verification<'a> {
+    version: &'a str,
+    layout: Layout,
+    db_version: Option<&'a str>,
+    crs_version: Option<&'a str>,
+    /// The options the run applied. They come from the caller because a
+    /// [`Plan`] records what the run decided, not the knobs that shaped it.
+    options: &'a Options,
+    stats: &'a Stats,
+    shapes: Shapes,
+}
+
+impl Verification<'_> {
+    fn to_json(&self) -> Value {
+        json!({
+            "schema": VERIFICATION_SCHEMA,
+            "version": self.version,
+            "generated_unix": unix_now(),
+            // ADR 0004's one word and two verbatim strings, never interpreted.
+            "layout": self.layout.as_str(),
+            "db_version": self.db_version,
+            "crs_version": self.crs_version,
+            "options": {
+                "min_long_edge": self.options.min_long_edge,
+                "all_levels": self.options.all_levels,
+                "include_present": self.options.include_present,
+            },
+            "stats": verification_stats(self.stats),
+            "shapes": verification_shapes(&self.shapes),
+        })
+    }
+}
+
+/// Write the path-free verification report a stranger can paste into an issue.
+///
+/// The file describes the plan, so it is worth writing for the degraded runs
+/// most worth handing over; *when* it is written is `cli`'s decision, what it
+/// says is this module's. `lrsalvage.manifest`'s envelope, a curated body: no
+/// `items`, no input paths, and nothing that names a payload.
+pub fn write_verification(
+    plan: &Plan,
+    options: &Options,
+    path: &Path,
+    version: &str,
+) -> Result<()> {
+    let report = Verification {
+        version,
+        layout: plan.cache.layout,
+        db_version: plan.cache.db_version.as_deref(),
+        crs_version: plan.cache.crs_version.as_deref(),
+        options,
+        stats: &plan.stats,
+        shapes: plan.cache.shapes,
+    };
+
+    let mut text = serde_json::to_string_pretty(&report.to_json()).map_err(|error| {
+        crate::error::Error::Io {
+            path: path.to_path_buf(),
+            source: std::io::Error::other(format!("report serialisation failed: {error}")),
+        }
+    })?;
+    text.push('\n');
+    std::fs::write(path, text).at(path)?;
+    Ok(())
+}
+
+/// The plan's totals, as the frozen `stats` set.
+fn verification_stats(stats: &Stats) -> Value {
+    json!({
+        "images": stats.images,
+        "recovered": stats.recoverable,
+        "suspect": stats.suspect,
+        "missing_payload": stats.missing_payload,
+        "no_cache_entry": stats.no_cache_entry,
+        "unmapped": stats.unmapped,
+        "failed": stats.failed,
+        "original_present": stats.original_present,
+        "below_floor": stats.below_floor,
+        "bytes": stats.bytes,
+        "levels": stats.levels,
+        "selected_items": stats.selected_items,
+        "selected_images": stats.selected_images,
+        "tiers": tiers_json(stats),
+        "superseded": stats.superseded,
+        "deleted": stats.deleted,
+        "unrecognised": stats.unrecognised,
+    })
+}
+
+/// The nested-per-class shape histogram: each class's count beside the grammar
+/// it stands for, printed verbatim from the constants `previews_db` owns.
+///
+/// A class the cache never showed reports `count: 0` and no template, because a
+/// template for a shape nobody saw is an example nobody asked for. There is no
+/// class for `unrecognised`: it counts files that took no shape, and it is a
+/// `stats` field (`adr-0005-discover-payloads-by-index`).
+fn verification_shapes(shapes: &Shapes) -> Value {
+    let mut level_file = Map::new();
+    level_file.insert("count".to_string(), json!(shapes.level_file));
+    level_file.insert(
+        "suffix_matches_sof".to_string(),
+        json!(shapes.suffix_matches_sof),
+    );
+    if shapes.level_file > 0 {
+        level_file.insert(
+            "template".to_string(),
+            json!(previews_db::LEVEL_FILE_GRAMMAR),
+        );
+    }
+
+    let mut container = Map::new();
+    container.insert("count".to_string(), json!(shapes.container));
+    if shapes.container > 0 {
+        container.insert(
+            "template".to_string(),
+            json!(previews_db::CONTAINER_GRAMMAR),
+        );
+    }
+
+    json!({ "level_file": level_file, "container": container })
 }
 
 /// Self-contained HTML contact sheet with inlined thumbnails.
@@ -1410,5 +1551,191 @@ recovered"
             "the thumbnail must be inlined, not dropped:\n{html}"
         );
         assert!(!html.contains("class=\"placeholder\""), "{html}");
+    }
+
+    /// The frozen `stats` set, sorted so the assertion needs no helper.
+    const FROZEN_STATS: [&str; 17] = [
+        "below_floor",
+        "bytes",
+        "deleted",
+        "failed",
+        "images",
+        "levels",
+        "missing_payload",
+        "no_cache_entry",
+        "original_present",
+        "recovered",
+        "selected_images",
+        "selected_items",
+        "superseded",
+        "suspect",
+        "tiers",
+        "unmapped",
+        "unrecognised",
+    ];
+
+    fn verification_plan() -> Plan {
+        let item = recovered_item(
+            "107 York St-1",
+            PathBuf::from("cache/payload.lrprev"),
+            PathBuf::from("out").join("107 York St-1.jpg"),
+        );
+        let mut tiers = HashMap::new();
+        tiers.insert("standard", 1u64);
+        Plan {
+            items: vec![item],
+            stats: Stats {
+                images: 4,
+                recoverable: 1,
+                suspect: 1,
+                missing_payload: 1,
+                no_cache_entry: 1,
+                unmapped: 2,
+                failed: 1,
+                original_present: 0,
+                below_floor: 1,
+                bytes: 1234,
+                levels: 6,
+                selected_items: 3,
+                selected_images: 2,
+                tiers,
+                superseded: 1,
+                deleted: 1,
+                unrecognised: 3,
+            },
+            cache: CacheFacts {
+                layout: Layout::Mixed,
+                db_version: Some("1504001".to_string()),
+                crs_version: Some("18.0.0".to_string()),
+                shapes: Shapes {
+                    level_file: 5,
+                    suffix_matches_sof: 4,
+                    container: 2,
+                },
+            },
+        }
+    }
+
+    #[test]
+    fn the_verification_report_is_the_frozen_set_and_carries_no_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("scan.json");
+        let options = Options {
+            min_long_edge: 800,
+            all_levels: true,
+            include_present: true,
+        };
+
+        write_verification(&verification_plan(), &options, &path, "9.9.9").unwrap();
+
+        let text = std::fs::read_to_string(&path).unwrap();
+        let report: Value = serde_json::from_str(&text).unwrap();
+
+        // The envelope and the curated body, and no tenth member.
+        let mut keys: Vec<&String> = report.as_object().unwrap().keys().collect();
+        keys.sort();
+        assert_eq!(
+            keys,
+            [
+                "crs_version",
+                "db_version",
+                "generated_unix",
+                "layout",
+                "options",
+                "schema",
+                "shapes",
+                "stats",
+                "version",
+            ],
+            "the key set is the contract: `--json` minus its paths is not this object"
+        );
+        assert_eq!(report["schema"], "lrsalvage.verification");
+        assert_eq!(report["version"], "9.9.9");
+        assert!(
+            report["generated_unix"].as_u64().unwrap() > 1_600_000_000,
+            "generated_unix must be a real epoch timestamp:\n{text}"
+        );
+        assert_eq!(report["layout"], "mixed");
+        assert_eq!(report["db_version"], "1504001");
+        assert_eq!(report["crs_version"], "18.0.0");
+        assert_eq!(report["options"]["min_long_edge"], 800);
+        assert_eq!(report["options"]["all_levels"], true);
+        assert_eq!(report["options"]["include_present"], true);
+
+        // `stats` is the frozen list, and `recovered` is the plan's
+        // `recoverable` under the name a stranger reads.
+        let mut stats: Vec<&String> = report["stats"].as_object().unwrap().keys().collect();
+        stats.sort();
+        assert_eq!(
+            stats, FROZEN_STATS,
+            "the `stats` set is frozen, not a snapshot"
+        );
+        assert_eq!(report["stats"]["recovered"], 1);
+        assert_eq!(report["stats"]["unrecognised"], 3);
+        assert_eq!(report["stats"]["tiers"]["standard"], 1);
+
+        // One object per class: its count, the `SOF` agreement for a level file,
+        // and the grammar the class stands for — printed, never paraphrased.
+        assert_eq!(report["shapes"]["level_file"]["count"], 5);
+        assert_eq!(report["shapes"]["level_file"]["suffix_matches_sof"], 4);
+        assert_eq!(
+            report["shapes"]["level_file"]["template"],
+            previews_db::LEVEL_FILE_GRAMMAR
+        );
+        assert_eq!(report["shapes"]["container"]["count"], 2);
+        assert_eq!(
+            report["shapes"]["container"]["template"],
+            previews_db::CONTAINER_GRAMMAR
+        );
+
+        // The plan it was built from carries paths; the report names none of
+        // them, its only names being templates with placeholders in them.
+        for leaked in [
+            "photog",
+            "107 York St-1",
+            "payload.lrprev",
+            "cache/",
+            "out/",
+        ] {
+            assert!(
+                !text.contains(leaked),
+                "the report must not name {leaked:?}:\n{text}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_shape_class_the_cache_never_showed_carries_no_template() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("scan.json");
+        let plan = Plan {
+            cache: CacheFacts {
+                layout: Layout::None,
+                db_version: None,
+                crs_version: None,
+                shapes: Shapes::default(),
+            },
+            ..Plan::default()
+        };
+
+        write_verification(&plan, &Options::default(), &path, "1").unwrap();
+
+        let report: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(report["layout"], "none");
+        assert_eq!(
+            report["db_version"],
+            Value::Null,
+            "absent, never a stand-in"
+        );
+        assert_eq!(report["crs_version"], Value::Null);
+        assert_eq!(report["shapes"]["level_file"]["count"], 0);
+        assert_eq!(report["shapes"]["level_file"]["suffix_matches_sof"], 0);
+        assert_eq!(report["shapes"]["container"]["count"], 0);
+        for class in ["level_file", "container"] {
+            assert!(
+                report["shapes"][class].get("template").is_none(),
+                "a template for a shape nobody saw is an example nobody asked for"
+            );
+        }
     }
 }

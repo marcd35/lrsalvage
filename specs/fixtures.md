@@ -321,7 +321,9 @@ fails if a single path, uuid, digest, shard folder or leaf name reaches the file
 - **A negative row asserts absence, and only absence.** `!bytes.contains(…)` over
   every identifying string the builder produced for that vault is the one shape a
   promise like "never a full path" can be tested in; it asserts nothing else, so
-  the row cannot pass by being empty.
+  the row cannot pass by being empty. A one-character shard folder is asserted
+  through the path fragment it would appear in, because a single letter is not a
+  string whose absence means anything.
 
 ## What has no row, and why
 

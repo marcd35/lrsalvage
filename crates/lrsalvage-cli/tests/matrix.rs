@@ -8,13 +8,17 @@
 //! **No image total and no file count is asserted.** A run's `images`/`recovered`
 //! counts are the vault's pinned totals, which this slice cannot produce, so each
 //! vault here is built from the rows these runs need (M1, M6 and M10 for
-//! `modern`; D1 and D4 for `damaged`) rather than whole. A count asserted by
+//! `modern`; D1 and D4 for `damaged`; M1, M5, M6 and M10 for `modern with a
+//! suspect`, which the verification-report rows run against) rather than whole. A
+//! count asserted by
 //! accident would read as a fixture bug rather than a promise. The rows' full
 //! shapes and their structured fields are asserted in `lrsalvage-core`'s matrix.
 //!
 //! What a run does assert is the cache's shape: the layout word, the two version
 //! strings, the three cache counts and the `shapes` triple, in `--json` and in
-//! `manifest.json`, plus the trailing `payload` column of a CSV row.
+//! `manifest.json`, plus the trailing `payload` column of a CSV row — and the
+//! verification report `--report` writes (rows R1–R9), which is asserted by
+//! absence as well as by field set.
 //!
 //! **No exit-code row was added for the widening or the orphan sweep, because no
 //! run's code moved.** An unclaimed payload is listed and never selected, so it
@@ -687,14 +691,19 @@ fn u3_a_previews_path_that_is_not_a_directory_is_a_usage_error() {
     let vault = unindexed();
 
     // The catalog is a real file, so this is a mistyped cache path — not an
-    // empty cache (ADR 0006 ¶3).
+    // empty cache (ADR 0006 ¶3). A `--report` is asked for and never written:
+    // a run that exits 1 has no plan to describe, because the inputs failed
+    // before one existed (`cli`).
+    let report = vault.out().join("scan.json");
     let mut command = lrsalvage();
     command
         .arg("scan")
         .arg("--catalog")
         .arg(vault.catalog())
         .arg("--previews")
-        .arg(vault.catalog());
+        .arg(vault.catalog())
+        .arg("--report")
+        .arg(&report);
     let output = command.output().expect("run scan");
     assert_eq!(output.status.code(), Some(1));
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -703,6 +712,10 @@ fn u3_a_previews_path_that_is_not_a_directory_is_a_usage_error() {
         "a real message, not a SQLite one:\n{stderr}"
     );
     assert!(!stderr.contains("sqlite error"), "{stderr}");
+    assert!(
+        !has_file_named(vault.dir(), "scan.json"),
+        "a report is never written for a run with no plan"
+    );
 
     // A path that exists nowhere is the same mistake, and reads the same way.
     let missing = vault.dir().join("no such cache");
@@ -794,4 +807,472 @@ fn e2_an_empty_run_writes_no_report_at_all() {
         );
     }
     assert!(jpeg_names(vault.out()).is_empty());
+}
+
+// ---------------------------------------------------------------------------
+// The verification report, rows R1–R9
+// ---------------------------------------------------------------------------
+
+/// `modern with a suspect`, the cache R1, R2, R7, R8 and R9 run against: M1
+/// recovered, M5 whose `_1616` leaf holds an 800x600 frame, M6's tombstone and
+/// M10's orphan. One leaf disagrees with its own name, so `suffix_matches_sof` is
+/// one lower than the level-file count by construction rather than by a copied
+/// number.
+///
+/// It returns the uuids too: a negative row asserts the names the builder
+/// produced, and M6's tombstoned pyramid leaves no file on disk to read one from.
+fn modern_with_a_suspect() -> (Vault, Vec<String>) {
+    let (m1, m5) = (uuid(1), uuid(4));
+    let (m6, m10) = (uuid(6), uuid(20));
+    let vault = Vault::modern()
+        .image(ImageRow::new(1, "IMG_0001").cache(&m1))
+        .pyramid(PyramidRow::new(&m1).level(1616, 1077))
+        .level_file(Level::sized(&m1, 1616, 1077))
+        .image(ImageRow::new(4, "IMG_0004").cache(&m5))
+        .pyramid(PyramidRow::new(&m5).level(1616, 1077))
+        .level_file(Level::sized(&m5, 800, 600).long_dimension(1616.0))
+        .image(ImageRow::new(6, "IMG_0006").cache(&m6))
+        .pyramid(PyramidRow::new(&m6).level(1616, 1077))
+        .tombstone(&m6, 700_000_000.0)
+        .unclaimed(&[Level::sized(&m10, 640, 427)])
+        .write();
+    (vault, vec![m1, m5, m6, m10])
+}
+
+/// `mixed`, built from X1, X2 and X3: both representations, one of them
+/// superseded, so a report publishes both grammars.
+fn mixed() -> Vault {
+    let (superseded, container) = (uuid(1), uuid(2));
+    let level_file = uuid(3);
+    Vault::mixed()
+        .image(ImageRow::new(1, "IMG_0001").cache(&superseded))
+        .pyramid(PyramidRow::new(&superseded).level(1616, 1077))
+        .superseded(&[Level::sized(&superseded, 1616, 1077)])
+        .image(ImageRow::new(2, "IMG_0002").cache(&container))
+        .pyramid(PyramidRow::new(&container).level(1616, 1077))
+        .container(&[Level::sized(&container, 1616, 1077)])
+        .image(ImageRow::new(3, "IMG_0003").cache(&level_file))
+        .pyramid(PyramidRow::new(&level_file).level(1616, 1077))
+        .level_file(Level::sized(&level_file, 1616, 1077))
+        .write()
+}
+
+/// `empty`: an index that holds no rows, and two images it never claimed.
+fn empty() -> Vault {
+    Vault::empty()
+        .image(ImageRow::new(1, "IMG_0001"))
+        .image(ImageRow::new(2, "IMG_0002"))
+        .write()
+}
+
+/// The verification report a run wrote, as the one object it promises.
+fn verification(path: &Path) -> (String, Value) {
+    let text =
+        fs::read_to_string(path).unwrap_or_else(|error| panic!("read {}: {error}", path.display()));
+    let object = serde_json::from_str(&text).unwrap_or_else(|error| {
+        panic!(
+            "{} is not one JSON object ({error}):\n{text}",
+            path.display()
+        )
+    });
+    (text, object)
+}
+
+/// One path, in both separator spellings: a leak may reach the bytes either way.
+fn push_path(names: &mut Vec<String>, path: &Path) {
+    let raw = path.to_string_lossy().into_owned();
+    names.push(raw.replace('\\', "/"));
+    names.push(raw);
+}
+
+/// Every string a verification report must never contain: the run's paths and
+/// the uuids, digests, shard folders and leaf names **the builder produced**.
+fn identifying(vault: &Vault, uuids: &[String]) -> Vec<String> {
+    let mut names = Vec::new();
+    for path in [vault.dir(), vault.catalog(), vault.previews(), vault.out()] {
+        push_path(&mut names, path);
+    }
+    for uuid in uuids {
+        names.push(uuid.clone());
+        names.push(lrsalvage_fixtures::vault::digest_of(uuid));
+        // A shard folder is `uuid[0]` and then `uuid[0..4]`; the one-character
+        // one is covered by the relative path below, which is where it would
+        // appear. A single letter is not a string worth asserting absence of.
+        names.push(uuid.chars().take(4).collect());
+    }
+    for file in vault.level_files().iter().chain(vault.containers()) {
+        names.push(
+            file.file_name()
+                .expect("a payload has a leaf name")
+                .to_string_lossy()
+                .into_owned(),
+        );
+        let relative = file
+            .strip_prefix(vault.previews())
+            .expect("every payload is written inside the cache");
+        push_path(&mut names, relative);
+        for part in relative.components() {
+            let text = part.as_os_str().to_string_lossy().into_owned();
+            if text.len() > 1 {
+                names.push(text);
+            }
+        }
+    }
+    names.retain(|name| !name.is_empty());
+    names
+}
+
+/// R1. The published object's field set is a contract, not a snapshot of the
+/// plan, and every `stats` member is the plan's own number.
+#[test]
+fn r1_the_verification_report_is_the_frozen_field_set() {
+    let (vault, _) = modern_with_a_suspect();
+    let path = vault.out().join("scan.json");
+
+    scan(&vault)
+        .arg("--report")
+        .arg(&path)
+        .assert()
+        .code(0)
+        .stderr(predicate::str::contains("wrote"));
+
+    let (text, report) = verification(&path);
+
+    // Exactly the frozen set: no `items`, no `catalog`, no `previews`.
+    let mut keys: Vec<&String> = report.as_object().expect("an object").keys().collect();
+    keys.sort();
+    assert_eq!(
+        keys,
+        [
+            "crs_version",
+            "db_version",
+            "generated_unix",
+            "layout",
+            "options",
+            "schema",
+            "shapes",
+            "stats",
+            "version",
+        ],
+        "the report's keys are frozen at nine: no path-bearing member exists"
+    );
+
+    assert_eq!(report["schema"], "lrsalvage.verification");
+    assert_eq!(report["version"], env!("CARGO_PKG_VERSION"));
+    assert!(
+        report["generated_unix"].as_u64().expect("an epoch second") > 1_600_000_000,
+        "generated_unix must be a real timestamp:\n{text}"
+    );
+    assert_eq!(report["layout"], "modern");
+    assert_eq!(report["db_version"], "1504001");
+    assert_eq!(report["crs_version"], "18.0.0");
+
+    // The options the run applied, echoed: the floor and both switches.
+    assert_eq!(report["options"]["min_long_edge"], 640);
+    assert_eq!(report["options"]["all_levels"], false);
+    assert_eq!(report["options"]["include_present"], false);
+
+    // Every `stats` member is the plan's own number, under the frozen names.
+    let plan = vault.plan(&lrsalvage_core::plan::Options::default());
+    let stats = &report["stats"];
+    let members = [
+        ("images", plan.stats.images),
+        ("recovered", plan.stats.recoverable),
+        ("suspect", plan.stats.suspect),
+        ("missing_payload", plan.stats.missing_payload),
+        ("no_cache_entry", plan.stats.no_cache_entry),
+        ("unmapped", plan.stats.unmapped),
+        ("failed", plan.stats.failed),
+        ("original_present", plan.stats.original_present),
+        ("below_floor", plan.stats.below_floor),
+        ("bytes", plan.stats.bytes),
+        ("levels", plan.stats.levels),
+        ("selected_items", plan.stats.selected_items),
+        ("selected_images", plan.stats.selected_images),
+        ("superseded", plan.stats.superseded),
+        ("deleted", plan.stats.deleted),
+        ("unrecognised", plan.stats.unrecognised),
+    ];
+    for (name, value) in members {
+        assert_eq!(stats[name], value, "stats.{name} is the plan's number");
+    }
+    assert_eq!(
+        stats["tiers"],
+        serde_json::json!(plan.stats.tiers),
+        "the tier histogram, with absent tiers absent"
+    );
+    let mut named: Vec<&String> = stats.as_object().expect("an object").keys().collect();
+    named.sort();
+    assert_eq!(named.len(), 17, "the `stats` list is frozen: {named:?}");
+
+    // One object per class: the level files the builder wrote, one of which
+    // names a long edge its own frame disagrees with, and no container at all.
+    assert_eq!(
+        report["shapes"]["level_file"]["count"],
+        vault.level_files().len() as u64
+    );
+    assert_eq!(
+        report["shapes"]["level_file"]["suffix_matches_sof"],
+        vault.level_files().len() as u64 - 1,
+        "M5's `_1616` leaf measures 800x600"
+    );
+    assert_eq!(
+        report["shapes"]["level_file"]["template"],
+        lrsalvage_core::previews_db::LEVEL_FILE_GRAMMAR
+    );
+    assert_eq!(report["shapes"]["container"]["count"], 0);
+    assert!(
+        report["shapes"]["container"].get("template").is_none(),
+        "a template for a shape the cache never showed is an example nobody asked for"
+    );
+}
+
+/// R2. The matrix's first negative row: one leaked string fails it. Compared
+/// against names the builder produced, never a hard-coded sample.
+#[test]
+fn r2_the_written_bytes_name_no_cache_and_no_payload() {
+    let (vault, uuids) = modern_with_a_suspect();
+    let path = vault.out().join("scan.json");
+    scan(&vault).arg("--report").arg(&path).assert().code(0);
+
+    let (text, _) = verification(&path);
+    assert!(
+        text.len() > 200,
+        "the row must not be able to pass by the file being empty:\n{text}"
+    );
+    for name in identifying(&vault, &uuids) {
+        assert!(
+            !text.contains(&name),
+            "the report must not contain {name:?}:\n{text}"
+        );
+    }
+}
+
+/// R3. A mixed cache publishes both grammars, and `superseded` is a stat.
+#[test]
+fn r3_a_mixed_cache_publishes_both_grammars() {
+    let vault = mixed();
+    let path = vault.out().join("scan.json");
+
+    scan(&vault).arg("--report").arg(&path).assert().code(0);
+
+    let (_, report) = verification(&path);
+    let level_file = &report["shapes"]["level_file"];
+    let container = &report["shapes"]["container"];
+    assert!(
+        level_file["count"].as_u64().expect("a count") > 0,
+        "a level-file class is present"
+    );
+    assert!(
+        container["count"].as_u64().expect("a count") > 0,
+        "a container class is present"
+    );
+    assert_eq!(
+        level_file["template"],
+        lrsalvage_core::previews_db::LEVEL_FILE_GRAMMAR,
+        "each class carries its own grammar, not a cache-wide one"
+    );
+    assert_eq!(
+        container["template"],
+        lrsalvage_core::previews_db::CONTAINER_GRAMMAR
+    );
+    assert_eq!(report["stats"]["superseded"], 1, "X1 holds both");
+}
+
+/// R4. An exit-3 run still hands over its report, and the histogram has no
+/// bucket for "no shape".
+#[test]
+fn r4_a_run_that_named_nothing_still_writes_its_report() {
+    let vault = unrecognised();
+    let path = vault.out().join("scan.json");
+
+    let output = scan(&vault)
+        .arg("--report")
+        .arg(&path)
+        .output()
+        .expect("run scan --report");
+    assert_eq!(output.status.code(), Some(3), "nothing was selected");
+    assert!(
+        String::from_utf8_lossy(&output.stderr)
+            .contains("payload-like files in the cache match no layout"),
+        "the one hint still prints:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let (_, report) = verification(&path);
+    assert_eq!(report["layout"], "unknown");
+    assert_eq!(report["stats"]["unrecognised"], 3);
+    assert_eq!(report["shapes"]["level_file"]["count"], 0);
+    assert_eq!(report["shapes"]["container"]["count"], 0);
+    for class in ["level_file", "container"] {
+        assert!(
+            report["shapes"][class].get("template").is_none(),
+            "{class} showed no file, so it publishes no template"
+        );
+    }
+    assert!(
+        jpeg_names(vault.out()).is_empty(),
+        "the report is the only thing this run wrote"
+    );
+}
+
+/// R5. The shape facts survive without an index: the count comes from the leaf
+/// alone, with no row to consult.
+#[test]
+fn r5_an_indexless_run_still_publishes_the_cache_shape() {
+    let vault = unindexed();
+    let path = vault.out().join("scan.json");
+
+    scan(&vault).arg("--report").arg(&path).assert().code(3);
+
+    let (_, report) = verification(&path);
+    assert_eq!(report["stats"]["unmapped"], 2);
+    assert_eq!(report["stats"]["no_cache_entry"], 2);
+    assert_eq!(report["layout"], "modern", "the layout is the tree's");
+    assert_eq!(
+        report["shapes"]["level_file"]["count"],
+        vault.level_files().len() as u64,
+        "every level file the builder wrote, derived from the leaf"
+    );
+}
+
+/// R6. A requested artifact is written even when nothing was selected — the
+/// contrast with E2, where `extract` writes no report at all.
+#[test]
+fn r6_an_empty_cache_still_writes_the_report_it_was_asked_for() {
+    let vault = empty();
+    let path = vault.out().join("scan.json");
+
+    scan(&vault)
+        .arg("--report")
+        .arg(&path)
+        .assert()
+        .code(3)
+        .stderr(predicate::str::contains("wrote"));
+
+    let (_, report) = verification(&path);
+    assert_eq!(report["stats"]["images"], 2);
+    assert_eq!(report["stats"]["no_cache_entry"], 2);
+    assert_eq!(report["stats"]["recovered"], 0);
+    assert_eq!(report["layout"], "none");
+    assert_eq!(report["shapes"]["level_file"]["count"], 0);
+    assert_eq!(report["shapes"]["level_file"]["suffix_matches_sof"], 0);
+    assert_eq!(report["shapes"]["container"]["count"], 0);
+}
+
+/// R7. A claimed name, never an overwrite.
+#[test]
+fn r7_an_existing_report_name_is_numbered_and_left_alone() {
+    let (vault, _) = modern_with_a_suspect();
+    let path = vault.out().join("scan.json");
+    fs::write(&path, b"somebody else's file").expect("preoccupy the name");
+
+    let output = scan(&vault)
+        .arg("--report")
+        .arg(&path)
+        .output()
+        .expect("run scan --report");
+    assert_eq!(output.status.code(), Some(0));
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("already exists; writing"),
+        "the run says so:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let numbered = vault.out().join("scan (2).json");
+    assert!(numbered.exists(), "the next free number was claimed");
+    verification(&numbered);
+    assert_eq!(
+        fs::read(&path).expect("the old file"),
+        b"somebody else's file",
+        "a name on disk may belong to somebody else"
+    );
+}
+
+/// `true` when any file below `root` is called `name`.
+fn has_file_named(root: &Path, name: &str) -> bool {
+    let Ok(entries) = fs::read_dir(root) else {
+        return false;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.file_name().is_some_and(|leaf| leaf == name) {
+            return true;
+        }
+        if path.is_dir() && has_file_named(&path, name) {
+            return true;
+        }
+    }
+    false
+}
+
+/// R8. Every named write obeys the destination rule, and a refused report is a
+/// destination error rather than "nothing selected".
+#[test]
+fn r8_a_report_whose_parent_is_inside_the_cache_is_refused() {
+    let (vault, _) = modern_with_a_suspect();
+    let path = vault.previews().join("scan.json");
+
+    let output = scan(&vault)
+        .arg("--report")
+        .arg(&path)
+        .output()
+        .expect("run scan --report");
+    assert_eq!(output.status.code(), Some(4), "not 3, and not 0");
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("refusing to write inside"),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        !has_file_named(vault.dir(), "scan.json"),
+        "no report anywhere, the cache included"
+    );
+}
+
+/// R9. The two surfaces do not mix: a file for a stranger, one object for a
+/// script.
+#[test]
+fn r9_json_and_report_compose_without_a_collision() {
+    let (vault, uuids) = modern_with_a_suspect();
+    let path = vault.out().join("scan.json");
+
+    let output = scan(&vault)
+        .arg("--json")
+        .arg("--verbose")
+        .arg("--report")
+        .arg(&path)
+        .output()
+        .expect("run scan --json --verbose --report");
+    assert_eq!(output.status.code(), Some(0));
+
+    // Exactly one object: `from_slice` rejects anything appended to it.
+    let object: Value = serde_json::from_slice(&output.stdout).unwrap_or_else(|error| {
+        panic!(
+            "stdout is not exactly one object ({error}):\n{}",
+            String::from_utf8_lossy(&output.stdout)
+        )
+    });
+    assert_eq!(
+        object["layout"], "modern",
+        "the `--json` field set survives"
+    );
+    assert_eq!(
+        object["catalog"],
+        vault.catalog().to_string_lossy().replace('\\', "/")
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("recovered"),
+        "the verbose lines moved to stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let (text, report) = verification(&path);
+    assert_eq!(report["stats"]["recovered"], object["recovered"]);
+    for name in identifying(&vault, &uuids) {
+        assert!(
+            !text.contains(&name),
+            "the file stays path-free with all three flags: {name:?}"
+        );
+    }
 }

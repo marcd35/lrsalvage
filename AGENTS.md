@@ -44,7 +44,8 @@ segments.
   profiles are reconstructed from the catalog's profile name, never copied from a
   source file; a payload that already carries one keeps it, and an unknown name
   gets a note, not a guess.
-- `report` — terminal summary, `report.csv`, `manifest.json`, contact sheet.
+- `report` — terminal summary, `report.csv`, `manifest.json`, contact sheet, the
+  path-free verification report.
 - `masks` — decodes `.lrcat-data` AI mask layers to PNG.
 - `error` — the single error type and its I/O path context.
 - `cli` — arguments and presentation; no format knowledge.
