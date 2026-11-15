@@ -55,9 +55,9 @@ fn is_reserved_device_name(name: &str) -> bool {
 /// drive prefix, and a Windows device name. Callers then skip the component or
 /// fall back to a name of their own.
 ///
-/// Anything containing an illegal character (see [`is_illegal`]) keeps its
+/// Anything containing an illegal character (see `is_illegal`) keeps its
 /// meaning with `_` in place of the character: a name is never silently
-/// dropped. The result is at most [`MAX_COMPONENT_CHARS`] characters.
+/// dropped. The result is at most `MAX_COMPONENT_CHARS` characters.
 pub fn sanitize_component(raw: &str) -> Option<String> {
     let trimmed = raw.trim();
     if trimmed.is_empty() {

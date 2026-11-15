@@ -60,8 +60,8 @@ not allowed.
 ## Verification
 
 - **`sh scripts/check.sh` is the one gate list.** It runs `fmt`, `clippy`
-  (`--all-targets`), the workspace tests, the release build, `typos` and
-  `cargo deny`. Run it before a hand-off, or name one gate
+  (`--all-targets`), the workspace tests, `cargo doc`, the release build, `typos`
+  and `cargo deny`. Run it before a hand-off, or name one gate
   (`sh scripts/check.sh clippy`). CI executes the Rust gates through the same
   file, so a gate cannot be documented weaker here than it is enforced. A
   missing tool fails rather than skipping: green must mean CI's green.
@@ -71,6 +71,10 @@ not allowed.
   decision, not a config edit.
 - The toolchain is pinned in `rust-toolchain.toml`; bump it deliberately and let
   CI prove the bump.
+- **`.githooks/pre-commit` runs the cheap gates on every commit** — `fmt` and
+  `typos` through `scripts/check.sh`, which is the only place they are written.
+  A fresh clone installs it with `git config core.hooksPath .githooks`; skip it
+  deliberately with `git commit --no-verify`.
 - **The tests assert more than behaviour.** `tests/spec_graph.rs` checks each
   module's `depends-on` against the modules it actually reaches, and
   `lrsalvage-cli`'s `tests/readme.rs` checks the README's flag and `--json`
