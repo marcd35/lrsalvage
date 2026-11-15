@@ -518,9 +518,9 @@ instead: `lrsalvage-cli`'s `tests/readme.rs` checks the flag list and the
 `lrsalvage` is a command-line binary you build from this tree. Packaging it is a
 separate concern, and none of it lives here: there is no installer, no signed or
 notarised bundle, no auto-updater, no package-manager formula, and no release
-workflow — CI runs the gates above on every push to `main` and every pull
-request, and publishes nothing. Those are their own decisions with their own
-platform and provenance questions, and they are out of scope for the reader.
+workflow — CI runs the gates and publishes nothing. Those are their own
+decisions with their own platform and provenance questions, and they are out of
+scope for the reader.
 
 A graphical interface is separate in the same way. Reading, planning and writing
 live in `crates/lrsalvage-core` behind a library interface, so a future UI would
