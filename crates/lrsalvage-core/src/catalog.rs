@@ -14,6 +14,21 @@ pub struct Catalog {
     has_metadata: bool,
 }
 
+/// The two format-generation strings a catalog records, when it records them.
+///
+/// Both are reported as they were stored and never mapped to a Lightroom
+/// release: two measured data points cannot support a version table, and no
+/// number ever gates a run (`adr-0004-detect-layout-not-version`).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct CatalogVersions {
+    pub db_version: Option<String>,
+    pub crs_version: Option<String>,
+}
+
+/// The `Adobe_variablesTable` names the two strings live under.
+const DB_VERSION: &str = "Adobe_DBVersion";
+const CRS_VERSION: &str = "Adobe_CrsVersion";
+
 impl Catalog {
     /// Open a catalog snapshot. Never mutates the caller's file.
     pub fn from_snapshot(snapshot: &crate::snapshot::CatalogSnapshot) -> Result<Self> {
@@ -38,6 +53,38 @@ impl Catalog {
             .conn
             .query_row("SELECT count(*) FROM Adobe_images", [], |row| row.get(0))?;
         Ok(count.max(0) as u64)
+    }
+
+    /// `Adobe_DBVersion` and `Adobe_CrsVersion` from `Adobe_variablesTable`,
+    /// **verbatim** — two observations, never a version the tool interprets.
+    ///
+    /// A missing table, a missing row and a NULL value are all `None`: the
+    /// catalog format and the preview layout version independently, and neither
+    /// string ever decides whether a run may read a cache
+    /// (`adr-0004-detect-layout-not-version`).
+    pub fn versions(&self) -> Result<CatalogVersions> {
+        if !table_exists(&self.conn, "Adobe_variablesTable")? {
+            return Ok(CatalogVersions::default());
+        }
+
+        let mut versions = CatalogVersions::default();
+        let mut stmt = self
+            .conn
+            .prepare("SELECT name, value FROM Adobe_variablesTable WHERE name IN (?1, ?2)")?;
+        let mut rows = stmt.query([DB_VERSION, CRS_VERSION])?;
+        while let Some(row) = rows.next()? {
+            let name: Option<String> = row.get(0)?;
+            let value: Option<String> = row.get(1)?;
+            let Some(value) = value.filter(|value| !value.is_empty()) else {
+                continue;
+            };
+            match name.as_deref() {
+                Some(DB_VERSION) => versions.db_version = Some(value),
+                Some(CRS_VERSION) => versions.crs_version = Some(value),
+                _ => {}
+            }
+        }
+        Ok(versions)
     }
 
     /// Every image, joined to `AgLibraryFile` / `AgLibraryFolder` /
@@ -411,7 +458,7 @@ mod tests {
     use crate::previews_db::PreviewIndex;
     use crate::snapshot::CatalogSnapshot;
 
-    use super::Catalog;
+    use super::{Catalog, CatalogVersions};
 
     const SCHEMA: &str = r#"
         CREATE TABLE Adobe_images (id_local INTEGER PRIMARY KEY, copyName TEXT,
@@ -723,6 +770,47 @@ mod tests {
             Err(Error::Xmp(_)) => {}
             other => panic!("expected Error::Xmp, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn the_two_version_strings_are_reported_verbatim() {
+        let catalog = catalog_with(|conn| {
+            standard_images(conn);
+            conn.execute_batch(
+                "CREATE TABLE Adobe_variablesTable (id_local INTEGER PRIMARY KEY, \
+                   name TEXT, value TEXT);
+                 INSERT INTO Adobe_variablesTable (id_local, name, value) VALUES
+                   (1, 'Adobe_DBVersion', '1504001'),
+                   (2, 'Adobe_CrsVersion', '18.0.0'),
+                   (3, 'SomeOtherSetting', 'ignored');",
+            )
+            .unwrap();
+        });
+
+        let versions = catalog.versions().unwrap();
+        assert_eq!(versions.db_version.as_deref(), Some("1504001"));
+        assert_eq!(versions.crs_version.as_deref(), Some("18.0.0"));
+    }
+
+    #[test]
+    fn a_catalog_without_version_rows_reports_neither_string() {
+        // No `Adobe_variablesTable` at all: an older schema, not an error.
+        let catalog = catalog_with(standard_images);
+        assert_eq!(catalog.versions().unwrap(), CatalogVersions::default());
+
+        // The table, one row and a NULL value: still nothing to report, and
+        // never an invented string.
+        let partial = catalog_with(|conn| {
+            standard_images(conn);
+            conn.execute_batch(
+                "CREATE TABLE Adobe_variablesTable (id_local INTEGER PRIMARY KEY, \
+                   name TEXT, value TEXT);
+                 INSERT INTO Adobe_variablesTable (id_local, name, value) VALUES
+                   (1, 'Adobe_DBVersion', NULL), (2, 'Adobe_CrsVersion', '');",
+            )
+            .unwrap();
+        });
+        assert_eq!(partial.versions().unwrap(), CatalogVersions::default());
     }
 
     #[test]

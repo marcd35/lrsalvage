@@ -27,6 +27,40 @@ pub const CONTAINER_GRAMMAR: &str = "<uuid[0]>/<uuid[0..4]>/<UUID>-<digest>.lrpr
 /// of the extension.
 pub const LEVEL_FILE_GRAMMAR: &str = "<uuid[0]>/<uuid[0..4]>/<UUID>-<digest>_<longedge>";
 
+/// What the cache holds, in ADR 0004's five words.
+///
+/// Decided from the tree alone — never from a version, which is why nothing in
+/// this module compares one to a layout (`adr-0004-detect-layout-not-version`).
+/// `mixed` describes the cache, not an image: per-image supersession is
+/// `plan`'s `superseded` count.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum Layout {
+    /// `.lrprev` containers only.
+    Legacy,
+    /// Loose payload files only, one file per level.
+    Modern,
+    /// Both kinds, anywhere in the cache.
+    Mixed,
+    /// An index and no payload files at all.
+    #[default]
+    None,
+    /// Payload-like files exist, but none is a shape this reader knows.
+    Unknown,
+}
+
+impl Layout {
+    /// The word a report prints.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Layout::Legacy => "legacy",
+            Layout::Modern => "modern",
+            Layout::Mixed => "mixed",
+            Layout::None => "none",
+            Layout::Unknown => "unknown",
+        }
+    }
+}
+
 /// In-memory view of a `previews.db`.
 #[derive(Debug, Clone, Default)]
 pub struct PreviewIndex {
@@ -36,6 +70,11 @@ pub struct PreviewIndex {
     pub all_entries: Vec<CacheEntry>,
     pub pyramids: HashMap<String, Pyramid>,
     pub levels: HashMap<String, Vec<PyramidLevel>>,
+    /// `DeletedPyramid` rows: `(uuid, digest)` → the `deletedTimeStamp`
+    /// Lightroom recorded. A tombstone narrates; it never subtracts from a
+    /// count, suppresses an orphan or changes a status
+    /// (`adr-0006-degrade-without-guessing`).
+    pub deleted: HashMap<(String, String), f64>,
 }
 
 /// One level file a pyramid's rows name.
@@ -121,6 +160,16 @@ impl PreviewIndex {
                 };
                 index.all_entries.push(entry.clone());
                 index.entries.insert(image_id, entry);
+            }
+        }
+
+        {
+            let mut stmt = conn.prepare("SELECT uuid, digest, deletedTimeStamp FROM DeletedPyramid")?;
+            let mut rows = stmt.query([])?;
+            while let Some(row) = rows.next()? {
+                let uuid = text(row.get_ref(0)?);
+                let digest = text(row.get_ref(1)?);
+                index.deleted.insert((uuid, digest), number(row.get_ref(2)?).unwrap_or(0.0));
             }
         }
 
@@ -249,22 +298,64 @@ pub struct LevelOnDisk {
     pub long_edge: u32,
 }
 
-/// Every pyramid the cache tree holds: one entry per `(uuid, digest)`, in uuid
-/// then digest order.
+/// Everything one walk of the cache tree found.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct CacheSweep {
+    /// One entry per `(uuid, digest)` present on disk, in uuid then digest
+    /// order. Which of them an image claims is `plan`'s decision.
+    pub pyramids: Vec<PyramidOnDisk>,
+    /// Payload-like files that are no shape this reader knows: a leaf with no
+    /// numeric suffix, one in a shard folder its uuid does not derive, one whose
+    /// uuid does not parse. In path order.
+    ///
+    /// "Payload-like" is ADR 0004's narrow rule — a file whose first two bytes
+    /// are `FF D8` — so these are reported rather than silently ignored, and
+    /// they feed the `unknown` layout instead of the orphan count
+    /// (`adr-0005-discover-payloads-by-index` ¶6).
+    pub unrecognised: Vec<PathBuf>,
+}
+
+impl CacheSweep {
+    /// ADR 0004's five words, decided from the tree alone.
+    ///
+    /// Only a payload file makes a cache `legacy`, `modern` or `mixed`; an
+    /// index that holds nothing is `none`, and payload-like files that matched
+    /// no shape are `unknown` — the two cases a user most needs told apart.
+    pub fn layout(&self) -> Layout {
+        let mut level_files = false;
+        let mut containers = false;
+        for pyramid in &self.pyramids {
+            level_files |= !pyramid.levels.is_empty();
+            containers |= pyramid.container.is_some();
+        }
+        match (level_files, containers) {
+            (true, true) => Layout::Mixed,
+            (true, false) => Layout::Modern,
+            (false, true) => Layout::Legacy,
+            (false, false) if self.unrecognised.is_empty() => Layout::None,
+            (false, false) => Layout::Unknown,
+        }
+    }
+}
+
+/// One walk of the cache tree: every pyramid it holds, and every payload-like
+/// file that is no pyramid at all.
 ///
-/// This is the enumeration the orphan sweep counts, so it is one entry per
-/// pyramid and never one per file — one orphan is one lost photograph, whatever
-/// its level set looks like (`adr-0005-discover-payloads-by-index` ¶8). A file
-/// is a member only when its leaf parses to a uuid and a 32-character lower-case
-/// hex digest (plus a numeric suffix for a level file) **and** both shard folders
-/// agree with that uuid, because the folder is an address and never an identity
-/// (§5.2). Everything else is ignored: nothing is sniffed, no payload is read,
-/// and `previews.db` with its `-wal`/`-shm` neighbours is not a payload.
+/// The enumeration the orphan sweep counts, so it is one entry per pyramid and
+/// never one per file — one orphan is one lost photograph, whatever its level
+/// set looks like (`adr-0005-discover-payloads-by-index` ¶8). A file is a member
+/// only when its leaf parses to a uuid and a 32-character lower-case hex digest
+/// (plus a numeric suffix for a level file) **and** both shard folders agree
+/// with that uuid, because the folder is an address and never an identity
+/// (§5.2). Everything else is offered to the two-byte sniff and nothing more:
+/// `previews.db` and its `-wal`/`-shm` neighbours do not start with `FF D8`, so
+/// they stay neither payload nor pyramid.
 ///
-/// Which of these pyramids an image claims is `plan`'s decision, not this
-/// module's.
-pub fn pyramids_on_disk(cache_root: &Path) -> Vec<PyramidOnDisk> {
+/// Which of these pyramids an image claims, and what an unclaimed one becomes,
+/// is `plan`'s decision, not this module's.
+pub fn sweep(cache_root: &Path) -> CacheSweep {
     let mut found: HashMap<(String, String), PyramidOnDisk> = HashMap::new();
+    let mut unrecognised = Vec::new();
 
     for entry in WalkDir::new(cache_root)
         .into_iter()
@@ -274,6 +365,9 @@ pub fn pyramids_on_disk(cache_root: &Path) -> Vec<PyramidOnDisk> {
             continue;
         }
         let Some((uuid, digest, level)) = leaf_identity(cache_root, entry.path()) else {
+            if crate::jpeg::is_payload_start(entry.path()) {
+                unrecognised.push(entry.into_path());
+            }
             continue;
         };
         let pyramid = found
@@ -298,7 +392,12 @@ pub fn pyramids_on_disk(cache_root: &Path) -> Vec<PyramidOnDisk> {
         pyramid.levels.sort_by(|a, b| a.path.cmp(&b.path));
     }
     pyramids.sort_by(|a, b| (&a.uuid, &a.digest).cmp(&(&b.uuid, &b.digest)));
-    pyramids
+    unrecognised.sort();
+
+    CacheSweep {
+        pyramids,
+        unrecognised,
+    }
 }
 
 /// The `(uuid, digest)` a file's leaf names and, for a level file, its long
@@ -830,7 +929,8 @@ mod tests {
         write(shard.join("not-a-uuid-0123456789abcdef_1616"));
         write(shard.join(format!("{uuid}-{digest}_wide")));
 
-        let pyramids = pyramids_on_disk(cache);
+        let sweep = sweep(cache);
+        let pyramids = &sweep.pyramids;
         assert_eq!(pyramids.len(), 2, "one entry per pyramid: {pyramids:#?}");
 
         let level_files = &pyramids[0];
@@ -859,10 +959,133 @@ mod tests {
         assert!(container_only.container.is_some());
     }
 
+    /// Write `bytes` at `relative`, creating the folders it needs.
+    fn write(root: &Path, relative: &str, bytes: &[u8]) {
+        let path = root.join(relative);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(&path, bytes).unwrap();
+    }
+
+    const UUID_A: &str = "1A2B3C4D-5E6F-4A5B-8C9D-000000000001";
+    const DIGEST_A: &str = "deadbeefdeadbeefdeadbeefdeadbeef";
+
     #[test]
-    fn a_missing_cache_root_holds_no_pyramids() {
+    fn a_missing_cache_root_holds_no_pyramids_and_no_layout() {
         let dir = tempfile::tempdir().unwrap();
-        assert!(pyramids_on_disk(&dir.path().join("absent")).is_empty());
+        let sweep = sweep(&dir.path().join("absent"));
+        assert!(sweep.pyramids.is_empty());
+        assert!(sweep.unrecognised.is_empty());
+        assert_eq!(sweep.layout(), Layout::None);
+    }
+
+    #[test]
+    fn the_layout_word_is_decided_from_the_tree_alone() {
+        // An index and nothing payload-shaped: `none`, not an error.
+        let empty = tempfile::tempdir().unwrap();
+        write(empty.path(), "previews.db", b"SQLite format 3\0");
+        assert_eq!(sweep(empty.path()).layout(), Layout::None);
+
+        // Payload-like files that match no shape: `unknown`, never `none`.
+        let unknown = tempfile::tempdir().unwrap();
+        write(
+            unknown.path(),
+            "Z/ZZZZ/not-a-uuid-0123456789abcdef_1616",
+            &[0xFF, 0xD8, 0xFF, 0xD9],
+        );
+        assert_eq!(sweep(unknown.path()).layout(), Layout::Unknown);
+
+        // A `.lrprev` at a payload address: `legacy`.
+        let legacy = tempfile::tempdir().unwrap();
+        write(
+            legacy.path(),
+            &format!("1/1A2B/{UUID_A}-{DIGEST_A}.lrprev"),
+            b"not read",
+        );
+        assert_eq!(sweep(legacy.path()).layout(), Layout::Legacy);
+
+        // One level file: `modern`.
+        let modern = tempfile::tempdir().unwrap();
+        write(
+            modern.path(),
+            &format!("1/1A2B/{UUID_A}-{DIGEST_A}_1616"),
+            b"not read",
+        );
+        assert_eq!(sweep(modern.path()).layout(), Layout::Modern);
+
+        // Both kinds, in one pyramid or two: `mixed` describes the cache.
+        write(
+            modern.path(),
+            &format!("1/1A2B/{UUID_A}-{DIGEST_A}.lrprev"),
+            b"not read",
+        );
+        assert_eq!(sweep(modern.path()).layout(), Layout::Mixed);
+        assert_eq!(Layout::Mixed.as_str(), "mixed");
+    }
+
+    #[test]
+    fn a_payload_like_file_of_no_shape_is_unrecognised() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache = dir.path();
+        // Three shapes the reader knows nothing about, each a real JPEG start.
+        write(
+            cache,
+            &format!("1/1A2B/{UUID_A}-{DIGEST_A}"),
+            &[0xFF, 0xD8],
+        );
+        write(
+            cache,
+            &format!("0/0000/{UUID_A}-{DIGEST_A}_1616"),
+            &[0xFF, 0xD8],
+        );
+        write(cache, "Z/ZZZZ/not-a-uuid_1616", &[0xFF, 0xD8]);
+        // Not payload-like: the index and its sidecars, and a name with no digits.
+        write(cache, "previews.db", b"SQLite format 3\0");
+        write(cache, "previews.db-wal", b"\0");
+        write(
+            cache,
+            &format!("1/1A2B/{UUID_A}-{DIGEST_A}_wide"),
+            b"not read",
+        );
+        // ... and one real level file, which is a pyramid and not unrecognised.
+        write(
+            cache,
+            &format!("1/1A2B/{UUID_A}-{DIGEST_A}_1616"),
+            b"not read",
+        );
+
+        let sweep = sweep(cache);
+        assert_eq!(
+            sweep.unrecognised,
+            vec![
+                cache.join("0/0000").join(format!("{UUID_A}-{DIGEST_A}_1616")),
+                cache.join("1/1A2B").join(format!("{UUID_A}-{DIGEST_A}")),
+                cache.join("Z/ZZZZ/not-a-uuid_1616"),
+            ],
+            "in path order, and only the payload-like ones"
+        );
+        assert_eq!(sweep.pyramids.len(), 1, "the level file is a pyramid");
+        assert_eq!(sweep.layout(), Layout::Modern);
+    }
+
+    #[test]
+    fn tombstones_are_read_into_the_index_and_count_nothing() {
+        let index = index_with(|conn| {
+            conn.execute_batch(
+                "INSERT INTO DeletedPyramid (uuid, digest, deletedTimeStamp)
+                 VALUES ('AAAA', 'digest', 700000000.0);",
+            )
+            .unwrap();
+        });
+
+        assert_eq!(
+            index
+                .deleted
+                .get(&("AAAA".to_string(), "digest".to_string()))
+                .copied(),
+            Some(700_000_000.0),
+            "the timestamp is kept verbatim for a note to quote"
+        );
+        assert!(index.entries.is_empty(), "a tombstone is not a mapping");
     }
 
     #[test]

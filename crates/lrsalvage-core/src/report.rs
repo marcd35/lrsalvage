@@ -605,13 +605,14 @@ mod tests {
         Plan {
             items: Vec::new(),
             stats,
+            ..Plan::default()
         }
     }
 
     fn plan_with_items(items: Vec<PlanItem>) -> Plan {
         Plan {
             items,
-            stats: Stats::default(),
+            ..Plan::default()
         }
     }
 
@@ -900,6 +901,7 @@ mod tests {
                     tiers,
                     ..Stats::default()
                 },
+                ..Plan::default()
             },
             &path,
             "1",
@@ -960,6 +962,7 @@ mod tests {
                 bytes: u64::try_from(small.len()).unwrap(),
                 ..Stats::default()
             },
+            ..Plan::default()
         };
 
         let sheet = dir.path().join("sheet.html");
@@ -1019,6 +1022,7 @@ mod tests {
                 recoverable: 2,
                 ..Stats::default()
             },
+            ..Plan::default()
         };
 
         let sheet = dir.path().join("sheet.html");
@@ -1174,6 +1178,7 @@ mod tests {
                 recoverable: 1,
                 ..Stats::default()
             },
+            ..Plan::default()
         };
 
         let sheet = dir.path().join("sheet.html");
