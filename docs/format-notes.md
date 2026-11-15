@@ -725,8 +725,10 @@ Adobe produces it:
 
 So the software's behaviour in those states is tested; the claim that Lightroom
 produces them is not. Two states have no row at all: the level set a fresh render
-chooses, which nothing measures, and a conversion from a catalog newer than
-`1200001`, which is a fact about Adobe's upgrader rather than about the reader.
+chooses, which nothing measures yet
+([issue #40](https://github.com/marcd35/lrsalvage/issues/40)), and a conversion
+from a catalog newer than `1200001`, which is a fact about Adobe's upgrader
+rather than about the reader.
 
 ### 5.6 Consequences
 
@@ -833,7 +835,8 @@ All 390 payloads of the upgraded cache were read (every file, not a sample) on
   §5.9's `extract`, and a fresh walk of all 390 level files found no `APP1` and
   no `APP2` segment. The payloads on this machine are the converted legacy
   levels, so the metadata-bearing state of M13 cannot come from here; it needs a
-  cache Lightroom rendered from scratch.
+  cache Lightroom rendered from scratch, which
+  [issue #40](https://github.com/marcd35/lrsalvage/issues/40) tracks.
 
 ### 5.9 The build from this tree, run against this cache — VERIFIED
 
