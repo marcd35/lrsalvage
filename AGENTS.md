@@ -61,22 +61,31 @@ not allowed.
 
 ## Verification
 
-- **`sh scripts/check.sh` is the one gate list.** It runs `fmt`, `clippy`
-  (`--all-targets`), the workspace tests, `cargo doc`, the release build, `typos`
-  and `cargo deny`. Run it before a hand-off, or name one gate
+- **`sh scripts/check.sh` is the one gate list.** It runs `fmt`, `shell`,
+  `clippy` (`--all-targets`), the workspace tests, `cargo doc`, the release
+  build, `typos` and `cargo deny`. Run it before a hand-off, or name one gate
   (`sh scripts/check.sh clippy`). CI executes the Rust gates through the same
   file, so a gate cannot be documented weaker here than it is enforced. A
   missing tool fails rather than skipping: green must mean CI's green.
+- **`scripts/probe-cache.sh <cache.lrdata>` measures a cache, and is not a gate.**
+  It walks every level file by its declared segment lengths and lines the walk up
+  against `previews.db` — the series, the segments each file carries, and where a
+  row and a file disagree. `format-notes.md`'s per-level numbers come from it and
+  from the shipped build's `scan`, `--report` and `extract`; a claim about
+  "every file" means it was run over the whole tree, not a sample. It measures
+  what the reader also measures, so `lrsalvage-cli`'s `tests/probe.rs` holds it
+  to `scan --json` on a vault with a portrait level.
 - **`typos` and `cargo deny` are the two gates with their own policy files.**
   Add domain words to `typos.toml`, never blanket-exclude prose. `deny.toml` is
   the licence and advisory policy: a dependency that trips its allow-list is a
   decision, not a config edit.
 - The toolchain is pinned in `rust-toolchain.toml`; bump it deliberately and let
   CI prove the bump.
-- **`.githooks/pre-commit` runs the cheap gates on every commit** — `fmt` and
-  `typos` through `scripts/check.sh`, which is the only place they are written.
-  A fresh clone installs it with `git config core.hooksPath .githooks`; skip it
-  deliberately with `git commit --no-verify`.
+- **`.githooks/pre-commit` runs the cheap gates on every commit** — `fmt`,
+  `shell` and `typos` through `scripts/check.sh`, which is the only place they
+  are written. A fresh clone installs it with
+  `git config core.hooksPath .githooks`; skip it deliberately with
+  `git commit --no-verify`.
 - **`spec_validate` is the gate no script can run.** It reports dangling links,
   duplicate ids and parent cycles across `specs/`, and it is an in-app tool, so
   neither `scripts/check.sh` nor CI can call it. A slice that adds, moves or
@@ -107,15 +116,26 @@ if it lands inside either tree.
 Tests run against synthetic fixtures. Real catalogs are reached only from
 `#[ignore]`d tests via `LRSALVAGE_TEST_CATALOG` and `LRSALVAGE_TEST_PREVIEWS`, and
 real catalog bytes are never committed to the repo. To run them where such
-catalogs exist, copy `.env.example` to a gitignored `.env` and run
-`sh scripts/check.sh real`; that is the only route to the evidence `README.md`'s
-compatibility table calls verified.
+catalogs exist, copy `.env.example` to a gitignored `.env` — or, so that every
+worktree on the machine can reach the one gate that verifies a byte-level claim,
+put those two names in `~/.config/lrsalvage/real.env` (or the file named by
+`git config lrsalvage.realEnvFile`) — and run `sh scripts/check.sh real`; that is
+the only route to the evidence `README.md`'s compatibility table calls verified.
 
 ## Docs
+
+**A measurement is restated in more than one file.** The notes measure it;
+`README.md`'s status and compatibility rows, `CONTEXT.md`, the fixture labels and
+a module spec may each restate it. Grep the fact before changing it — a
+correction that stops at the notes leaves a copy a reader will trust, which is
+exactly how §6.4 kept a false ICC claim after the render disproved it.
 
 - `CODING_STANDARDS.md` — the judgement calls a check cannot hold. Read it before
   reviewing a diff, and before writing a claim a stranger will act on.
 - `docs/agents/issue-tracker.md` — how to read a ticket before implementing it.
+- `docs/agents/rendering-a-test-cache.md` — how to make a cache Lightroom
+  *rendered* rather than converted, what a new catalog decides on its own, and the
+  five facts that make driving its GUI reliable rather than a lottery.
 - `docs/format-notes.md` — byte layouts, evidence labels, the `.lrcat-data` trap.
 - `docs/adr/` — decisions and their consequences; read before changing a seam.
 - `specs/` — the spec graph: the product goal, the architecture and its

@@ -47,12 +47,15 @@ fact gets its label before it gets prose.
 | Large catalog | Catalog with 3,416 images and 3,420 cache entries, ≤ 13.2 | `previews.db` schema, statistics, orientation |
 | Catalog with AI masks | Catalog whose `<catalog>.lrcat-data` directory is populated | `.lrcat-data` mask decoding |
 | Upgraded 78-image cache | The small catalog above, upgraded in place by Lightroom Classic 16.0 on 2026-11-14 | 13.3+ layout, `previews.db` schema delta |
+| Freshly rendered 16.0 caches ×3 | Three catalogs built from scratch by the same Lightroom Classic 16.0 on 2026-11-15 — Standard Preview Size `Auto (3840px)`, `1024 pixels`, and 1:1 previews — 10 images each from one import folder | the render half of section 5: 5.5, 5.8, 5.10 |
 
-No **freshly built** 13.3+ catalog has been inspected: the modern cache in the
-last row is a *conversion* of a legacy cache. That distinction decides how much
-of section 5 is verified — its layout and contents are measured, but whether a
-fresh render produces different level sets or metadata-bearing payloads is still
-open, so the tool must not assume the 13.3 layout when it sees one.
+Until 2026-11-15 no **freshly built** 13.3+ catalog had been inspected: the
+modern cache in the second row is a *conversion* of a legacy cache. Three were
+then rendered from scratch, and section 5.10 records what they are. What a render
+differs in is the level series, the payload's own metadata segments and the
+number of pyramids per image; what it keeps is the path rule, `previews.db` and
+its `StoreInfo.version` of `13.0`.
+
 
 ---
 
@@ -604,7 +607,7 @@ picture upright without touching a pixel (ADR 0003).
 
 ---
 
-## 5. Lightroom 13.3 and later — VERIFIED for the upgrade path
+## 5. Lightroom 13.3 and later — VERIFIED for an upgrade and for a render
 
 > **Implementation status:** built, and run end to end against this cache
 > (section 5.9). The modern layout is read. A level file is derived from its
@@ -619,9 +622,10 @@ picture upright without touching a pixel (ADR 0003).
 > Delivery: [issue #2](https://github.com/marcd35/lrsalvage/issues/2).
 
 Lightroom Classic 13.3 changed preview storage. Sections 5.1–5.4, 5.7 and 5.9 are
-**verified** on an upgraded catalog; sections 5.5 and 5.8 list what remains
-unmeasured, which is not the same as untested software. The tool must still
-detect the layout rather than assume either one.
+**verified** on an upgraded catalog and 5.10 on three caches rendered from
+scratch; sections 5.5 and 5.8 say which of their claims the renders settled and
+which they did not, which is not the same as untested software. The tool must
+still detect the layout rather than assume either one.
 
 ### 5.1 What was measured
 
@@ -656,11 +660,15 @@ The catalog version is not the marketing major: a catalog written by Lightroom
   long edge (`_101` is 101 × 68, `_1616` is 1616 × 1077), so the name is
   derivable from the index rather than discovered by globbing.
 - Level set in this cache: `101, 202, 404, 808, 1616` — the same doubling series
-  as the legacy container it was converted from, not a fresh standard set.
+  as the legacy container it was converted from, not a fresh standard set. A
+  render does not repeat it (§5.10): with Standard Preview Size `Auto (3840px)`
+  one wrote `320, 960, 1920, 3840`, and at `1024 pixels` it wrote `320, 1024`. The
+  ladder belongs to the container the conversion split, not to Adobe's renderer.
 - **All 78 pyramids share one digest** (`bd012a8e0e0b5b73ddaf34aeceb8bf48`). In
   this store the digest is store-wide, so it cannot identify a payload; the uuid
   is the only discriminator. A rule that globs on the digest prefix would match
-  every image.
+  every image. That is a property of this *conversion*, not of the format
+  (§5.10): a rendered store held four digests over twenty pyramids.
 
 ### 5.3 Content — VERIFIED
 
@@ -692,7 +700,7 @@ The catalog version is not the marketing major: a catalog written by Lightroom
   the column. It is still a declaration rather than a measurement: a truncated or
   pruned file can disagree with it, and no such state was measured (§5.5).
 
-### 5.5 Still reported, not measured
+### 5.5 Reported elsewhere, and what remains unmeasured
 
 | Claim | Source |
 |---|---|
@@ -704,16 +712,25 @@ The catalog version is not the marketing major: a catalog written by Lightroom
 | "It seems that Lightroom totally changed how they store the preview-cache data, around Lr13.3." | regex.info changelog 20240611.65 |
 | Lightroom 14.0 limits preview-cache size and purges in the background; 14.1 can discard standard/1:1 previews. | Ian Lyons, 2024–2025 |
 
-**Not measured at all:** a *freshly built* Lightroom 16 cache (level sets, payload
-metadata, whether renders now carry EXIF/XMP/ICC); a cache with pruned levels or
-stale rows; a cache holding both `.lrprev` and modern payloads (this upgrade
-converted everything in place, so coexistence was not observed); any conversion
-from a catalog newer than `1200001`.
+**Measured, 2026-11-15 — the level set a render chooses** (§5.10): it is not a
+fixed ladder, and it is not the conversion's. Standard Preview Size `Auto
+(3840px)` produced `320, 960, 1920, 3840`; `1024 pixels` produced `320, 1024`;
+and a 1:1 build produced a doubling ladder ending at each original's own long
+edge. So the setting drives the series and the conversion's `101…1616` was the
+legacy container's bytes, not Adobe's renderer. None of the published series
+above (90…2880, 105…3360, 320…8192) is what this build wrote; the last is the
+closest and still not equal.
+
+**Not measured at all:** a cache with pruned levels or stale rows; a cache holding
+both `.lrprev` and modern payloads (this upgrade converted everything in place,
+so coexistence was not observed); any conversion from a catalog newer than
+`1200001`; and whether a render *rewrites* a pyramid it already holds — every
+render measured here was of an image the catalog had never seen.
 
 Every state above that a fixture *can* construct has a row in
 `specs/fixtures.md`. Those rows are labelled `unmeasured` — `unverified` for
-M13 — because a fixture proves how the reader behaves in a state and never that
-Adobe produces it:
+M13, which §5.10 has since measured in the field — because a fixture proves how
+the reader behaves in a state and never that Adobe produces it:
 
 | Unmeasured state | Row that pins the reader | What the row cannot show |
 |---|---|---|
@@ -721,14 +738,14 @@ Adobe produces it:
 | Level file with no row (found by the bounded glob) | `M4` | that the index ever forgets a row |
 | Both representations for one pyramid (`superseded`) | `X1` | that this upgrade leaves a `.lrprev` behind |
 | Coexistence, resolved per pyramid rather than per cache | `X2` | that Adobe produces a mixed cache at all |
-| A freshly built render's payload metadata | `M13` (§5.8) | everything about what Adobe writes |
+| A freshly built render's payload metadata | `M13` (§5.8) | nothing: §5.10 measured it, and every rendered level carried `Exif`, XMP and an ICC profile |
+| An unclaimed pyramid beside a claimed one | `M10` (§5.10) | nothing: every fresh render left one thumbnail pyramid that no cache entry claims |
 
 So the software's behaviour in those states is tested; the claim that Lightroom
-produces them is not. Two states have no row at all: the level set a fresh render
-chooses, which nothing measures yet
-([issue #40](https://github.com/marcd35/lrsalvage/issues/40)), and a conversion
-from a catalog newer than `1200001`, which is a fact about Adobe's upgrader
-rather than about the reader.
+produces them is not — except for the payload metadata and the unclaimed
+pyramid, which §5.10 measured in a render. One state has no row at all: a
+conversion from a catalog newer than `1200001`, which is a fact about Adobe's
+upgrader rather than about the reader.
 
 ### 5.6 Consequences
 
@@ -776,6 +793,11 @@ All 390 payloads of the upgraded cache were read (every file, not a sample) on
   suffix derived from `longDimension` must be the rounded integer.
 - **One digest for the whole store** (section 5.2): the digest identifies the
   store, not the image, so the uuid discriminates and the pair is what a row maps.
+  **Corrected, 2026-11-15 (§5.10):** a *converted* store held one digest; a
+  *rendered* one held four over twenty pyramids — a shared digest per pyramid
+  class (`standard`, `thumbnail`) with occasional per-image values. Nothing in
+  the reader may assume either, which is why the address is always the row's own
+  `(uuid, digest)` pair.
 - **A four-character shard is not a unique address.** All 78 uuids here have a
   distinct `<uuid[0..4]>`, but among the large catalog's 3,416 pyramids roughly
   89 colliding pairs are expected (arithmetic, not measurement). A folder can
@@ -797,46 +819,57 @@ All 390 payloads of the upgraded cache were read (every file, not a sample) on
   **unverified**; until it is measured, a payload-shaped motion preview will be
   counted as an orphan.
 
-### 5.8 Payloads that carry their own metadata — UNVERIFIED
+### 5.8 Payloads that carry their own metadata — VERIFIED for a render
 
-- **Verified, 2026-11-15:** no cache on this machine can show what a *render*
-  carries. The only `.lrdata` holding payload files is the converted 2023 cache
-  (390 files, all catalogued in §5.7); every other `* Previews.lrdata` here holds
-  no payloads at all — only `previews.db`, `root-pixels.db`, `PackageIcon.ico`
-  and `desktop.ini`. A fresh 13.3+ render exists nowhere on this machine, so
-  nothing local can measure it.
-- **Unverified:** whether a fresh render embeds an `Exif` APP1, an XMP packet or
-  an `ICC_PROFILE`; whether its pixels are stored rotated with the rotation in
-  EXIF; and the level set it produces (§5.5). All of it stays unmeasured until a
-  catalog is rendered from scratch where its originals are present.
+- **Verified, 2026-11-15 (§5.10):** a level file a render wrote is
+  `SOI`, `APP1` (`Exif`), `APP13`, `APP2` (`ICC_PROFILE`), `APP1` (XMP), `DQT`,
+  `DRI`, `APP14`, `SOF0`, `DHT`, `SOS` — four metadata segments the converted
+  levels do not have, before the same band headers. 38 of the 48 level files of
+  the `Auto (3840px)` cache carry all four, 20 of 30 at `1024 pixels` and 40 of 40
+  in the 1:1 cache; the rest are the thumbnail pyramids of §5.10, which are bare.
+- **Verified: what the `Exif` carries is nearly nothing.** Its payload is 114
+  bytes: `IFD0` with `XResolution 300/1`, `YResolution 300/1`, `ResolutionUnit 2`
+  and an Exif IFD pointer; that IFD with `ExifVersion "0231"` and `ColorSpace`
+  65535 (uncalibrated). **No `Orientation` tag, no make, model, date or pixel
+  dimensions.** The 42-byte `APP13` is `Photoshop 3.0` with one `8BIM` resource,
+  `0x03ED` resolution info.
+- **Verified: the `ICC_PROFILE` is a real profile, not a name.** A 574-byte
+  segment carrying a 560-byte Adobe RGB (1998) profile — ten tags, D65 white
+  point — in every metadata-bearing level. It matches the `Pyramid.colorProfile`
+  name `AdobeRGB` those rows hold, including for the three untagged JPEGs
+  imported beside them, so a fresh catalog of this build assumes Adobe RGB (1998)
+  rather than sRGB. The thumbnail pyramids are `sRGB` and carry no segment.
+- **Verified: the XMP packet is an identity stamp and nothing else.** 693 bytes:
+  `xmpMM:OriginalDocumentID`, `xmpMM:DocumentID`, `xmpMM:InstanceID` and
+  `xmp:MetadataDate`. No `xmp:Rating`, no label, caption or keyword, and no `crs:`
+  develop settings — a render does **not** carry the catalog's facts with it. The
+  rating set in Lightroom before the 1:1 build (§5.10) appeared nowhere in the
+  payloads.
+- **Verified: pixels are stored unrotated and the rotation is not in the
+  payload.** Two sources whose `Exif` `Orientation` was 8 and 6 (pixels 4096×2731,
+  displayed 2731×4096) rendered as 3840×2560 levels — the unrotated matrix —
+  while the catalog reported `DA` and `BC`. The payload's own `Exif` has no
+  orientation tag, so the leaf's dimensions and the catalog's orientation are the
+  only two records of it. This settles the question the reader was built around:
+  a payload cannot be trusted to say how it should be turned, and the catalog
+  must.
 - **Verified, and why the case needs a rule at all:** a payload's own metadata is
   only observable by walking its segments. No table records it — `Pyramid` keeps
   a profile *name* and no bytes (§6.4) — so an inventory read from the file is the
   only evidence available, which is the same walk ADR 0005 already requires for
   certification.
-- **Decided, not measured:** the precedence order for a payload that does carry
-  metadata (`adr-0003-preserve-preview-bytes`). It rests on the two labels above
-  rather than on a file: a real embedded profile outranks a reconstruction built
-  from a name, and the catalog outranks a render-time snapshot of the catalog's
-  own facts. Since no `Exif` APP1 appeared in the 390 legacy levels inspected
-  (§1.4), the case is new to the modern layout rather than a regression.
-- **Decided, and the executable evidence is synthetic:** row M13 of
-  `specs/fixtures.md` builds a payload that already carries an `Exif` APP1, an XMP
-  packet and an `ICC_PROFILE`, and pins the precedence order above. It is a shape
-  this repository chose, not one observed in a Lightroom render, so it pins the
-  order and cannot show what Adobe writes.
-- **Executable, and still synthetic:** the contract above is built and asserted
-  — row M13 of `specs/fixtures.md` composes the payload, `lrsalvage-fixtures`
-  writes its bytes, and both matrix suites pin the precedence order (issue #31).
-  It remains evidence of the *decision*, never of an Adobe render: no payload on
-  this machine has been measured with an `Exif` APP1 (§1.4), so what Lightroom
-  writes stays **unverified**.
-- **Verified, 2026-11-15:** `payload_metadata` was blank in all 78 items of
-  §5.9's `extract`, and a fresh walk of all 390 level files found no `APP1` and
-  no `APP2` segment. The payloads on this machine are the converted legacy
-  levels, so the metadata-bearing state of M13 cannot come from here; it needs a
-  cache Lightroom rendered from scratch, which
-  [issue #40](https://github.com/marcd35/lrsalvage/issues/40) tracks.
+- **Decided, and now exercised in the field:** the precedence order of
+  `adr-0003-preserve-preview-bytes`. Every one of §5.10's ten extracted images
+  reported `payload_metadata = exif,xmp,icc`, and the output kept the payload's
+  ICC profile **byte for byte** (560 bytes, identical digest) and its XMP packet
+  unchanged at 693 bytes, while replacing its 114-byte `Exif` with ours (326
+  bytes) and saying so in the row's note. The decision written against a
+  synthetic shape (`M13` of `specs/fixtures.md`) is what the field state does.
+- **Verified, still:** no payload in the converted cache carries metadata
+  (§5.9): `payload_metadata` was blank in all 78 items and the 390 legacy levels
+  hold no `APP1` and no `APP2`. The metadata-bearing state is what a render
+  produces, not what an upgrade preserves — so a cache of either provenance can
+  reach `extract`, and the rule above has to hold for both.
 
 ### 5.9 The build from this tree, run against this cache — VERIFIED
 
@@ -878,10 +911,110 @@ What those numbers pinned, beyond the sections above:
 - **`scan` wrote nothing** on the runs that named no file, and every file it did
   write — the verification report — obeys the destination rule.
 
-Not reachable from this machine, and therefore still §5.5's business: a freshly
-rendered cache, a pruned level, a stale row, and a cache holding both layouts.
-The fixture matrix pins the reader's behaviour in those states synthetically; no
-run here can claim Adobe produces them.
+Still §5.5's business: a pruned level, a stale row, and a cache holding both
+layouts. The fixture matrix pins the reader's behaviour in those states
+synthetically; no run here can claim Adobe produces them. A freshly rendered
+cache is no longer on that list — §5.10 measured three.
+
+### 5.10 A fresh render, measured — VERIFIED
+
+Built and rendered on 2026-11-15 by the same Lightroom Classic 16.0
+(`ProductVersion 16.0 (202611041403-7ac14c66)`) that upgraded the cache above.
+Three catalogs were created from scratch and each imported the same ten local
+files — five camera JPEGs (4096 px wide), one `.ARW`, and four generated JPEGs
+carrying `Exif` `Orientation` 8, 6, none (a 1200×800) and none (a 6000×4000) — so
+every number below is about the renderer rather than about the sources. No paths
+appear here; the runs' own output is the source of each figure.
+
+| Catalog | Standard Preview Size | Preview Quality | What was built |
+|---|---|---|---|
+| A | `Auto (3840px)` | `Medium` | standard previews at import |
+| B | `1024 pixels` | `Medium` | standard previews at import |
+| C | `Auto (3840px)` | `Medium` | standard at import, then five stars on all ten, then `Library > Previews > Build 1:1 Previews` |
+
+`Auto (3840px)` and `Medium` are what a new catalog holds: the dialog offers
+`Auto`, `1024`, `1440`, `1680`, `2048`, `2880` and nothing else, so the
+deliberately-odd size this intended to use (2560) does not exist. Both catalogs'
+catalogs report `Adobe_DBVersion 1504001` and `Adobe_CrsVersion 18.0.0` — the same
+strings the upgraded catalog holds — and every `previews.db` holds
+`StoreInfo.version 13.0`.
+
+**What every level file is** (walked by declared segment lengths, every file):
+
+| | A | B | C |
+|---|---|---|---|
+| level files | 48 | 30 | 40 |
+| `SOI` at 0, `FF D9` at EOF | 48 | 30 | 40 |
+| walk reached `SOS` by declared lengths | 48 | 30 | 40 |
+| `_<longedge>` equals its own `SOF` long edge | 48 | 30 | 40 |
+| `PyramidLevel.fileSize` equals the on-disk bytes | 48 | 30 | 40 |
+| rows without a file / files without a row | 0 / 0 | 0 / 0 | 0 / 0 |
+| carrying `APP1`+`APP13`+`APP2`+`APP1` (§5.8) | 38 | 20 | 40 |
+| bare (`SOI DQT DRI APP14 SOF0 DHT SOS`) | 10 | 10 | 0 |
+
+**The series follows the setting, and is not the conversion's.** Long edges, one
+line per image, as files (the rows agree in every case):
+
+- A: `320, 960, 1920, 3840` — a 320 thumbnail plus three doubling steps to the
+  `Auto (3840px)` ceiling, for the 4096-wide images; the small 1200×800 image
+  rendered `320, 1200`, and one image's thumbnail pyramid held `160` instead of
+  `320`.
+- B: `320, 1024` — the same 320 floor, the setting as the ceiling.
+- C: `320` plus a doubling ladder ending at each original's own long edge —
+  `1024, 2048, 4096` for the seven 4096-wide images and `750, 1500, 3000, 6000`
+  for the two 6000-wide ones.
+
+So `101, 202, 404, 808, 1616` is the legacy container's ladder rather than a
+standard series (§5.2), and none of the published series of §5.5 is what this
+build wrote.
+
+**A standard render puts two pyramids in the store for one image, and the 1:1
+build puts one.** `Pyramid` rows per cache: A 20, B 20, C 10, against 10
+`ImageCacheEntry` rows in each. The pair is a preview pyramid and a **thumbnail**
+pyramid, the two told apart by `Pyramid.quality`:
+
+| `Pyramid.quality` | A | B | C | what it is |
+|---|---|---|---|---|
+| `standard` | 9 | 9 | 0 | the levels above 320; `colorProfile AdobeRGB` |
+| `final` | 1 | 1 | 0 | the 1200×800 image, whose largest level is its own size |
+| `thumbnail` | 10 | 10 | 0 | a single 320 (or 160) level; `colorProfile sRGB`, payload bare |
+| (1:1 build) | — | — | 10 | one pyramid per image, `AdobeRGB`, every level metadata-bearing |
+
+- **No `ImageCacheEntry` claims the thumbnail pyramid.** Every image maps to its
+  preview pyramid, so all ten thumbnail pyramids are payloads no image names —
+  which is why the shipped build reports `unmapped payloads 10` on A (§5.9's
+  shape vocabulary is unchanged; this is a state, not a bug in the reader's
+  vocabulary).
+- **Digests are per pyramid class here, and neither one per image nor one per
+  store** (§5.2, §5.7): A held four over twenty pyramids — nine preview pyramids
+  shared one digest, nine thumbnail pyramids another, and two pyramids had their
+  own. C held two over ten.
+- **A 1:1 build replaces the standard pyramid** rather than adding to it: C has no
+  `standard` or `thumbnail` row and no bare level file, so the standard-sized
+  levels are gone once a 1:1 exists.
+
+**The build from this tree, run against A** (`0.1.0`, read-only, every write under
+a scratch root, no path recorded here):
+
+| Run | Exit | What it reported |
+|---|---|---|
+| `scan` | 3 | `cache layout: modern`, `catalog images 10`, `recovered 0`, `original present 10`, `unmapped payloads 10` — nothing to do, because every original is on disk |
+| `scan --include-present` | 0 | `recovered 10 8.9 MiB`, `large 9`, `standard 1`, `unmapped payloads 10` |
+| `scan --json` | 0 | `layout modern`, `db_version 1504001`, `crs_version 18.0.0`, `images 10`, `recovered 10`, `bytes 9330084`, `tiers {large: 9, standard: 1}`, `shapes {level_file: 48, suffix_matches_sof: 48, container: 0}`, `unmapped 10`, and `0` for `suspect`, `missing_payload`, `no_cache_entry`, `failed`, `superseded`, `deleted`, `unrecognised`, `below_floor` |
+| `scan --report` | 0 | `schema lrsalvage.verification`, `layout modern`, both version strings, `options {min_long_edge: 640, all_levels: false, include_present: true}`, `levels 10`, `selected_images 10`, `selected_items 10`, the same shape counts with the leaf template |
+| `extract --include-present` | 0 | `10 evaluated, 10 written, 0 skipped, 0 failed, 8.9 MiB`; `report.csv` carried `payload_metadata = exif,xmp,icc` on all ten rows and `color_profile AdobeRGB` |
+
+Two things that run pinned beyond §5.7: the payload's own ICC profile survived
+`extract` **byte for byte** (560 bytes, identical SHA-256 in payload and output)
+and its XMP packet was untouched at 693 bytes, while our `Exif` APP1 replaced the
+payload's — `adr-0003-preserve-preview-bytes` observed rather than asserted.
+`PyramidLevel.fileSize` also agreed with the disk in 48 of 48, a second cache
+confirming §5.4.
+
+**What this does not measure.** A render of an image the catalog already holds (a
+re-render, or a preview rebuilt after pruning), what `14.0+` does when it prunes
+in the background, and any catalog written by a release newer than this one.
+
 
 ---
 
@@ -971,10 +1104,13 @@ recorded rating of zero, not an absent one.
 
 ### 6.4 What the catalog does not carry
 
-Nothing we read carries ICC bytes: `previews.db` records only the profile *name*
+The **catalog** carries no ICC bytes: `previews.db` records only the profile *name*
 in `Pyramid.colorProfile` (`sRGB`, `AdobeRGB`), and Adobe reports that extracted
-previews embed no profile and are assumed sRGB on re-import (section 5).
-Embedding a profile is therefore a reconstruction from a name, and must never be
+previews embed no profile and are assumed sRGB on re-import (section 5). A
+*payload* may carry its own bytes instead — a level a render wrote does, and every
+one measured so far carries a 560-byte Adobe RGB (1998) profile (§5.8) — and then
+those bytes win and `extract` copies them verbatim. Where the payload carries
+none, embedding a profile is a reconstruction from a name, and must never be
 presented as the original profile (ADR 0003).
 
 `extract` does embed that reconstruction, and the sizes are fixed because the
@@ -997,6 +1133,10 @@ profile is written. sRGB is never substituted for a name we cannot build.
 This profile is a statement about the colour space, not a copy of the original
 file's profile. Presenting it as the latter would be a claim the catalog cannot
 support.
+
+**Unmeasured:** whether the built `AdobeRGB` profile is byte-identical to the one
+Lightroom embeds. Their sizes agree at 560 bytes, but no run has had to build it
+in a cache whose payloads carry their own, because those bytes won (§5.8).
 
 ---
 

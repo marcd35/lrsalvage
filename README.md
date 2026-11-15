@@ -129,8 +129,11 @@ What those rows mean in practice:
   leaves all name the long edge their own frames declare. `extract` then wrote 78
   JPEGs, a second run found all 78 already ours and skipped them, and
   `--all-levels` wrote the 156 levels at or above the floor (section 5.9 of the
-  notes). What that does not prove: whether a **freshly built** 16 cache renders
-  the same shapes, since this cache is a conversion (section 5.5).
+  notes). A **freshly built** 16 cache was then measured too: three catalogs
+  rendered from scratch report the same layout, every level file certifying
+  against its own row and its own frame, and payloads that carry Adobe's own
+  `Exif`, XMP and ICC profile — which `extract` keeps (section 5.10). What neither
+  run covers: a re-render of an image the catalog already holds.
 - **Same reader, untested**: 4 – 10, 12 and 13.0 – 13.2 use the `.lrprev`
   pyramid this tool parses. Nothing known stops them working; nobody has run it
   on one.
@@ -359,7 +362,7 @@ live catalog image claims is listed as `unmapped`.
 | **no-cache-entry** | The catalog has the image, but `previews.db` has no row for it. Nothing was ever rendered, or the row is gone. |
 | **missing-payload** | `previews.db` has a row, but the payload file it names is not on disk. |
 | **failed** | A payload exists but is truncated, unreadable, not a `.lrprev`, contains no readable JPEG level, or the level does not end at an end-of-image marker. |
-| **unmapped** | A payload exists in the cache but no live catalog image claims it. It is listed with its payload path in `report.csv` and `manifest.json`, and never written: a payload with no catalog row has no file name to give it. |
+| **unmapped** | A payload exists in the cache but no live catalog image claims it. It is listed with its payload path in `report.csv` and `manifest.json`, and never written: a payload with no catalog row has no file name to give it. A **freshly rendered** cache always produces some of these: Lightroom keeps a second, thumbnail-sized pyramid beside the one each image claims, so `unmapped` equal to the image count is normal there and is not damage. |
 
 `missing-payload` is worth reading twice. It means Lightroom believed a preview
 existed and it is not on disk — the cache was partially deleted, a background

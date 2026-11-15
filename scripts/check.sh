@@ -23,20 +23,45 @@ cd "$(dirname "$0")/.."
 # A gitignored `.env` may name LRSALVAGE_TEST_CATALOG and LRSALVAGE_TEST_PREVIEWS
 # so the real-cache tests can be run on the machine that holds them. It is never
 # committed: real catalog paths are not a repo artefact.
+#
+# A worktree's own `.env` wins, and the machine's one file is the fallback — the
+# only gate that verifies a byte-level claim must not be unreachable from a fresh
+# worktree, which is what per-worktree configuration made it.
+#
+#   git config --global lrsalvage.realEnvFile ~/real-lrsalvage.env
+#   ~/.config/lrsalvage/real.env          (the default, when the setting is unset)
 load_env() {
-    if [ -f .env ]; then
+    for candidate in \
+        .env \
+        "$(git config --get lrsalvage.realEnvFile 2>/dev/null || true)" \
+        "${XDG_CONFIG_HOME:-$HOME/.config}/lrsalvage/real.env"; do
+        [ -n "$candidate" ] || continue
+        [ -f "$candidate" ] || continue
         # `set -a` exports what the file assigns: a plain `NAME=value` line is
         # only a shell variable, and the tests are a child process.
         set -a
-        # shellcheck disable=SC1091
-        . ./.env
+        # shellcheck disable=SC1090,SC1091
+        . "$candidate"
         set +a
-    fi
+        return 0
+    done
 }
 
 gate_fmt() {
     printf '%s\n' '== fmt'
     cargo fmt --all --check
+}
+
+# The one language this repository writes outside Rust is shell, and nothing else
+# reads it: `cargo` never parses `scripts/*.sh`, and a broken quote or heredoc in
+# a gate script fails the day someone runs it. `sh -n` parses without executing,
+# needs no dependency, and runs on all three CI systems.
+gate_shell() {
+    printf '%s\n' '== shell'
+    for script in scripts/*.sh .githooks/pre-commit; do
+        [ -f "$script" ] || continue
+        sh -n "$script"
+    done
 }
 
 gate_clippy() {
@@ -89,13 +114,16 @@ gate_real() {
     printf '%s\n' '== real catalogs'
     load_env
     if [ -z "${LRSALVAGE_TEST_CATALOG:-}" ] || [ -z "${LRSALVAGE_TEST_PREVIEWS:-}" ]; then
-        printf 'set LRSALVAGE_TEST_CATALOG and LRSALVAGE_TEST_PREVIEWS (see .env).\n' >&2
+        printf '%s\n' \
+            'set LRSALVAGE_TEST_CATALOG and LRSALVAGE_TEST_PREVIEWS, in this' \
+            "worktree's .env or in ${XDG_CONFIG_HOME:-$HOME/.config}/lrsalvage/real.env" \
+            '(see .env.example).' >&2
         exit 1
     fi
     cargo test --workspace -- --ignored
 }
 
-all_gates='fmt clippy test doc build typos deny'
+all_gates='fmt shell clippy test doc build typos deny'
 
 if [ "$#" -eq 0 ]; then
     set -- $all_gates
@@ -103,7 +131,7 @@ fi
 
 for gate in "$@"; do
     case "$gate" in
-        fmt | clippy | test | doc | build | typos | deny | real) "gate_$gate" ;;
+        fmt | shell | clippy | test | doc | build | typos | deny | real) "gate_$gate" ;;
         *)
             printf 'unknown gate: %s (one of: %s real)\n' "$gate" "$all_gates" >&2
             exit 1
