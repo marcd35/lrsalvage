@@ -1,6 +1,6 @@
 #!/bin/sh
-# The cheap gates, on every commit: formatting and spelling are what a push
-# turns red most often, and both finish in about a second. The gate list itself
+# The cheap gates, on every commit: formatting, shell parsing and spelling are
+# what a push turns red most often, and all three finish in about a second. The gate list itself
 # lives in `scripts/check.sh` and is named here, not repeated, so this hook
 # cannot enforce a weaker command than CI does.
 #
@@ -9,4 +9,4 @@
 set -eu
 
 cd "$(git rev-parse --show-toplevel)"
-sh scripts/check.sh fmt typos
+sh scripts/check.sh fmt shell typos
