@@ -35,7 +35,9 @@ The pyramid a cache entry claims: the levels an image is displayed and edited fr
 _Avoid_: main pyramid, primary pyramid
 
 **Thumbnail pyramid**:
-A second, smaller pyramid a render keeps beside the preview one — typically one small level, and claimed by no cache entry.
+A second, smaller pyramid a render keeps beside the preview one — typically one
+small level, and claimed by no cache entry. It is part of the render, not an
+orphan: nothing was lost to produce it.
 _Avoid_: thumbnail cache, lose pyramid
 
 **Render**:
@@ -85,7 +87,9 @@ _Avoid_: row, mapping, index entry
 
 **Orphan payload**:
 A payload — or a whole pyramid of level files — that exists in the cache but is
-claimed by no image in the catalog.
+claimed by no image in the catalog, and that the cache does not explain as a
+render's second pyramid. A thumbnail pyramid is therefore not an orphan, and a
+pyramid nothing can account for is.
 _Avoid_: stray file, unmapped file
 
 ## Recovery

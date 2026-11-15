@@ -66,6 +66,44 @@ impl Layout {
     }
 }
 
+/// The identity ADR 0005 ¶1 gives a pyramid: the `(uuid, digest)` pair that the
+/// index, the payload's name and the cache entry all carry.
+///
+/// A key is built from both halves or not at all, which is why the index is
+/// keyed by it rather than by the uuid. A fresh render holds **two** pyramids for
+/// one uuid (`format-notes` §5.10), so a lookup by half returns whichever row the
+/// database happened to write last — the accident that made `plan`'s
+/// `color_profile` and `best_level` come out right by row order rather than by
+/// rule.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct PyramidKey {
+    uuid: String,
+    digest: String,
+}
+
+impl PyramidKey {
+    pub fn new(uuid: impl Into<String>, digest: impl Into<String>) -> Self {
+        Self {
+            uuid: uuid.into(),
+            digest: digest.into(),
+        }
+    }
+
+    /// The pyramid a cache entry claims: both halves read from the one row
+    /// (`adr-0005-discover-payloads-by-index` ¶1).
+    pub fn of(entry: &CacheEntry) -> Self {
+        Self::new(&entry.uuid, &entry.digest)
+    }
+
+    pub fn uuid(&self) -> &str {
+        &self.uuid
+    }
+
+    pub fn digest(&self) -> &str {
+        &self.digest
+    }
+}
+
 /// In-memory view of a `previews.db`.
 #[derive(Debug, Clone, Default)]
 pub struct PreviewIndex {
@@ -73,13 +111,18 @@ pub struct PreviewIndex {
     /// Every row, including ones whose `imageId` repeats. Needed so payload
     /// sweeps do not mistake a duplicate row's file for an orphan.
     pub all_entries: Vec<CacheEntry>,
-    pub pyramids: HashMap<String, Pyramid>,
-    pub levels: HashMap<String, Vec<PyramidLevel>>,
-    /// `DeletedPyramid` rows: `(uuid, digest)` → the `deletedTimeStamp`
-    /// Lightroom recorded. A tombstone narrates; it never subtracts from a
-    /// count, suppresses an orphan or changes a status
+    /// One entry per `(uuid, digest)`. A repeated pair keeps the later row, as
+    /// `entries` does for a repeated `imageId`: no table in the schema declares
+    /// a primary key. Crate-private so a caller asks by key through
+    /// [`PreviewIndex::pyramid`], [`PreviewIndex::levels`] and
+    /// [`PreviewIndex::best_level`].
+    pub(crate) pyramids: HashMap<PyramidKey, Pyramid>,
+    pub(crate) levels: HashMap<PyramidKey, Vec<PyramidLevel>>,
+    /// `DeletedPyramid` rows: the `deletedTimeStamp` Lightroom recorded for a
+    /// pyramid. A tombstone narrates; it never subtracts from a count,
+    /// suppresses an orphan or changes a status
     /// (`adr-0006-degrade-without-guessing`).
-    pub deleted: HashMap<(String, String), f64>,
+    pub(crate) deleted: HashMap<PyramidKey, f64>,
 }
 
 /// One level file a pyramid's rows name.
@@ -116,11 +159,12 @@ impl PreviewIndex {
             let mut rows = stmt.query([])?;
             while let Some(row) = rows.next()? {
                 let uuid = text(row.get_ref(0)?);
+                let digest = text(row.get_ref(1)?);
                 index.pyramids.insert(
-                    uuid.clone(),
+                    PyramidKey::new(&uuid, &digest),
                     Pyramid {
                         uuid,
-                        digest: text(row.get_ref(1)?),
+                        digest,
                         color_profile: text(row.get_ref(2)?),
                         quality: text(row.get_ref(3)?),
                         cropped_width: unsigned(row.get_ref(4)?),
@@ -131,21 +175,26 @@ impl PreviewIndex {
         }
 
         {
-            let mut stmt =
-                conn.prepare("SELECT uuid, level, longDimension, width, height FROM PyramidLevel")?;
+            // The row's own `digest` is selected and used: without it a level
+            // row of the image's *other* pyramid answers for this one whenever
+            // the two share a long edge (§5.10).
+            let mut stmt = conn.prepare(
+                "SELECT uuid, digest, level, longDimension, width, height FROM PyramidLevel",
+            )?;
             let mut rows = stmt.query([])?;
             while let Some(row) = rows.next()? {
                 let uuid = text(row.get_ref(0)?);
+                let digest = text(row.get_ref(1)?);
                 index
                     .levels
-                    .entry(uuid.clone())
+                    .entry(PyramidKey::new(&uuid, &digest))
                     .or_default()
                     .push(PyramidLevel {
                         uuid,
-                        level: unsigned(row.get_ref(1)?),
-                        long_dimension: unsigned(row.get_ref(2)?),
-                        width: unsigned(row.get_ref(3)?),
-                        height: unsigned(row.get_ref(4)?),
+                        level: unsigned(row.get_ref(2)?),
+                        long_dimension: unsigned(row.get_ref(3)?),
+                        width: unsigned(row.get_ref(4)?),
+                        height: unsigned(row.get_ref(5)?),
                     });
             }
         }
@@ -180,11 +229,10 @@ impl PreviewIndex {
                     conn.prepare("SELECT uuid, digest, deletedTimeStamp FROM DeletedPyramid")?;
                 let mut rows = stmt.query([])?;
                 while let Some(row) = rows.next()? {
-                    let uuid = text(row.get_ref(0)?);
-                    let digest = text(row.get_ref(1)?);
+                    let key = PyramidKey::new(text(row.get_ref(0)?), text(row.get_ref(1)?));
                     index
                         .deleted
-                        .insert((uuid, digest), number(row.get_ref(2)?).unwrap_or(0.0));
+                        .insert(key, number(row.get_ref(2)?).unwrap_or(0.0));
                 }
             }
         }
@@ -192,9 +240,26 @@ impl PreviewIndex {
         Ok(index)
     }
 
+    /// The `Pyramid` row this key names, when the index holds one.
+    pub fn pyramid(&self, key: &PyramidKey) -> Option<&Pyramid> {
+        self.pyramids.get(key)
+    }
+
+    /// This pyramid's `PyramidLevel` rows, empty when it has none — a pyramid
+    /// whose rows were pruned but whose files survive is found by `candidates`.
+    pub fn levels(&self, key: &PyramidKey) -> &[PyramidLevel] {
+        self.levels.get(key).map_or(&[], Vec::as_slice)
+    }
+
+    /// The `deletedTimeStamp` Lightroom recorded for this pyramid, when it
+    /// recorded one. Quoted and counted, never a claimed cause.
+    pub fn deletion(&self, key: &PyramidKey) -> Option<f64> {
+        self.deleted.get(key).copied()
+    }
+
     /// `<cache>/<uuid[0]>/<uuid[0..4]>/<UUID>-<digest>.lrprev`
-    pub fn payload_path(&self, cache_root: &Path, entry: &CacheEntry) -> PathBuf {
-        shard(cache_root, &entry.uuid).join(format!("{}-{}.lrprev", entry.uuid, entry.digest))
+    pub fn payload_path(&self, cache_root: &Path, key: &PyramidKey) -> PathBuf {
+        shard(cache_root, key.uuid()).join(format!("{}-{}.lrprev", key.uuid(), key.digest()))
     }
 
     /// Every level file of this pyramid, in path order: one leaf per
@@ -216,10 +281,11 @@ impl PreviewIndex {
     ///
     /// Whether a candidate is on disk is the caller's question: this module
     /// stats no file and reads no payload, so `plan` decides existence.
-    pub fn candidates(&self, cache_root: &Path, uuid: &str, digest: &str) -> Vec<Candidate<'_>> {
+    pub fn candidates(&self, cache_root: &Path, key: &PyramidKey) -> Vec<Candidate<'_>> {
+        let (uuid, digest) = (key.uuid(), key.digest());
         let mut named: Vec<Candidate<'_>> = self
             .levels
-            .get(uuid)
+            .get(key)
             .map(|rows| {
                 rows.iter()
                     .map(|row| Candidate {
@@ -269,8 +335,8 @@ impl PreviewIndex {
     /// the highest `level` on a tie. Neither the highest level number nor the
     /// longest dimension reliably identifies the 1616px preview, because real
     /// caches store levels in an arbitrary order.
-    pub fn best_level(&self, uuid: &str) -> Option<&PyramidLevel> {
-        self.levels.get(uuid)?.iter().max_by_key(|level| {
+    pub fn best_level(&self, key: &PyramidKey) -> Option<&PyramidLevel> {
+        self.levels.get(key)?.iter().max_by_key(|level| {
             (
                 u64::from(level.width) * u64::from(level.height),
                 level.level,
@@ -598,6 +664,11 @@ mod tests {
         path.to_string_lossy().replace('\\', "/")
     }
 
+    /// A pyramid key from its two halves, so a test says which pyramid it means.
+    fn key(uuid: &str, digest: &str) -> PyramidKey {
+        PyramidKey::new(uuid, digest)
+    }
+
     const SCHEMA: &str = r#"
         CREATE TABLE Pyramid (uuid NOT NULL, digest NOT NULL, colorProfile NOT NULL,
           fileTimeStamp, quality NOT NULL, croppedWidth NOT NULL, croppedHeight NOT NULL,
@@ -666,7 +737,7 @@ mod tests {
     fn pyramid_dimensions_are_coerced_from_reals() {
         let index = index_with(|conn| base_pyramid(conn, "ABCD"));
 
-        let pyramid = &index.pyramids["ABCD"];
+        let pyramid = index.pyramid(&key("ABCD", "digest")).expect("row");
         assert_eq!(pyramid.cropped_width, 1616);
         assert_eq!(pyramid.cropped_height, 1077);
         assert_eq!(pyramid.quality, "HIGH");
@@ -686,7 +757,7 @@ mod tests {
 
         let path = index.payload_path(
             Path::new("C:/cache/2023 Previews.lrdata"),
-            &index.entries[&4062],
+            &PyramidKey::of(&index.entries[&4062]),
         );
         assert_eq!(
             path,
@@ -707,7 +778,7 @@ mod tests {
             .unwrap();
         });
 
-        let best = index.best_level("ABCD").unwrap();
+        let best = index.best_level(&key("ABCD", "d")).unwrap();
         assert_eq!((best.level, best.width, best.height), (0, 1616, 1077));
     }
 
@@ -723,13 +794,13 @@ mod tests {
             .unwrap();
         });
 
-        assert_eq!(index.best_level("ABCD").unwrap().level, 3);
+        assert_eq!(index.best_level(&key("ABCD", "d")).unwrap().level, 3);
     }
 
     #[test]
     fn best_level_unknown_pyramid_is_none() {
         let index = index_with(|_| {});
-        assert!(index.best_level("missing").is_none());
+        assert!(index.best_level(&key("missing", "d")).is_none());
     }
 
     #[test]
@@ -738,13 +809,13 @@ mod tests {
             base_pyramid(conn, "1A2B3C4D-5E6F");
             conn.execute_batch(
                 "INSERT INTO PyramidLevel (uuid, digest, level, longDimension, lastAccess, width, height)
-                 VALUES ('1A2B3C4D-5E6F', 'd', 0, 1616.0, 0, 1616, 1077),
-                        ('1A2B3C4D-5E6F', 'd', 2, 101.0,  0, 101,  68);",
+                 VALUES ('1A2B3C4D-5E6F', 'deadbeef', 0, 1616.0, 0, 1616, 1077),
+                        ('1A2B3C4D-5E6F', 'deadbeef', 2, 101.0,  0, 101,  68);",
             )
             .unwrap();
         });
 
-        let candidates = index.candidates(Path::new("C:/cache"), "1A2B3C4D-5E6F", "deadbeef");
+        let candidates = index.candidates(Path::new("C:/cache"), &key("1A2B3C4D-5E6F", "deadbeef"));
         let paths: Vec<String> = candidates.iter().map(|c| slashed(&c.path)).collect();
         assert_eq!(
             paths,
@@ -778,7 +849,7 @@ mod tests {
             .unwrap();
         });
 
-        let candidates = index.candidates(Path::new("C:/cache"), "ABCD", "d");
+        let candidates = index.candidates(Path::new("C:/cache"), &key("ABCD", "d"));
         assert_eq!(candidates.len(), 1, "one leaf is one file");
         assert!(
             candidates[0].path.ends_with("ABCD-d_101"),
@@ -797,12 +868,12 @@ mod tests {
         let index = index_with(|conn| base_pyramid(conn, "ABCD"));
         assert!(
             index
-                .candidates(Path::new("C:/cache"), "ABCD", "d")
+                .candidates(Path::new("C:/cache"), &key("ABCD", "d"))
                 .is_empty()
         );
         assert!(
             index
-                .candidates(Path::new("C:/cache"), "nope", "d")
+                .candidates(Path::new("C:/cache"), &key("nope", "d"))
                 .is_empty()
         );
     }
@@ -854,7 +925,7 @@ mod tests {
 
         // No `PyramidLevel` row at all: the widening alone finds these.
         let index = index_with(|conn| base_pyramid(conn, uuid));
-        let candidates = index.candidates(dir.path(), uuid, digest);
+        let candidates = index.candidates(dir.path(), &key(uuid, digest));
 
         assert_eq!(
             names(&candidates),
@@ -890,12 +961,12 @@ mod tests {
             base_pyramid(conn, uuid);
             conn.execute_batch(&format!(
                 "INSERT INTO PyramidLevel (uuid, digest, level, longDimension, lastAccess, width, height)
-                 VALUES ('{uuid}', 'd', 1, 640.0, 0, 640, 427);"
+                 VALUES ('{uuid}', '{digest}', 1, 640.0, 0, 640, 427);"
             ))
             .unwrap();
         });
 
-        let candidates = index.candidates(dir.path(), uuid, digest);
+        let candidates = index.candidates(dir.path(), &key(uuid, digest));
         assert_eq!(names(&candidates), vec![format!("{uuid}-{digest}_640")]);
         assert_eq!(
             candidates[0]
@@ -942,11 +1013,11 @@ mod tests {
         };
 
         assert_eq!(
-            slashed(&index.payload_path(dir.path(), entry)),
+            slashed(&index.payload_path(dir.path(), &PyramidKey::of(entry))),
             slashed(&dir.path().join(fill(CONTAINER_GRAMMAR, ""))),
             "CONTAINER_GRAMMAR must describe the path payload_path derives"
         );
-        let candidates = index.candidates(dir.path(), uuid, digest);
+        let candidates = index.candidates(dir.path(), &key(uuid, digest));
         assert_eq!(candidates.len(), 1, "{candidates:?}");
         assert_eq!(
             slashed(&candidates[0].path),
@@ -1140,10 +1211,7 @@ mod tests {
         });
 
         assert_eq!(
-            index
-                .deleted
-                .get(&("AAAA".to_string(), "digest".to_string()))
-                .copied(),
+            index.deletion(&key("AAAA", "digest")),
             Some(700_000_000.0),
             "the timestamp is kept verbatim for a note to quote"
         );

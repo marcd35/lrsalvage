@@ -9,6 +9,11 @@
 #   scripts/check.sh              every gate, in order
 #   scripts/check.sh clippy fmt   only those, in the order given
 #   scripts/check.sh real         the #[ignore]d tests, against real catalogs
+#   scripts/check.sh real-render  the #[ignore]d tests, against a rendered cache
+#
+# `real` and `real-render` are two evidence families, not one: a machine can hold
+# a converted cache without a rendered one, and each gate fails rather than
+# skipping when its own pair is unset.
 #
 # A missing tool is a failure, never a skip: a green run must mean CI's green.
 #
@@ -20,9 +25,10 @@ set -eu
 
 cd "$(dirname "$0")/.."
 
-# A gitignored `.env` may name LRSALVAGE_TEST_CATALOG and LRSALVAGE_TEST_PREVIEWS
-# so the real-cache tests can be run on the machine that holds them. It is never
-# committed: real catalog paths are not a repo artefact.
+# A gitignored `.env` may name LRSALVAGE_TEST_CATALOG/LRSALVAGE_TEST_PREVIEWS
+# (a converted cache) and LRSALVAGE_RENDER_CATALOG/LRSALVAGE_RENDER_PREVIEWS (a
+# rendered one) so the real-cache tests can be run on the machine that holds
+# them. It is never committed: real catalog paths are not a repo artefact.
 #
 # A worktree's own `.env` wins, and the machine's one file is the fallback — the
 # only gate that verifies a byte-level claim must not be unreachable from a fresh
@@ -120,7 +126,26 @@ gate_real() {
             '(see .env.example).' >&2
         exit 1
     fi
-    cargo test --workspace -- --ignored
+    # The rendered-cache row needs its own pair of names and its own gate;
+    # `--ignored` would otherwise run it here and fail on a machine that holds a
+    # converted cache and no rendered one.
+    cargo test --workspace -- --ignored --skip a_fresh_render
+}
+
+# A cache Lightroom rendered from scratch: two pyramids per image, which is the
+# state `format-notes` §5.10 measured and ADR 0008 decides a rule for. Its own
+# pair of names, because it is its own evidence.
+gate_real_render() {
+    printf '%s\n' '== rendered cache'
+    load_env
+    if [ -z "${LRSALVAGE_RENDER_CATALOG:-}" ] || [ -z "${LRSALVAGE_RENDER_PREVIEWS:-}" ]; then
+        printf '%s\n' \
+            'set LRSALVAGE_RENDER_CATALOG and LRSALVAGE_RENDER_PREVIEWS to a cache' \
+            "Lightroom rendered, in this worktree's .env or in" \
+            "${XDG_CONFIG_HOME:-$HOME/.config}/lrsalvage/real.env (see .env.example)." >&2
+        exit 1
+    fi
+    cargo test -p lrsalvage-cli --test render -- --ignored
 }
 
 all_gates='fmt shell clippy test doc build typos deny'
@@ -131,9 +156,10 @@ fi
 
 for gate in "$@"; do
     case "$gate" in
+        real-render) gate_real_render ;;
         fmt | shell | clippy | test | doc | build | typos | deny | real) "gate_$gate" ;;
         *)
-            printf 'unknown gate: %s (one of: %s real)\n' "$gate" "$all_gates" >&2
+            printf 'unknown gate: %s (one of: %s real real-render)\n' "$gate" "$all_gates" >&2
             exit 1
             ;;
     esac

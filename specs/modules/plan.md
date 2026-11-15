@@ -17,6 +17,7 @@ references:
   - adr-0005-discover-payloads-by-index
   - adr-0006-degrade-without-guessing
   - adr-0007-publish-a-verification-report
+  - adr-0008-a-render-companion-is-not-an-orphan
   - glossary
 ---
 
@@ -75,7 +76,23 @@ from the run rather than from the plan.
   plan; `extract` writes nothing for it. Listing is the whole of its fate, which
   is why the report gives its payload path a field rather than burying it in a
   note. Unclaimed payloads are counted **per pyramid**, never per level file: one
-  orphan is one lost photograph, whatever its level set looks like.
+  orphan is one lost photograph, whatever its level set looks like. An orphan
+  item carries the `quality` and `color_profile` of the row its pair reaches, so
+  the report can say which kind of pyramid nobody claims; with no row it prints
+  neither.
+- **A render's second pyramid is a cache fact, not an orphan.** A fresh render
+  writes a `thumbnail` pyramid beside the one an entry claims (§5.10), and no
+  entry ever names it. Such a pyramid is counted as
+  `CacheFacts::thumbnail_pyramids` and is never an item, so `unmapped` keeps
+  meaning "nobody names this" instead of restating the cache's age
+  (`adr-0008-a-render-companion-is-not-an-orphan`). Three clauses must all hold:
+  a **claimed pyramid exists on the same uuid** in the live claim set, the row's
+  `quality` is **exactly `thumbnail`**, and **every level it holds measures inside
+  the `thumbnail` tier** (< 640 px, a fixed constant rather than
+  `--min-long-edge`). So a uuid nothing maps keeps every pyramid it holds
+  `unmapped`, a `.lrprev`-only pyramid is never a companion, a row that lies
+  about its size cannot hide a payload, and an unreadable level keeps its pyramid
+  visible. The count never moves an exit code and is never a status.
 - **`superseded` is a cache stat, not a status, and it cannot move the exit code.**
   It counts claimed pyramids with **both** representations — at least one level
   file and at least one legacy `.lrprev` — whose level files are the pyramid and
@@ -163,8 +180,9 @@ one. The layout word and the version strings are observations, never gates
   (`adr-0002-map-via-previews-db`). The enumeration is
   `previews_db::sweep`: one entry per `(uuid, digest)` whose leaf
   parses and whose two shard folders agree with it, merging its level files and
-  any coexisting `.lrprev`. An unclaimed entry becomes exactly one `unmapped`
-  item — never one per file, because one orphan is one lost photograph — whose
+  any coexisting `.lrprev`. An unclaimed entry that is not a render companion
+  becomes exactly one `unmapped` item — never one per file, because one orphan
+  is one lost photograph — whose
   payload is `Payload::LevelFile` of the largest level it holds or
   `Payload::Container { level: None }` when it holds only a container. **Largest
   by the `SOF` its own bytes declare**, with the leaf's `_<n>` only as a

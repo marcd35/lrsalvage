@@ -54,6 +54,10 @@ names nothing it cannot prove, and writes no file it cannot name.**
    `no-cache-entry` for every image whose original is not on disk, one `unmapped`
    item per payload pyramid, **exit 3**, and one hint naming the file that is
    missing. The text never says "this cache holds no previews".
+   **Amended 2026-11-15 by ADR 0008:** "every payload pyramid" stays literally
+   true here. Companion classification needs a row, so with no index the claim
+   set and the quality are both absent and nothing is a companion — every pyramid
+   the sweep finds is `unmapped`, exactly as this paragraph says.
 2. **An unreadable index degrades identically**, with the `sqlite` reason in the
    hint and the instruction to fix or move the file. Refusing the run instead
    would punish a damaged file sitting beside hundreds of readable payloads, and

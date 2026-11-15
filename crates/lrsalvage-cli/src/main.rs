@@ -330,6 +330,7 @@ fn scan_json(plan: &Plan, catalog: &Path, previews: &Path) -> String {
         "superseded": stats.superseded,
         "deleted": stats.deleted,
         "unrecognised": stats.unrecognised,
+        "thumbnail_pyramids": plan.cache.thumbnail_pyramids,
         "tiers": report::tiers_json(stats),
         "shapes": report::shapes_json(&plan.cache.shapes),
     })

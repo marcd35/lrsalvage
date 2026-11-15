@@ -637,6 +637,7 @@ dependencies = [
  "lrsalvage-fixtures",
  "predicates",
  "serde_json",
+ "tempfile",
  "walkdir",
 ]
 

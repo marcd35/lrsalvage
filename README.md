@@ -217,18 +217,20 @@ one machine-readable object; `--verbose` lines follow it.
 | `suspect` | Recovered, but the decoded size disagrees with `previews.db`. |
 | `missing_payload` | `previews.db` has a row; the payload file is not on disk. |
 | `no_cache_entry` | The catalog has the image; `previews.db` has no row. |
-| `unmapped` | A payload that no catalog image claims. |
+| `unmapped` | A pyramid that exists in the cache and that no catalogue image claims — and that the cache does not account for as a render's second pyramid. |
 | `failed` | A payload that is truncated, unreadable, or holds no complete JPEG level. |
 | `original_present` | Images skipped because the original file is still on disk. Always `0` with `--include-present`. |
 | `below_floor` | Items the floor excluded. |
 | `superseded` | Claimed pyramids held twice — level files and a legacy `.lrprev` — where only the level files are read. |
 | `deleted` | `missing-payload` images whose pyramid `previews.db` has a `DeletedPyramid` row for. Lightroom's own record; it never claims who removed the file. |
 | `unrecognised` | Payload-like files that matched no shape. They appear here and nowhere else: no status, no item, no exit code. |
+| `thumbnail_pyramids` | A render's second pyramid: no cache entry claims it, its `Pyramid` row says `thumbnail`, and none of its levels reaches the floor. Counted here, never listed as `unmapped` and never written. |
 | `tiers` | Object keyed `full`, `large`, `standard`, `small`, `thumbnail`; absent tiers are absent keys. |
 | `shapes` | Object of three counts over the cache's files: `level_file`, how many of those leaves name the long edge their own frame measured (`suffix_matches_sof`), and `container`. |
 
-None of `superseded`, `deleted` or `unrecognised` is an image's status, and none
-of them changes the exit code: they describe the cache the run found, not what
+None of `superseded`, `deleted`, `unrecognised` or `thumbnail_pyramids` is an
+image's status, and none of them changes the exit code: they describe the cache
+the run found, not what
 became of any photograph.
 
 `--json` keeps the two input paths, because stdout is for you or a script on your
@@ -362,7 +364,7 @@ live catalog image claims is listed as `unmapped`.
 | **no-cache-entry** | The catalog has the image, but `previews.db` has no row for it. Nothing was ever rendered, or the row is gone. |
 | **missing-payload** | `previews.db` has a row, but the payload file it names is not on disk. |
 | **failed** | A payload exists but is truncated, unreadable, not a `.lrprev`, contains no readable JPEG level, or the level does not end at an end-of-image marker. |
-| **unmapped** | A payload exists in the cache but no live catalog image claims it. It is listed with its payload path in `report.csv` and `manifest.json`, and never written: a payload with no catalog row has no file name to give it. A **freshly rendered** cache always produces some of these: Lightroom keeps a second, thumbnail-sized pyramid beside the one each image claims, so `unmapped` equal to the image count is normal there and is not damage. |
+| **unmapped** | A pyramid exists in the cache but no live catalog image claims it, and nothing in the index accounts for it. It is listed with its payload path — and its `quality` and `color_profile`, when its pair has a row — in `report.csv` and `manifest.json`, and never written: a payload with no catalog row has no file name to give it. A **freshly rendered** cache produces none of these: the second, thumbnail-sized pyramid Lightroom keeps beside the one each image claims is counted as `thumbnail_pyramids` instead, never as an orphan. |
 
 `missing-payload` is worth reading twice. It means Lightroom believed a preview
 existed and it is not on disk — the cache was partially deleted, a background

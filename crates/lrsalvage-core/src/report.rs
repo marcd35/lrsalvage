@@ -96,6 +96,11 @@ pub fn summary_with_floor(plan: &Plan, floor: u32) -> String {
             stats.unrecognised,
             "payload-like files of no known shape",
         ),
+        (
+            "thumbnail pyramids",
+            plan.cache.thumbnail_pyramids,
+            "a render's second pyramid; no image claims it",
+        ),
     ] {
         if count > 0 {
             rows.push((label.to_string(), count, Some(detail.to_string())));
@@ -955,6 +960,27 @@ mod tests {
     }
 
     #[test]
+    fn summary_counts_the_render_companions_beside_the_cache_facts() {
+        let mut plan = plan_with(Stats {
+            images: 10,
+            recoverable: 10,
+            ..Stats::default()
+        });
+        plan.cache.thumbnail_pyramids = 10;
+
+        let text = summary(&plan);
+        assert!(text.contains("thumbnail pyramids"), "{text}");
+        assert!(
+            text.contains("a render's second pyramid; no image claims it"),
+            "{text}"
+        );
+        assert!(
+            !text.contains("unmapped payloads"),
+            "a companion is never an orphan:\n{text}"
+        );
+    }
+
+    #[test]
     fn summary_names_the_floor_it_was_given() {
         let stats = Stats {
             images: 1,
@@ -1232,6 +1258,7 @@ recovered"
                         suffix_matches_sof: 4,
                         container: 2,
                     },
+                    thumbnail_pyramids: 0,
                 },
             },
             &path,
@@ -1612,6 +1639,7 @@ recovered"
                     suffix_matches_sof: 4,
                     container: 2,
                 },
+                thumbnail_pyramids: 0,
             },
         }
     }
@@ -1714,6 +1742,7 @@ recovered"
                 db_version: None,
                 crs_version: None,
                 shapes: Shapes::default(),
+                thumbnail_pyramids: 0,
             },
             ..Plan::default()
         };

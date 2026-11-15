@@ -14,6 +14,7 @@ references:
   - adr-0005-discover-payloads-by-index
   - adr-0006-degrade-without-guessing
   - adr-0007-publish-a-verification-report
+  - adr-0008-a-render-companion-is-not-an-orphan
 ---
 
 # report
@@ -73,6 +74,15 @@ struct a path.
   `--json`, `manifest.json` and the verification report's `stats`, and never a
   column in `report.csv`: neither belongs to an image, and neither moves an exit
   code (`adr-0004-detect-layout-not-version`, `adr-0006-degrade-without-guessing`).
+- **`thumbnail_pyramids` is the one cache count that stops at `--json`.**
+  `thumbnail pyramids  10   a render's second pyramid; no image claims it` is
+  printed only when non-zero and mirrored as `thumbnail_pyramids` in `--json`; it
+  is deliberately absent from `manifest.json` and from the verification report's
+  frozen `stats` list, because `shapes.level_file` already counts a companion's
+  files and a stranger's report gains nothing from the cache's age. It is never a
+  `report.csv` column and never an item: a render's second pyramid is a fact
+  about the cache, not a lost photograph
+  (`adr-0008-a-render-companion-is-not-an-orphan`).
 - **The summary opens with one line naming the layout, and nothing else.**
   `cache layout: modern` is the whole of it: the layout is the one fact that
   decides how everything below it was read, and it is a word, not a count. The
