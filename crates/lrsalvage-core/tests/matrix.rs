@@ -522,21 +522,22 @@ fn d1_a_truncated_winner_is_failed_and_never_falls_back() {
 
     let d1 = item_for(&plan, 1);
     assert_eq!(d1.status, Status::Failed);
-    assert!(!d1.selected, "nothing is written for a failed image");
     assert_eq!(
         (d1.width, d1.height),
         (Some(1616), Some(1077)),
         "the frame was readable; it is the end-of-image that is missing"
     );
 
-    // The intact 808 beside it is not silently promoted to be the image.
+    // A broken winner is reported, not hidden: the item is evaluated, and it
+    // writes nothing. The intact 808 beside it is not silently promoted.
+    let output = d1.output.as_ref().expect("output").clone();
     let outcomes = run_extract(&vault, &plan);
-    assert!(
-        outcomes
-            .iter()
-            .all(|outcome| outcome.output != *d1.output.as_ref().expect("output")),
-        "a broken winner is not extracted"
-    );
+    let d1_outcome = outcomes
+        .iter()
+        .find(|outcome| outcome.output == output)
+        .expect("the failed winner is still evaluated");
+    assert_eq!(d1_outcome.status, extract::OutcomeStatus::Failed);
+    assert!(!output.exists(), "nothing is written for a failed image");
 }
 
 #[test]
@@ -546,7 +547,7 @@ fn d2_bytes_that_were_never_a_jpeg_are_failed() {
 
     let d2 = item_for(&plan, 2);
     assert_eq!(d2.status, Status::Failed);
-    assert!(!d2.selected);
+    assert!(!d2.output.as_ref().expect("output").exists());
     assert_eq!((d2.width, d2.height), (None, None));
     assert!(is_level_file(d2), "it is still the payload that failed");
 }
@@ -558,7 +559,6 @@ fn d3_a_payload_without_an_soi_is_failed_not_scanned() {
 
     let d3 = item_for(&plan, 3);
     assert_eq!(d3.status, Status::Failed);
-    assert!(!d3.selected);
     assert_eq!(
         (d3.width, d3.height),
         (None, None),
@@ -577,8 +577,21 @@ fn d4_one_failure_does_not_stop_its_healthy_sibling() {
     assert!(d4.selected);
 
     let outcomes = run_extract(&vault, &plan);
-    assert_eq!(outcomes.len(), 1, "only the healthy image is written");
-    assert_eq!(outcomes[0].status, extract::OutcomeStatus::Written);
+    assert_eq!(
+        outcomes
+            .iter()
+            .filter(|outcome| outcome.status == extract::OutcomeStatus::Written)
+            .count(),
+        1,
+        "only the healthy image is written: {outcomes:#?}"
+    );
+    assert_eq!(
+        outcomes
+            .iter()
+            .find(|outcome| outcome.output == *d4.output.as_ref().expect("output"))
+            .map(|outcome| outcome.status),
+        Some(extract::OutcomeStatus::Written)
+    );
     let written = written(d4);
     assert_eq!(
         jpeg::certify(&written).expect("a JPEG").dimensions,
@@ -603,7 +616,6 @@ fn d5_all_levels_judges_each_level_by_its_own_row() {
         .find(|item| item.width == Some(1616))
         .expect("the 1616 level");
     assert_eq!(broken.status, Status::Failed);
-    assert!(!broken.selected);
     assert_eq!(
         broken
             .output

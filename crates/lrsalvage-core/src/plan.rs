@@ -626,9 +626,13 @@ fn decide_levels(
         let tier = level
             .dimensions
             .map(|(width, height)| Tier::from_long_edge(width.max(height)));
-        let selected = level
+        // The floor excludes an item; nothing else does. A broken level is still
+        // evaluated, so the run reports it and exits partial instead of claiming
+        // a clean success over a cache it could not read. A level whose size
+        // cannot be measured is not "below" the floor — it is unknown.
+        let below_floor = level
             .dimensions
-            .is_some_and(|(width, height)| width.max(height) >= tally.options.min_long_edge);
+            .is_some_and(|(width, height)| width.max(height) < tally.options.min_long_edge);
 
         let mut status = Status::Recoverable;
         let mut note = None;
@@ -654,8 +658,7 @@ fn decide_levels(
         }
 
         let writable = matches!(status, Status::Recoverable | Status::Suspect);
-        if writable && !selected {
-            // The floor excludes; it does not fail.
+        if writable && below_floor {
             tally.stats.below_floor += 1;
         }
 
@@ -677,15 +680,14 @@ fn decide_levels(
             }
         }
 
-        // Every payload that is written still has to be a payload: a level
-        // whose bytes failed, or whose name could not be placed, is reported and
-        // left out of the selection.
+        // Only a level that is actually written contributes bytes; a failed one
+        // is evaluated and reported, and writes nothing.
         let writable = writable && !matches!(status, Status::Failed);
         if level.winner {
             image_status = Some(status);
         }
         tally.stats.levels += 1;
-        if writable && selected {
+        if writable && !below_floor {
             tally.stats.bytes += level.bytes as u64;
         }
         if let Some(tier) = tier {
@@ -705,7 +707,7 @@ fn decide_levels(
             tier,
             declared: level.declared,
             smallest_level: smallest_level.clone(),
-            selected: writable && selected,
+            selected: !below_floor,
             note,
         });
     }
