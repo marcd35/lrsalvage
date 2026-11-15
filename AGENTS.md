@@ -67,6 +67,12 @@ not allowed.
   (`sh scripts/check.sh clippy`). CI executes the Rust gates through the same
   file, so a gate cannot be documented weaker here than it is enforced. A
   missing tool fails rather than skipping: green must mean CI's green.
+- **`scripts/probe-cache.sh <cache.lrdata>` measures a cache, and is not a gate.**
+  It walks every level file by its declared segment lengths and lines the walk up
+  against `previews.db` — the series, the segments each file carries, and where a
+  row and a file disagree. `format-notes.md`'s per-level numbers come from it and
+  from the shipped build's `scan`, `--report` and `extract`; a claim about
+  "every file" means it was run over the whole tree, not a sample.
 - **`typos` and `cargo deny` are the two gates with their own policy files.**
   Add domain words to `typos.toml`, never blanket-exclude prose. `deny.toml` is
   the licence and advisory policy: a dependency that trips its allow-list is a
@@ -116,6 +122,9 @@ compatibility table calls verified.
 - `CODING_STANDARDS.md` — the judgement calls a check cannot hold. Read it before
   reviewing a diff, and before writing a claim a stranger will act on.
 - `docs/agents/issue-tracker.md` — how to read a ticket before implementing it.
+- `docs/agents/rendering-a-test-cache.md` — how to make a cache Lightroom
+  *rendered* rather than converted, what a new catalog decides on its own, and the
+  five facts that make driving its GUI reliable rather than a lottery.
 - `docs/format-notes.md` — byte layouts, evidence labels, the `.lrcat-data` trap.
 - `docs/adr/` — decisions and their consequences; read before changing a seam.
 - `specs/` — the spec graph: the product goal, the architecture and its

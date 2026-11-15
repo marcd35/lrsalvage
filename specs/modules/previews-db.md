@@ -53,6 +53,15 @@ which are stale, and what to do about either is `plan`'s decision.
   travels with the file because it is the claim `plan` compares `suspect`
   against; that is the one place it can be attached without a second matcher
   (`adr-0005-discover-payloads-by-index` ¶2–3).
+- **A store may hold more than one pyramid per uuid** — verified, `format-notes`
+  §5.10. A render keeps a `standard` pyramid and a `thumbnail` pyramid for the
+  same image, and only the first is claimed by `ImageCacheEntry`. `pyramids` and
+  `levels` are keyed by uuid, so the later `Pyramid` row wins the lookup and both
+  pyramids' level rows land in one list. The measured fresh caches resolve
+  correctly — the claimed pyramid is the larger one and its row is the later one —
+  but that is row order, not a rule: the key has to become `(uuid, digest)` before
+  anything else reads `pyramids` or `levels` for a fresh cache. Until then
+  `plan`'s `color_profile` and `best_level` inherit the same assumption.
 - **`imageId` is not assumed unique.** No table in the schema declares a primary
   key, so `all_entries` keeps every row. `entries` is the last row wins map used
   for lookup; the full list exists so that a payload belonging to a duplicate row

@@ -27,9 +27,24 @@ to re-render an image just to show it.
 _Avoid_: cache folder, preview folder, lrdata
 
 **Pyramid**:
-All the cached renders of one image, from thumbnail to full size, kept together
-and described as a single unit.
+The cache's unit for one image: an index row naming the levels that image's renders consist of, and the payloads those levels live in. A *converted* cache keeps one per image; a *render* keeps two — see below.
 _Avoid_: preview set, preview file, image cache
+
+**Preview pyramid**:
+The pyramid a cache entry claims: the levels an image is displayed and edited from.
+_Avoid_: main pyramid, primary pyramid
+
+**Thumbnail pyramid**:
+A second, smaller pyramid a render keeps beside the preview one — typically one small level, and claimed by no cache entry.
+_Avoid_: thumbnail cache, lose pyramid
+
+**Render**:
+A pyramid Lightroom built from the original's own pixels at the catalog's preview settings.
+_Avoid_: fresh cache, built previews, generated pyramid
+
+**Conversion**:
+A pyramid carried over from a legacy container by an in-place catalog upgrade, its level bytes preserved and only their storage split.
+_Avoid_: migrated cache, upgraded previews, converted cache
 
 **Level**:
 One size within a pyramid: a complete, independently viewable image.
