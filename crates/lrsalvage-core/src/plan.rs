@@ -10,7 +10,10 @@ use crate::catalog::Catalog;
 use crate::error::Result;
 use crate::model::{CatalogImage, Orientation, Pyramid, PyramidLevel};
 use crate::previews_db::{CacheSweep, Candidate, Layout, LevelOnDisk, PreviewIndex, PyramidOnDisk};
-use crate::{jpeg, lrprev, previews_db};
+use crate::{
+    exif::{self, PayloadMetadata},
+    jpeg, lrprev, previews_db,
+};
 
 /// Where a payload lives, decided once so no reader has to sniff it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -118,7 +121,14 @@ pub struct PlanItem {
     pub height: Option<u32>,
     pub color_profile: Option<String>,
     pub quality: Option<String>,
+    /// The catalog's claim about rotation, kept as recorded.
     pub orientation: Orientation,
+    /// What the output states: the payload's own orientation when its EXIF
+    /// declares one, else the catalog's. Computed once, here.
+    pub effective_orientation: Orientation,
+    /// The metadata segments the chosen payload already carries, read by the
+    /// certification walk. Empty when it is bare; never a status.
+    pub payload_metadata: PayloadMetadata,
     pub tier: Option<Tier>,
     /// The size `previews.db` declares for this level: the chosen level's own
     /// row for a level file, the pyramid's cropped size for a container.
@@ -305,6 +315,8 @@ impl Plan {
                     color_profile: None,
                     quality: None,
                     orientation,
+                    effective_orientation: orientation,
+                    payload_metadata: PayloadMetadata::default(),
                     tier: None,
                     declared: None,
                     smallest_level: None,
@@ -326,6 +338,8 @@ impl Plan {
                     color_profile: None,
                     quality: None,
                     orientation: Orientation::Unknown,
+                    effective_orientation: Orientation::Unknown,
+                    payload_metadata: PayloadMetadata::default(),
                     tier: None,
                     declared: None,
                     smallest_level: None,
@@ -385,6 +399,8 @@ impl Plan {
                     color_profile: pyramid.map(|p| p.color_profile.clone()),
                     quality: pyramid.map(|p| p.quality.clone()),
                     orientation,
+                    effective_orientation: orientation,
+                    payload_metadata: PayloadMetadata::default(),
                     tier: None,
                     declared: None,
                     smallest_level: None,
@@ -447,6 +463,8 @@ impl Plan {
                     color_profile: None,
                     quality: None,
                     orientation: Orientation::Unknown,
+                    effective_orientation: Orientation::Unknown,
+                    payload_metadata: PayloadMetadata::default(),
                     tier: None,
                     declared: None,
                     smallest_level: None,
@@ -616,6 +634,11 @@ struct FoundLevel {
     /// The size this level is judged against. `None` when nothing is compared:
     /// a container's smaller levels, and any level with no row behind it.
     claim: Option<(u32, u32)>,
+    /// The metadata segments the payload's own bytes carry.
+    metadata: PayloadMetadata,
+    /// The `Orientation` the payload's own EXIF declares, if any. It describes
+    /// these pixels and so outranks the catalog's.
+    declared_orientation: Option<Orientation>,
     /// Payload bytes, for the run's total.
     bytes: usize,
 }
@@ -661,19 +684,29 @@ fn level_file_levels(
         .into_iter()
         .map(|index| {
             let candidate = &ranked[index];
-            let (dimensions, failure, bytes) = match std::fs::read(&candidate.path) {
-                Ok(bytes) => match jpeg::certify(&bytes) {
-                    Ok(certified) if certified.complete => {
-                        (Some(certified.dimensions), None, bytes.len())
-                    }
+            let read = std::fs::read(&candidate.path);
+            let (dimensions, failure, metadata, declared_orientation) = match &read {
+                Ok(bytes) => match jpeg::certify(bytes) {
                     Ok(certified) => (
                         Some(certified.dimensions),
-                        Some("level does not end with an EOI marker".to_string()),
-                        bytes.len(),
+                        (!certified.complete)
+                            .then(|| "level does not end with an EOI marker".to_string()),
+                        exif::inventory(bytes, &certified.segments),
+                        exif::orientation(bytes, &certified.segments),
                     ),
-                    Err(e) => (None, Some(format!("not a JPEG preview: {e}")), bytes.len()),
+                    Err(e) => (
+                        None,
+                        Some(format!("not a JPEG preview: {e}")),
+                        PayloadMetadata::default(),
+                        None,
+                    ),
                 },
-                Err(e) => (None, Some(format!("unreadable payload: {e}")), 0),
+                Err(e) => (
+                    None,
+                    Some(format!("unreadable payload: {e}")),
+                    PayloadMetadata::default(),
+                    None,
+                ),
             };
             FoundLevel {
                 winner: index == winner,
@@ -689,7 +722,9 @@ fn level_file_levels(
                 // be `suspect` however small it is.
                 declared: candidate.row.map(|row| (row.width, row.height)),
                 claim: candidate.row.map(|row| (row.width, row.height)),
-                bytes,
+                metadata,
+                declared_orientation,
+                bytes: read.map(|bytes| bytes.len()).unwrap_or(0),
             }
         })
         .collect();
@@ -721,6 +756,8 @@ fn container_levels(
         failure: Some(note),
         declared,
         claim: None,
+        metadata: PayloadMetadata::default(),
+        declared_orientation: None,
         bytes: 0,
     };
 
@@ -783,6 +820,8 @@ fn container_levels(
                 } else {
                     None
                 },
+                metadata: exif::inventory(chunk.data, &certified.segments),
+                declared_orientation: exif::orientation(chunk.data, &certified.segments),
                 bytes: chunk.data.len(),
             }
         })
@@ -846,6 +885,13 @@ fn decide_levels(
             }
         }
 
+        // The payload's own orientation describes *these* pixels, so it is what
+        // the output states; the catalog's applies only when the payload says
+        // nothing. Computed once, and a disagreement is a note, never a status
+        // (`adr-0003-preserve-preview-bytes` §4).
+        let effective_orientation = level.declared_orientation.unwrap_or(image.orientation);
+        let mut notes: Vec<String> = note.into_iter().collect();
+
         let writable = matches!(status, Status::Recoverable | Status::Suspect);
         if writable && below_floor {
             tally.stats.below_floor += 1;
@@ -865,9 +911,33 @@ fn decide_levels(
             Ok(path) => output = Some(unique_path(tally.used, path)),
             Err(escape) => {
                 status = Status::Failed;
-                note = Some(escape);
+                notes.clear();
+                notes.push(escape);
             }
         }
+
+        // What a payload carried that we do not is reported rather than buried:
+        // our EXIF supersedes its segment, and the loss is the note
+        // (`adr-0003-preserve-preview-bytes` §2).
+        if matches!(status, Status::Recoverable | Status::Suspect) {
+            if level.metadata.exif {
+                notes.push(
+                    "the payload carried its own EXIF; it is replaced by the catalog's, so \
+                     render-time tags are reported rather than kept"
+                        .to_string(),
+                );
+            }
+            if level.declared_orientation.is_some_and(|declared| {
+                image.orientation != Orientation::Unknown && declared != image.orientation
+            }) {
+                notes.push(
+                    "the payload's own EXIF orientation disagrees with the catalog's; the \
+                     payload's value describes these pixels and is written"
+                        .to_string(),
+                );
+            }
+        }
+        let note = (!notes.is_empty()).then(|| notes.join("; "));
 
         // Only a level that is actually written contributes bytes; a failed one
         // is evaluated and reported, and writes nothing.
@@ -893,6 +963,8 @@ fn decide_levels(
             color_profile: pyramid.map(|p| p.color_profile.clone()),
             quality: pyramid.map(|p| p.quality.clone()),
             orientation: image.orientation,
+            effective_orientation,
+            payload_metadata: level.metadata,
             tier,
             declared: level.declared,
             smallest_level: smallest_level.clone(),

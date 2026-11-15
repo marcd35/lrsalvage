@@ -207,9 +207,11 @@ fn payload_path(item: &PlanItem) -> Option<String> {
 
 /// Fixed column order; downstream tools rely on it.
 ///
-/// `payload` trails `note` and `payload_metadata` will follow `payload`, so
-/// neither trailing fact ever moves a column that already exists.
-const CSV_HEADER: &str = "status,tier,width,height,long_edge,color_profile,quality,orientation,selected,output,original_path,capture_time,rating,note,payload";
+/// `payload` trails `note` and `payload_metadata` trails `payload`, so neither
+/// trailing fact — an orphan's path (`adr-0006-degrade-without-guessing`) and
+/// the segments the payload already carried
+/// (`adr-0003-preserve-preview-bytes`) — ever moves a column that exists.
+const CSV_HEADER: &str = "status,tier,width,height,long_edge,color_profile,quality,orientation,selected,output,original_path,capture_time,rating,note,payload,payload_metadata";
 
 /// `report.csv`, one row per plan item.
 pub fn write_csv(plan: &Plan, path: &Path) -> Result<()> {
@@ -243,7 +245,7 @@ pub fn write_csv(plan: &Plan, path: &Path) -> Result<()> {
         line.push(',');
         push_csv_field(&mut line, item.quality.as_deref().unwrap_or(""));
         line.push(',');
-        push_csv_field(&mut line, orientation_code(item.orientation));
+        push_csv_field(&mut line, orientation_code(item.effective_orientation));
         line.push(',');
         push_csv_field(&mut line, if item.selected { "true" } else { "false" });
         line.push(',');
@@ -271,6 +273,8 @@ pub fn write_csv(plan: &Plan, path: &Path) -> Result<()> {
         push_csv_field(&mut line, item.note.as_deref().unwrap_or(""));
         line.push(',');
         push_csv_field(&mut line, payload_path(item).as_deref().unwrap_or(""));
+        line.push(',');
+        push_csv_field(&mut line, &item.payload_metadata.to_string());
         line.push_str("\r\n");
 
         writer.write_all(line.as_bytes()).at(path)?;
@@ -407,7 +411,7 @@ fn item_json(item: &PlanItem) -> Value {
     }
     object.insert(
         "orientation".to_string(),
-        json!(orientation_code(item.orientation)),
+        json!(orientation_code(item.effective_orientation)),
     );
     object.insert("selected".to_string(), json!(item.selected));
     if let Some(output) = &item.output {
@@ -429,6 +433,15 @@ fn item_json(item: &PlanItem) -> Value {
     // unclaimed payload never parses a note (`adr-0006-degrade-without-guessing`).
     if let Some(payload) = payload_path(item) {
         object.insert("payload".to_string(), json!(payload));
+    }
+    // What the payload already carried, as one token list. Absent when the
+    // payload is bare: absent stays absent, and a reconstruction is never
+    // implied where the file carries the payload's own profile.
+    if !item.payload_metadata.is_empty() {
+        object.insert(
+            "payload_metadata".to_string(),
+            json!(item.payload_metadata.to_string()),
+        );
     }
     // Absent stays absent, except `note`: it is part of the schema and is
     // explicitly null when there is nothing to say.
@@ -744,6 +757,12 @@ mod tests {
             color_profile: Some("AdobeRGB".to_string()),
             quality: Some("standard".to_string()),
             orientation: Orientation::Rotate90,
+            effective_orientation: Orientation::Rotate90,
+            payload_metadata: crate::exif::PayloadMetadata {
+                exif: false,
+                xmp: false,
+                icc: true,
+            },
             tier: Some(Tier::Standard),
             declared: None,
             smallest_level: None,
@@ -900,17 +919,28 @@ recovered"
         );
         item.note = Some("a,b\"c\nd".to_string());
         item.color_profile = Some("Adobe,RGB".to_string());
+        item.payload_metadata = crate::exif::PayloadMetadata {
+            exif: true,
+            xmp: true,
+            icc: true,
+        };
 
+        let quoted_tokens = format!(",\"{}\"", item.payload_metadata);
         write_csv(&plan_with_items(vec![item]), &path).unwrap();
         let text = std::fs::read_to_string(&path).unwrap();
 
-        let header = "status,tier,width,height,long_edge,color_profile,quality,orientation,selected,output,original_path,capture_time,rating,note,payload";
+        let header = "status,tier,width,height,long_edge,color_profile,quality,orientation,selected,output,original_path,capture_time,rating,note,payload,payload_metadata";
         assert!(text.starts_with(&format!("{header}\r\n")), "{text}");
         assert!(
             text.contains("\"a,b\"\"c\nd\""),
             "comma, quote and newline must survive quoting:\n{text}"
         );
         assert!(text.contains("\"Adobe,RGB\""), "{text}");
+        assert!(
+            text.contains(&quoted_tokens),
+            "one token list is one field, so its commas are quoted:
+{text}"
+        );
         assert!(text.ends_with("\r\n"), "trailing newline missing:\n{text}");
     }
 
@@ -939,6 +969,8 @@ recovered"
             color_profile: None,
             quality: None,
             orientation: Orientation::Unknown,
+            effective_orientation: Orientation::Unknown,
+            payload_metadata: crate::exif::PayloadMetadata::default(),
             tier: None,
             declared: None,
             smallest_level: None,
@@ -956,11 +988,11 @@ recovered"
         );
         assert_eq!(
             rows[0],
-            "status,tier,width,height,long_edge,color_profile,quality,orientation,selected,output,original_path,capture_time,rating,note,payload"
+            "status,tier,width,height,long_edge,color_profile,quality,orientation,selected,output,original_path,capture_time,rating,note,payload,payload_metadata"
         );
 
         let first: Vec<&str> = rows[1].split(',').collect();
-        assert_eq!(first.len(), 15, "{:?}", rows[1]);
+        assert_eq!(first.len(), 16, "{:?}", rows[1]);
         assert_eq!(first[0], "recovered");
         assert_eq!(first[1], "standard");
         assert_eq!(first[2], "1600");
@@ -975,9 +1007,13 @@ recovered"
         assert_eq!(first[11], "");
         assert_eq!(first[12], "");
         assert_eq!(first[13], "");
+        assert_eq!(
+            first[15], "icc",
+            "the payload's own segments, in the fixed order"
+        );
 
         let second: Vec<&str> = rows[2].split(',').collect();
-        assert_eq!(second.len(), 15, "{:?}", rows[2]);
+        assert_eq!(second.len(), 16, "{:?}", rows[2]);
         assert_eq!(second[0], "unmapped");
         assert_eq!(second[1], "");
         assert_eq!(second[2], "");
@@ -994,6 +1030,7 @@ recovered"
             second[14], "cache/orphan.lrprev",
             "an unclaimed payload's path is the column, never the note"
         );
+        assert_eq!(second[15], "", "a bare payload names no segment");
     }
 
     #[test]
@@ -1021,6 +1058,8 @@ recovered"
             color_profile: None,
             quality: None,
             orientation: Orientation::Unknown,
+            effective_orientation: Orientation::Unknown,
+            payload_metadata: crate::exif::PayloadMetadata::default(),
             tier: None,
             declared: None,
             smallest_level: None,
@@ -1237,6 +1276,8 @@ recovered"
             color_profile: None,
             quality: None,
             orientation: Orientation::Unknown,
+            effective_orientation: Orientation::Unknown,
+            payload_metadata: crate::exif::PayloadMetadata::default(),
             tier: None,
             declared: None,
             smallest_level: None,

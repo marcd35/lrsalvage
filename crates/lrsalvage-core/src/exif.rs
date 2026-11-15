@@ -3,11 +3,25 @@
 //! The preview bytes are never modified — an APP1 segment is inserted (or
 //! replaced) in front of the existing image data. See ADR 0003.
 
+use std::fmt;
 use std::ops::Range;
 use std::sync::LazyLock;
 
 use crate::error::Result;
+use crate::jpeg;
 use crate::model::{Orientation, XmpMetadata};
+
+/// The prefix every output's `Software` tag starts with.
+///
+/// Reading it back is [`software`]; the comparison in `extract` is a prefix, so
+/// a tool upgrade keeps the files it wrote
+/// (`adr-0003-preserve-preview-bytes` ¶5).
+pub const SOFTWARE_PREFIX: &str = "lrsalvage ";
+
+/// The `Software` value naming this tool and its version.
+pub fn marker(version: &str) -> String {
+    format!("{SOFTWARE_PREFIX}{version}")
+}
 
 /// The fields worth restoring on a recovered preview.
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -29,9 +43,26 @@ pub struct MetadataInput {
     /// This is not part of the XMP blob, so [`from_catalog`] leaves it `None`;
     /// the caller that holds the plan item fills it in.
     pub color_profile: Option<String>,
+    /// The `Software` marker: `lrsalvage <version>` for our own output.
+    ///
+    /// Set by the writer rather than read from the catalog, because it names
+    /// this run's tool. It is the one field that makes the EXIF segment exist
+    /// for its own sake — see [`MetadataInput::with_marker`].
+    pub software: Option<String>,
 }
 
 impl MetadataInput {
+    /// Name this tool as the segment's `Software` (`0x0131`).
+    ///
+    /// An output carries the marker whenever metadata is written — even when the
+    /// catalog recorded nothing else — so the segment exists for the marker
+    /// alone and a resume can prove authorship
+    /// (`adr-0003-preserve-preview-bytes` ¶5).
+    pub fn with_marker(mut self, version: &str) -> Self {
+        self.software = Some(marker(version));
+        self
+    }
+
     /// True when there is nothing worth writing, EXIF or ICC.
     pub fn is_empty(&self) -> bool {
         !self.has_exif_fields() && self.color_profile.is_none()
@@ -39,7 +70,8 @@ impl MetadataInput {
 
     /// True when the EXIF APP1 segment has anything to say.
     fn has_exif_fields(&self) -> bool {
-        self.capture_time.is_some()
+        self.software.is_some()
+            || self.capture_time.is_some()
             || self.make.is_some()
             || self.model.is_some()
             || self.lens.is_some()
@@ -68,6 +100,7 @@ pub fn from_catalog(xmp: &XmpMetadata, orientation: Orientation) -> MetadataInpu
         rating: xmp.rating,
         gps: xmp.gps,
         color_profile: None,
+        software: None,
     }
 }
 
@@ -153,15 +186,40 @@ fn inject_segments(jpeg: &[u8], meta: &MetadataInput, include_xmp: bool) -> Resu
     }
 
     if let Some(name) = meta.color_profile.as_deref() {
-        match icc_profile(name) {
-            Some(profile) => {
-                inserted.extend_from_slice(&icc_segments(profile)?);
-                replace_icc = true;
+        // A real profile describes *these* pixels; ours is rebuilt from a name
+        // the catalog recorded for the original, so a reconstruction never
+        // displaces one (`adr-0003-preserve-preview-bytes` §1).
+        if segments
+            .iter()
+            .any(|segment| segment.marker == 0xE2 && segment.payload(jpeg).starts_with(ICC_PREFIX))
+        {
+            notes.push(
+                "the payload carries its own ICC profile; it was kept and none was embedded"
+                    .to_string(),
+            );
+        } else {
+            match icc_profile(name) {
+                Some(profile) => {
+                    inserted.extend_from_slice(&icc_segments(profile)?);
+                    replace_icc = true;
+                }
+                None => notes.push(format!(
+                    "colour profile `{name}` has no built-in ICC profile; none embedded"
+                )),
             }
-            None => notes.push(format!(
-                "colour profile `{name}` has no built-in ICC profile; none embedded"
-            )),
         }
+    }
+
+    if replace_exif
+        && segments
+            .iter()
+            .any(|segment| segment.marker == 0xE1 && segment.payload(jpeg).starts_with(EXIF_PREFIX))
+    {
+        notes.push(
+            "the payload's own EXIF segment was replaced; maker notes and other \
+             render-time tags are not carried over"
+                .to_string(),
+        );
     }
 
     let mut out = Vec::with_capacity(jpeg.len() + inserted.len());
@@ -223,6 +281,189 @@ const MAX_APP1_PAYLOAD: usize = MAX_SEGMENT_LENGTH - 2;
 /// Largest profile bytes one APP2 segment can carry (ICC.1 Annex B.4).
 const ICC_CHUNK_MAX: usize = MAX_SEGMENT_LENGTH - ICC_PREFIX.len() - 2;
 
+// ---------------------------------------------------------------------------
+// What a payload states about itself
+// ---------------------------------------------------------------------------
+
+/// Which metadata segments a JPEG already carries, in the fixed order this tool
+/// names them: `exif`, `xmp`, `icc`.
+///
+/// A payload's own inventory, read from the segment list [`jpeg::certify`]
+/// already produced, so it costs no second walk
+/// (`adr-0003-preserve-preview-bytes`). Empty when the payload is bare. It is
+/// evidence about a file, never a status.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct PayloadMetadata {
+    pub exif: bool,
+    pub xmp: bool,
+    pub icc: bool,
+}
+
+impl PayloadMetadata {
+    /// True when the payload carries none of the three.
+    pub fn is_empty(&self) -> bool {
+        !self.exif && !self.xmp && !self.icc
+    }
+}
+
+impl fmt::Display for PayloadMetadata {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut first = true;
+        for (present, name) in [(self.exif, "exif"), (self.xmp, "xmp"), (self.icc, "icc")] {
+            if !present {
+                continue;
+            }
+            if !first {
+                formatter.write_str(",")?;
+            }
+            formatter.write_str(name)?;
+            first = false;
+        }
+        Ok(())
+    }
+}
+
+/// Name the metadata segments a payload already carries.
+///
+/// The signature decides, not the marker: an `Exif` block and an XMP packet are
+/// both APP1, and only their opening bytes tell them apart.
+pub fn inventory(jpeg: &[u8], segments: &[jpeg::Segment]) -> PayloadMetadata {
+    let mut metadata = PayloadMetadata::default();
+    for segment in segments {
+        let payload = segment.payload(jpeg);
+        match segment.marker {
+            0xE1 if payload.starts_with(EXIF_PREFIX) => metadata.exif = true,
+            0xE1 if payload.starts_with(XMP_PREFIX) => metadata.xmp = true,
+            0xE2 if payload.starts_with(ICC_PREFIX) => metadata.icc = true,
+            _ => {}
+        }
+    }
+    metadata
+}
+
+/// The `Orientation` a payload's own `Exif` APP1 declares, when it declares one
+/// this writer can restate.
+///
+/// The payload's value describes *these* pixels, so it outranks the catalog's
+/// (`adr-0003-preserve-preview-bytes` §4). A mirrored value (2, 4, 5, 7) is not
+/// one of the four rotations Lightroom's catalog can record and this writer
+/// cannot restate it, so it declares nothing usable: `None`, and the catalog's
+/// orientation applies.
+pub fn orientation(jpeg: &[u8], segments: &[jpeg::Segment]) -> Option<Orientation> {
+    let entry = ifd0_entry(jpeg, segments, TAG_ORIENTATION)?;
+    if entry.field_type != TYPE_SHORT {
+        return None;
+    }
+    let declared = Orientation::from_exif(entry.order.u16(entry.value.get(..2)?));
+    (declared != Orientation::Unknown).then_some(declared)
+}
+
+/// The `Software` (`0x0131`) a JPEG's own `Exif` APP1 declares.
+///
+/// This is how a resume asks a destination whether this tool wrote it
+/// (`adr-0003-preserve-preview-bytes` ¶5). `None` when the file has no `Exif`
+/// APP1, no such tag, or a value that is not NUL-terminated ASCII.
+pub fn software(jpeg: &[u8], segments: &[jpeg::Segment]) -> Option<String> {
+    let entry = ifd0_entry(jpeg, segments, TAG_SOFTWARE)?;
+    if entry.field_type != TYPE_ASCII {
+        return None;
+    }
+    let text = entry.value.split(|byte| *byte == 0).next()?;
+    String::from_utf8(text.to_vec())
+        .ok()
+        .filter(|text| !text.is_empty())
+}
+
+/// Byte order of a TIFF block, from its own two-byte opening.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Order {
+    Little,
+    Big,
+}
+
+impl Order {
+    fn u16(self, bytes: &[u8]) -> u16 {
+        let pair = [bytes[0], bytes[1]];
+        match self {
+            Order::Little => u16::from_le_bytes(pair),
+            Order::Big => u16::from_be_bytes(pair),
+        }
+    }
+
+    fn u32(self, bytes: &[u8]) -> u32 {
+        let quad = [bytes[0], bytes[1], bytes[2], bytes[3]];
+        match self {
+            Order::Little => u32::from_le_bytes(quad),
+            Order::Big => u32::from_be_bytes(quad),
+        }
+    }
+}
+
+/// One IFD0 entry of a payload's `Exif` APP1, its value bytes still in the
+/// file's own byte order.
+struct IfdValue<'a> {
+    field_type: u16,
+    value: &'a [u8],
+    order: Order,
+}
+
+/// Read IFD0 entry `tag` out of the first `Exif` APP1 in `segments`.
+///
+/// Bounds are checked at every step: a destination is an untrusted file, and a
+/// malformed TIFF block must answer `None` rather than panic.
+fn ifd0_entry<'a>(jpeg: &'a [u8], segments: &[jpeg::Segment], tag: u16) -> Option<IfdValue<'a>> {
+    let payload = segments
+        .iter()
+        .find(|segment| segment.marker == 0xE1 && segment.payload(jpeg).starts_with(EXIF_PREFIX))?
+        .payload(jpeg);
+    let tiff = payload.get(EXIF_PREFIX.len()..)?;
+
+    let order = match tiff.get(..4)? {
+        b"II*\0" => Order::Little,
+        b"MM\0*" => Order::Big,
+        _ => return None,
+    };
+    let ifd = usize::try_from(order.u32(tiff.get(4..8)?)).ok()?;
+    let count = usize::from(order.u16(tiff.get(ifd..ifd + 2)?));
+
+    for index in 0..count {
+        let at = ifd + 2 + index * 12;
+        let Some(entry) = tiff.get(at..at + 12) else {
+            return None;
+        };
+        if order.u16(&entry[0..2]) != tag {
+            continue;
+        }
+
+        let field_type = order.u16(&entry[2..4]);
+        let items = usize::try_from(order.u32(&entry[4..8])).ok()?;
+        let size = field_size(field_type)?.checked_mul(items)?;
+        let value = if size <= 4 {
+            entry.get(8..8 + size)?
+        } else {
+            let offset = usize::try_from(order.u32(&entry[8..12])).ok()?;
+            tiff.get(offset..offset.checked_add(size)?)?
+        };
+        return Some(IfdValue {
+            field_type,
+            value,
+            order,
+        });
+    }
+    None
+}
+
+/// Bytes one TIFF field type occupies, or `None` for a type nothing here reads.
+fn field_size(field_type: u16) -> Option<usize> {
+    match field_type {
+        TYPE_BYTE | TYPE_ASCII | 7 => Some(1),
+        TYPE_SHORT | 8 => Some(2),
+        TYPE_LONG | 9 | 11 => Some(4),
+        TYPE_RATIONAL | 10 | 12 => Some(8),
+        _ => None,
+    }
+}
+
 /// A complete marker segment: `FF marker`, big-endian length, payload.
 fn segment_bytes(marker: u8, payload: &[u8]) -> Vec<u8> {
     let length = u16::try_from(payload.len() + 2).expect("callers keep payloads below 65533");
@@ -283,6 +524,11 @@ const TYPE_ASCII: u16 = 2;
 const TYPE_SHORT: u16 = 3;
 const TYPE_LONG: u16 = 4;
 const TYPE_RATIONAL: u16 = 5;
+
+/// IFD0 `Orientation`.
+const TAG_ORIENTATION: u16 = 0x0112;
+/// IFD0 `Software`, the marker every output carries.
+const TAG_SOFTWARE: u16 = 0x0131;
 
 /// One marker segment in the JPEG header, before scan data begins.
 #[derive(Debug, Clone)]
@@ -383,6 +629,7 @@ fn build_app1(meta: &MetadataInput) -> Vec<u8> {
             build_tiff(
                 &MetadataInput {
                     orientation: meta.orientation,
+                    software: meta.software.clone(),
                     ..MetadataInput::default()
                 },
                 false,
@@ -531,10 +778,14 @@ fn build_tiff(
         ifd0.push(ascii_entry(0x0110, model, max_text));
     }
     // Always present: an upright image still benefits from an explicit 1.
-    ifd0.push(short_entry(0x0112, meta.orientation.exif_value()));
+    ifd0.push(short_entry(TAG_ORIENTATION, meta.orientation.exif_value()));
     let taken = meta.capture_time.as_deref().and_then(exif_datetime);
     if let Some(datetime) = taken.as_deref() {
         ifd0.push(ascii_entry(0x0132, datetime, usize::MAX));
+    }
+    // The marker names this tool, so any output can prove it is ours.
+    if let Some(software) = meta.software.as_deref().filter(|text| !text.is_empty()) {
+        ifd0.push(ascii_entry(TAG_SOFTWARE, software, usize::MAX));
     }
     if let Some(rating) = meta.rating {
         // 0x4746 Rating, the EXIF-compatible spelling of `xmp:Rating`.
@@ -944,6 +1195,9 @@ mod tests {
 
     const APP0: &[u8] = b"JFIF\0\x01\x01\x00\x00\x01\x00\x01\x00\x00";
 
+    /// A minimal XMP packet behind the standard signature.
+    const XMP_PACKET: &[u8] = b"http://ns.adobe.com/xap/1.0/\0<x:xmpmeta xmp:Rating=\"2\"/>";
+
     /// A marker segment whose length includes its own two bytes.
     fn segment(marker: u8, payload: &[u8]) -> Vec<u8> {
         let mut v = vec![0xFF, marker];
@@ -1047,6 +1301,7 @@ mod tests {
             rating: Some(4),
             gps: None,
             color_profile: None,
+            software: None,
         }
     }
 
@@ -1641,6 +1896,165 @@ mod tests {
             rating_field(&read_exif(&result.jpeg)),
             Some(5),
             "the rating still lands in EXIF"
+        );
+    }
+
+    /// A tiny JPEG with `segments` (complete APP segments) in front of its frame.
+    fn jpeg_with_prefix(segments: &[Vec<u8>]) -> Vec<u8> {
+        let mut bytes = vec![0xFF, 0xD8];
+        for segment in segments {
+            bytes.extend_from_slice(segment);
+        }
+        bytes.extend_from_slice(&tiny_jpeg()[2..]);
+        bytes
+    }
+
+    /// The segments of a jpeg, as `jpeg::certify` reports them.
+    fn certified(jpeg: &[u8]) -> jpeg::Certified {
+        jpeg::certify(jpeg).expect("a valid frame certifies")
+    }
+
+    #[test]
+    fn the_inventory_names_the_segments_a_payload_carries_in_order() {
+        let profile = icc_profile("sRGB").expect("a built-in profile");
+        let bytes = jpeg_with_prefix(&[
+            build_app1(&MetadataInput {
+                orientation: Orientation::Rotate90,
+                ..MetadataInput::default()
+            }),
+            segment(0xE1, XMP_PACKET),
+            icc_segments(profile).expect("chunked"),
+        ]);
+        let segments = certified(&bytes);
+
+        let full = inventory(&bytes, &segments.segments);
+        assert!(full.exif && full.xmp && full.icc);
+        assert_eq!(full.to_string(), "exif,xmp,icc");
+
+        let bare = tiny_jpeg();
+        let segments = certified(&bare);
+        let bare_inventory = inventory(&bare, &segments.segments);
+        assert!(bare_inventory.is_empty(), "a lone APP0 names nothing");
+        assert_eq!(bare_inventory.to_string(), "");
+    }
+
+    #[test]
+    fn the_inventory_reads_each_signature_on_its_own() {
+        let only_xmp = jpeg_with_prefix(&[segment(0xE1, XMP_PACKET)]);
+        let segments = certified(&only_xmp);
+        let only = inventory(&only_xmp, &segments.segments);
+        assert!(only.xmp && !only.exif && !only.icc);
+        assert_eq!(only.to_string(), "xmp");
+    }
+
+    #[test]
+    fn a_payloads_own_orientation_is_read_back() {
+        // The fixture builder writes the other byte order, so this also proves
+        // the reader handles a TIFF block this module did not write.
+        let bytes = jpeg_with_prefix(&[lrsalvage_fixtures::bytes::exif_app1(6)]);
+        let segments = certified(&bytes);
+        assert_eq!(
+            orientation(&bytes, &segments.segments),
+            Some(Orientation::Rotate90)
+        );
+
+        // A mirrored value is not one this writer can restate, so it declares
+        // nothing usable and the catalog's orientation applies.
+        let mirrored = jpeg_with_prefix(&[lrsalvage_fixtures::bytes::exif_app1(2)]);
+        let segments = certified(&mirrored);
+        assert_eq!(orientation(&mirrored, &segments.segments), None);
+
+        let bare = tiny_jpeg();
+        let segments = certified(&bare);
+        assert_eq!(orientation(&bare, &segments.segments), None);
+    }
+
+    #[test]
+    fn the_marker_alone_earns_a_segment_and_reads_back() {
+        let meta = MetadataInput::default().with_marker("0.1.0");
+        assert!(
+            meta.has_exif_fields(),
+            "the marker is reason enough to write EXIF"
+        );
+        assert!(!meta.is_empty());
+
+        let out = inject(&tiny_jpeg(), &meta).expect("inject");
+        let segments = certified(&out);
+        assert_eq!(
+            software(&out, &segments.segments).as_deref(),
+            Some("lrsalvage 0.1.0")
+        );
+        assert_eq!(
+            exif_app1_segments(&out).len(),
+            1,
+            "the marker rides in our one EXIF segment"
+        );
+
+        // The fixture builder writes the other byte order, and a resume reads
+        // whatever a destination happens to be.
+        let big_endian = lrsalvage_fixtures::bytes::our_output(4, 4, "0.1.0");
+        let segments = certified(&big_endian);
+        assert_eq!(
+            software(&big_endian, &segments.segments).as_deref(),
+            Some("lrsalvage 0.1.0")
+        );
+
+        let bare = tiny_jpeg();
+        let segments = certified(&bare);
+        assert_eq!(software(&bare, &segments.segments), None);
+    }
+
+    #[test]
+    fn a_payloads_own_icc_profile_is_kept_and_ours_is_not_embedded() {
+        let theirs = b"a profile this repository did not build";
+        let original = jpeg_with_prefix(&[icc_segments(theirs).expect("chunked")]);
+
+        let meta = MetadataInput {
+            color_profile: Some("AdobeRGB".to_string()),
+            ..MetadataInput::default()
+        };
+        let result = inject_full(&original, &meta).expect("inject");
+
+        // Exactly the payload's profile survives: a reconstruction never
+        // displaces a real one (`adr-0003-preserve-preview-bytes` §1).
+        let profiles = icc_app2(&result.jpeg);
+        assert_eq!(profiles.len(), 1);
+        assert!(profiles[0].ends_with(theirs));
+        assert!(
+            result
+                .notes
+                .iter()
+                .any(|note| note.contains("ICC profile")),
+            "{:?}",
+            result.notes
+        );
+    }
+
+    #[test]
+    fn a_displaced_exif_segment_is_reported() {
+        let original = jpeg_with_prefix(&[build_app1(&MetadataInput {
+            orientation: Orientation::Rotate90,
+            ..MetadataInput::default()
+        })]);
+
+        let meta = MetadataInput {
+            rating: Some(3),
+            ..MetadataInput::default()
+        };
+        let result = inject_full(&original, &meta).expect("inject");
+
+        assert_eq!(
+            exif_app1_segments(&result.jpeg).len(),
+            1,
+            "our EXIF replaces it, never beside it"
+        );
+        assert!(
+            result
+                .notes
+                .iter()
+                .any(|note| note.contains("EXIF segment was replaced")),
+            "{:?}",
+            result.notes
         );
     }
 }
