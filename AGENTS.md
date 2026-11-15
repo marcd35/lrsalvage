@@ -59,16 +59,23 @@ not allowed.
 
 ## Verification
 
-- `cargo test` must pass.
-- `cargo clippy -- -D warnings` must be clean.
-- `cargo fmt --all --check` must be clean.
-- `typos` must be clean (config in `typos.toml`; add domain words there, never
-  blanket-exclude prose).
-- `cargo deny check` must pass (policy in `deny.toml`: licences, advisories,
-  duplicate/banned crates, sources). Adding a dependency that trips the licence
-  allow-list is a decision, not a config edit.
+- **`sh scripts/check.sh` is the one gate list.** It runs `fmt`, `clippy`
+  (`--all-targets`), the workspace tests, the release build, `typos` and
+  `cargo deny`. Run it before a hand-off, or name one gate
+  (`sh scripts/check.sh clippy`). CI executes the Rust gates through the same
+  file, so a gate cannot be documented weaker here than it is enforced. A
+  missing tool fails rather than skipping: green must mean CI's green.
+- **`typos` and `cargo deny` are the two gates with their own policy files.**
+  Add domain words to `typos.toml`, never blanket-exclude prose. `deny.toml` is
+  the licence and advisory policy: a dependency that trips its allow-list is a
+  decision, not a config edit.
 - The toolchain is pinned in `rust-toolchain.toml`; bump it deliberately and let
   CI prove the bump.
+- **The tests assert more than behaviour.** `tests/spec_graph.rs` checks each
+  module's `depends-on` against the modules it actually reaches, and
+  `lrsalvage-cli`'s `tests/readme.rs` checks the README's flag and `--json`
+  tables against the binary. A new dependency or a new field lands with its spec
+  and its table.
 - Byte-level facts learned from real files must be recorded in
   `docs/format-notes.md` with an evidence label (**verified**, **reported**,
   **unverified**, or **TODO**) before they are built on. Unlabelled claims are
@@ -83,7 +90,10 @@ if it lands inside either tree.
 
 Tests run against synthetic fixtures. Real catalogs are reached only from
 `#[ignore]`d tests via `LRSALVAGE_TEST_CATALOG` and `LRSALVAGE_TEST_PREVIEWS`, and
-real catalog bytes are never committed to the repo.
+real catalog bytes are never committed to the repo. To run them where such
+catalogs exist, copy `.env.example` to a gitignored `.env` and run
+`sh scripts/check.sh real`; that is the only route to the evidence `README.md`'s
+compatibility table calls verified.
 
 ## Docs
 

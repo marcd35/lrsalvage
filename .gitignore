@@ -8,6 +8,9 @@
 *.partial
 lrsalvage-report-*
 
+# Local real-catalog paths for the #[ignore]d tests; see .env.example.
+.env
+
 # OS noise
 .DS_Store
 Thumbs.db

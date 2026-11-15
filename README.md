@@ -74,7 +74,7 @@ them.
 | LrC 4 – 9 | `legacy` — one `.lrprev` pyramid per image | not measured | same reader, **untested** |
 | LrC 10 – 12 | `legacy` | `1200001` (see below) | **v11 verified** on real catalogs |
 | LrC 13.0 – 13.2 | `legacy` | not measured | same reader, **untested** |
-| LrC 13.3 and later | `modern` — one extensionless JPEG per level, no `.lrprev` | `1504001` (see below) | layout **measured**, run **untested** |
+| LrC 13.3 and later | `modern` — one extensionless JPEG per level, no `.lrprev` | `1504001` (see below) | **`scan` verified**: 78/78 recovered; `extract` untested |
 
 Exactly two `Adobe_DBVersion` values have been read off real files: `1200001`,
 and `1504001` on that same catalog after Lightroom Classic 16.0 upgraded it in
@@ -103,11 +103,13 @@ What those rows mean in practice:
 - **Verified**: Lightroom Classic 11 catalogs, the ones this tool was built and
   tested against — a 3,416-image catalog (2,659 previews recovered) and a
   78-image one (78/78).
-- **Measured** for 13.3 and later means the byte facts of that layout were read
-  off real files — all 390 payloads of a cache upgraded in place by Lightroom
-  Classic 16.0, every one of which named its own `SOF` long edge (section 5.7 of
-  the notes). It does not mean someone has run this tool end to end on one; that
-  has not happened yet.
+- **`scan` verified** for 13.3 and later means the tool read a real cache of that
+  generation: the 78-image catalog upgraded in place by Lightroom Classic 16.0,
+  where it reports `layout modern`, 78 of 78 images recovered, no failure and no
+  unmapped payload, and a shape histogram of 390 level files whose leaves all
+  name the long edge their own frames declare (section 5.7 of the notes).
+  `extract` has not been run against that cache, so writing files is the half
+  that remains untested.
 - **Same reader, untested**: 4 – 10, 12 and 13.0 – 13.2 use the `.lrprev`
   pyramid this tool parses. Nothing known stops them working; nobody has run it
   on one.
@@ -424,20 +426,29 @@ fixtures only.
 ### Checks
 
 The toolchain is pinned in `rust-toolchain.toml`, so `cargo` builds with the same
-compiler here and in CI. The same five gates run on every pull request:
+compiler here and in CI. **`sh scripts/check.sh` is the one list of gates** — CI runs
+the same file, so this page does not repeat them:
 
 ```console
-cargo fmt --all --check
-cargo clippy --workspace --all-targets -- -D warnings
-cargo test --workspace
-typos                                  # spelling, config in typos.toml
-cargo deny check                       # licences, advisories, banned crates
+sh scripts/check.sh          # every gate
+sh scripts/check.sh clippy   # just one
+sh scripts/check.sh real     # the #[ignore]d tests, against real catalogs (.env)
 ```
+
+It covers formatting, clippy with `--all-targets`, the workspace tests, the
+release build, spelling (config in `typos.toml`) and the licence/advisory policy
+in `deny.toml`. A missing tool fails rather than skipping, so a green run here
+means a green CI.
 
 `cargo deny check` is what keeps the dual MIT/Apache-2.0 licence honest: a new
 dependency that is not permissively licensed fails the build rather than being
 discovered by someone redistributing the binary. Dependency updates arrive as
 Dependabot pull requests.
+
+Nothing in CI reads this README, so two of its tables are asserted by tests
+instead: `lrsalvage-cli`'s `tests/readme.rs` checks the flag list and the
+`--json` field list against the binary itself, and `lrsalvage-core`'s
+`tests/spec_graph.rs` checks each module's spec against the modules it reaches.
 
 ## Licence
 
