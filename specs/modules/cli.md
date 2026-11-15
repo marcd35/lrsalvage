@@ -85,6 +85,13 @@ it needs to know about an image comes from a `Plan`.
   path and stdout keeps exactly one object; `--verbose` already moves its lines to
   stderr under `--json`, so a caller combining all three still parses stdout with
   one `serde_json::from_str`.
+- **`--json` grows by promise, and it keeps its paths.** The one object carries
+  the identifiers (`catalog`, `previews`), every image count, the cache's
+  `layout`, `db_version`, `crs_version`, its three cache counts and its flat
+  `shapes` — each because ADR 0004, ADR 0006 or ADR 0007 promised it a field, and
+  no field is added for convenience. It stays the surface with paths, which is
+  why the path-free object is `--report` and not a flag on this one. The
+  numbers are the plan's: this module formats them and computes none of them.
 - **Report files are claimed, never assumed.** `report.csv`, `manifest.json` and
   `extract.csv` each take the next free numbered name (`report (2).csv`) and say
   so, because a name on disk may belong to somebody else. A dry run writes none

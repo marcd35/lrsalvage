@@ -606,13 +606,14 @@ picture upright without touching a pixel (ADR 0003).
 
 ## 5. Lightroom 13.3 and later — VERIFIED for the upgrade path
 
-> **Implementation status:** not implemented. The tool currently reads only the
-> pre-13.3 `.lrprev` layout, so on the measured modern cache it reports 78 of 78
-> images as `missing-payload` and exits 3 with nothing recovered. A cache with no
-> `previews.db` fares worse: it warns that the cache "holds no previews", then
-> dies with a SQLite error and exit 1 — neither the degraded mode nor the
-> indexless discovery rule is built yet. Both re-measured 2026-11-15 with a local
-> build. Tracked in [issue #2](https://github.com/marcd35/lrsalvage/issues/2).
+> **Implementation status:** the modern layout is read. A level file is derived
+> from its `PyramidLevel` row, a level the index forgot is found by widening
+> inside the pyramid's own `(uuid, digest)` and never beyond it, the chosen level
+> is certified by its own bytes, and the cache's `layout` is reported as one of
+> five words. Still not built: the indexless mode (a missing `previews.db` does
+> not yet degrade to `unmapped` payloads and exit 3) and the path-free `--report`
+> artifact a stranger would hand over. Tracked in
+> [issue #2](https://github.com/marcd35/lrsalvage/issues/2).
 
 Lightroom Classic 13.3 changed preview storage. Sections 5.1–5.4 are **verified**
 on an upgraded catalog; section 5.5 lists what remains **reported**. The tool

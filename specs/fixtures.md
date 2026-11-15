@@ -98,11 +98,14 @@ Vault::unclaimed(levels)            a pyramid no image claims
 Vault::superseded(levels)           level files plus a deliberately unreadable .lrprev
 Vault::unrecognised_file(shape)     payload-like, wrong shard / no suffix / bad uuid
 Vault::preoccupied_destination(relative, bytes)  a file already in the output tree
-Vault::write() -> Vault             catalog(), previews(), out(), plan(&Options)
+Vault::write() -> Vault             catalog(), previews(), out(), plan(&Options),
+                                    level_files(), containers()
 ```
 
 Every scenario type carries a `raw(bytes)` override, so a byte-shaped row never
-needs a fourth ad-hoc writer.
+needs a fourth ad-hoc writer. `level_files()` and `containers()` report what
+`write()` actually put on disk, so a vault's `shapes` counts are derived from the
+composition rather than copied into a test.
 
 ### Absorbing the three copies
 

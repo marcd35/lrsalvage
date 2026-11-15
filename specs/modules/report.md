@@ -73,6 +73,19 @@ struct a path.
   `manifest.json` and the verification report's `stats`, and never a column in
   `report.csv`: neither belongs to an image, and neither moves an exit code
   (`adr-0004-detect-layout-not-version`, `adr-0006-degrade-without-guessing`).
+- **The summary opens with one line naming the layout, and nothing else.**
+  `cache layout: modern` is the whole of it: the layout is the one fact that
+  decides how everything below it was read, and it is a word, not a count. The
+  two version strings are deliberately absent from the text summary — they are
+  for a script and for a contributed verification report, and a number a reader
+  might mistake for a compatibility statement belongs in neither (`adr-0004`).
+- **The machine surfaces carry the cache's shape flat.** `--json` and
+  `manifest.json` gain `layout`, `db_version`, `crs_version`, the three cache
+  counts under `stats`, and `shapes` as three numbers — `level_file`,
+  `suffix_matches_sof`, `container` — built from one shared helper so the two
+  surfaces cannot drift. The nested-per-class form with a grammar template in it
+  is the verification report's and belongs there alone. An absent version string
+  is `null`, never `""` and never a stand-in.
 - **The summary counts images and names the floor actually applied.** The default
   summary assumes 640, so a caller that changed the floor calls
   `summary_with_floor`; a summary that reports a `below_floor` count for a floor

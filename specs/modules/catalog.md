@@ -15,7 +15,8 @@ depends-on:
 
 Answer, from a snapshot, what the catalog knows about each image: identity, copy
 name, orientation, file format, the reconstructed original path, and the XMP
-metadata blob inflated into `model::XmpMetadata`.
+metadata blob inflated into `model::XmpMetadata` — plus the two format-generation
+strings it records about itself.
 
 ## Boundary
 
@@ -38,6 +39,13 @@ statuses, tiers or output paths — those belong to `plan` and `model`.
   of fields worth restoring. A missing field stays `None`; nothing is inferred
   from a neighbouring field, except the documented capture-time fallback to
   `CreateDate`, normalised to `YYYY-MM-DDTHH:MM:SS`.
+- **The two format-generation strings are reported, never interpreted.**
+  `Adobe_DBVersion` and `Adobe_CrsVersion` are read from
+  `Adobe_variablesTable` and returned verbatim. A missing table, a missing row, a
+  NULL and an empty value are all `None`, the same absent-tolerant shape `xmp`
+  has: a catalog that records less reports less. Neither string is mapped to a
+  Lightroom release and neither decides whether a cache may be read
+  (`adr-0004-detect-layout-not-version`).
 - **A missing metadata table is tolerated**: `has_metadata` distinguishes a
   catalog whose `Adobe_AdditionalMetadata` table is absent from one whose blob is
   empty, so an older schema reports less metadata rather than failing the run.

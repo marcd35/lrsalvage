@@ -26,7 +26,9 @@ references:
 
 Turn a catalog, a preview index, the cache root and three options into an explicit
 list of decisions: one status for every catalog image, the items `extract` would
-write, tier classes, totals, and the payloads no live image claims.
+write, tier classes, totals, the payloads no live image claims, and one block of
+cache-level facts — the layout, the catalog's two version strings and the shape
+the cache's files took.
 
 ## Boundary
 
@@ -90,15 +92,23 @@ nothing — not one byte, not one directory. Everything that ends up on disk is
   is judged by the same per-level rule — its own bytes against its own row — and
   the image's one status is its chosen item's, so a good 808 beside a truncated
   1616 is `recovered` and `failed` as two items while the image stays `failed`.
+- **An unrecognised file is counted, never planned.** A payload-like file that
+  matched no shape has no catalog image, no pyramid and no level, so it becomes
+  no item at all: `unrecognised` is a cache count beside `superseded`, and it is
+  why an `unknown` layout is not an empty one. Wrapping it in an item would give
+  it an output path it has no name for (`adr-0005-discover-payloads-by-index` ¶6).
 - **The plan counts the shapes the cache's payloads took, as cache counts.** The
   same sweep that finds orphans records `level_file`, how many of those leaves name
   the long edge their `SOF` measured (`suffix_matches_sof`), and `container` — three
   numbers about files, reported beside `superseded` and never a status, an item
   field or an exit code. None of them needs a row: a leaf the glob found and a leaf
   a row named are counted the same way, because the comparison is the measured
-  `SOF` against the name rather than a second matcher. What they are for is the
+  `SOF` against the name rather than a second matcher. A file with no readable
+  `SOF` does not match, and an incomplete one still does: a truncated frame that
+  declares its size has named its long edge. What they are for is the
   verification report a stranger can hand over
-  (`adr-0007-publish-a-verification-report`).
+  (`adr-0007-publish-a-verification-report`); `shapes` reads a payload only for
+  `suffix_matches_sof`, and nothing else in the plan depends on it.
 - **A suspect payload is recovered, not discarded.** Width and height may be
   swapped before calling it a disagreement, because the stored render is
   unrotated; a real photograph at the wrong declared size is still worth having,
@@ -130,18 +140,26 @@ nothing — not one byte, not one directory. Everything that ends up on disk is
 - **`original-present` short-circuits everything else**, and the `stat` behind it
   is skipped when `--include-present` is set, so the opt-in run costs nothing per
   image.
+- **Every cache-level fact is gathered once, into one struct.** `Plan::cache` is
+a `CacheFacts` of `layout`, `db_version`, `crs_version` and `shapes`, filled by
+the single `previews_db::sweep` plus `catalog::versions`. One enumeration feeds
+the orphan list, the `superseded` count and the `shapes` histogram, so no two
+surfaces can print different numbers for the same cache and no caller re-derives
+one. The layout word and the version strings are observations, never gates
+(`adr-0004-detect-layout-not-version`).
 - **The orphan sweep is seeded from live rows only, and counts pyramids.** A row
   whose `imageId` no longer exists in `Adobe_images` must not suppress the sweep:
   that stale row's payload is exactly what salvage is for
   (`adr-0002-map-via-previews-db`). The enumeration is
-  `previews_db::pyramids_on_disk`: one entry per `(uuid, digest)` whose leaf
+  `previews_db::sweep`: one entry per `(uuid, digest)` whose leaf
   parses and whose two shard folders agree with it, merging its level files and
   any coexisting `.lrprev`. An unclaimed entry becomes exactly one `unmapped`
   item — never one per file, because one orphan is one lost photograph — whose
   payload is `Payload::LevelFile` of the largest level it holds (`_<n>`
   descending, no read) or `Payload::Container { level: None }` when it holds only
   a container. Nothing is selected or written for it, and the note names its
-  path.
+  path. A **claimed** entry holding both representations is not an item at all:
+  it is the `superseded` cache stat.
 - **A cache payload is never trusted at its declared size, and never discarded
   for disagreeing** (`adr-0001-parse-dont-carve`): a chunk or level file that
   fails to parse, or does not end at an end-of-image marker, makes the image
