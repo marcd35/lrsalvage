@@ -7,27 +7,32 @@
 //! kind, and the bytes of the file that was written. Note prose is never
 //! asserted.
 //!
-//! **No total is asserted here.** The pinned totals belong to the slice that
-//! completes each vault, because they include counts this slice cannot produce:
-//! `modern`'s `deleted 1` needs the tombstone count, `mixed`'s `superseded 1`
-//! is a stat that does not exist yet, and no vault's `shapes` histogram exists
-//! at all. `unmapped` is the exception: this slice is what produces it, so it is
-//! asserted per vault below. The totals still open for `modern` are `recovered`,
-//! `suspect`, `missing_payload`, `no_cache_entry`, `original_present`,
-//! `below_floor`, `levels` and `selected_images`; for `legacy`, everything but
-//! `unmapped 1`. Rows still without a test are M6 (the `deleted` stat), M13 and
-//! M14 (`payload_metadata`, `effective_orientation`), X1 (the `superseded`
-//! stat), and every `unrecognised`/layout row but N1's `unmapped 0`.
+//! **The image totals stay open, and shape facts do not.** `images`,
+//! `recovered`, `suspect`, `missing_payload`, `no_cache_entry`,
+//! `original_present`, `below_floor`, `levels` and `selected_images` belong to
+//! the slice that completes each vault, because they include rows this file does
+//! not build: `modern` is missing M13 and M14. So `modern` holds only the rows
+//! asserted below, and its `images` count is the count of this file's rows, not
+//! the thirteen the spec pins.
 //!
-//! `modern` holds only the rows asserted below, so its `images` count is the
-//! count of this file's rows, not the thirteen the spec pins.
+//! What is asserted per vault is every **cache-level** fact, because ADR 0004
+//! decides those once per cache: the layout word, the two version strings, the
+//! three cache counts (`superseded`, `deleted`, `unrecognised`) and the `shapes`
+//! triple. Each `shapes` count is derived from the files the composition
+//! actually wrote — `vault.level_files()` and `vault.containers()` — so a
+//! builder that writes one file fewer fails the row instead of silently
+//! shrinking it.
+//!
+//! Rows still without a test are M13 and M14 (`payload_metadata`,
+//! `effective_orientation`), and `unindexed`'s layout: an indexless plan is a
+//! later ticket, so `Vault::plan` has nothing to build there yet.
 
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use lrsalvage_core::extract::{self, ExtractOptions, Outcome};
 use lrsalvage_core::jpeg;
-use lrsalvage_core::plan::{Options, Payload, Plan, PlanItem, Status, Tier};
+use lrsalvage_core::plan::{Layout, Options, Payload, Plan, PlanItem, Status, Tier};
 use lrsalvage_fixtures::bytes;
 use lrsalvage_fixtures::vault::{ImageRow, Level, PyramidRow, UnrecognisedFile, Vault, digest_of};
 
@@ -85,6 +90,7 @@ const DIGEST_B: &str = "b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0";
 /// | 9 | M12 `longDimension` stored REAL, below the floor |
 /// | 10 | M4 level file found only by the widening, its 1616 row's file absent |
 /// | 11 | M11 row digestA, file digestB: missing-payload plus one orphan |
+/// | 12 | M6 missing-payload whose pyramid carries a tombstone |
 /// | — | M10 an unclaimed pyramid of two level files (uuid 20) |
 fn modern() -> Vault {
     let (m1, m2) = (uuid(1), uuid(2));
@@ -92,6 +98,7 @@ fn modern() -> Vault {
     let (m5b, m7) = (uuid(5), uuid(6));
     let (m9, m12) = (uuid(8), uuid(9));
     let (m4, m11) = (uuid(10), uuid(11));
+    let m6 = uuid(12);
     let m10 = uuid(20);
 
     Vault::modern()
@@ -151,6 +158,11 @@ fn modern() -> Vault {
         .image(ImageRow::new(11, "IMG_0011").cache(&m11))
         .pyramid(PyramidRow::new(&m11).level(1616, 1077))
         .file_without_row(Level::sized(&m11, 1616, 1077).digest(DIGEST_B))
+        // M6: a row, no file, and the tombstone Lightroom wrote when it
+        // deleted the pyramid.
+        .image(ImageRow::new(12, "IMG_0012").cache(&m6))
+        .pyramid(PyramidRow::new(&m6).level(1616, 1077))
+        .tombstone(&m6, 700_000_000.0)
         // M10: a pyramid no image claims, two level files, one orphan.
         .unclaimed(&[Level::sized(&m10, 640, 427), Level::sized(&m10, 1616, 1077)])
         .write()
@@ -227,17 +239,23 @@ fn legacy() -> Vault {
         .write()
 }
 
-/// `mixed`, built from X2 and X3: one pyramid per representation.
+/// `mixed`, built from X1, X2 and X3: one pyramid per representation.
 fn mixed() -> Vault {
-    let (container, level_file) = (uuid(1), uuid(2));
+    let (superseded, container) = (uuid(1), uuid(2));
+    let level_file = uuid(3);
 
     Vault::mixed()
+        // X1: level files beside a `.lrprev` that is deliberately not a
+        // container, so reading it would fail the row (ADR 0006 ¶6).
+        .image(ImageRow::new(1, "IMG_0001").cache(&superseded))
+        .pyramid(PyramidRow::new(&superseded).level(1616, 1077))
+        .superseded(&[Level::sized(&superseded, 1616, 1077)])
         // X2: a `.lrprev`-only pyramid inside a modern cache
-        .image(ImageRow::new(1, "IMG_0001").cache(&container))
+        .image(ImageRow::new(2, "IMG_0002").cache(&container))
         .pyramid(PyramidRow::new(&container).level(1616, 1077))
         .container(&[Level::sized(&container, 1616, 1077)])
         // X3: a level-file-only pyramid inside the same cache
-        .image(ImageRow::new(2, "IMG_0002").cache(&level_file))
+        .image(ImageRow::new(3, "IMG_0003").cache(&level_file))
         .pyramid(PyramidRow::new(&level_file).level(1616, 1077))
         .level_file(Level::sized(&level_file, 1616, 1077))
         .write()
@@ -471,6 +489,30 @@ fn m5b_swapped_dimensions_are_not_a_disagreement() {
 }
 
 #[test]
+fn m6_a_tombstoned_pyramid_is_still_missing_payload_and_counted_as_deleted() {
+    let vault = modern();
+    let plan = vault.plan(&Options::default());
+
+    let m6 = item_for(&plan, 12);
+    assert_eq!(
+        m6.status,
+        Status::MissingPayload,
+        "a tombstone is Lightroom's record that it deleted the row, not a cause"
+    );
+    assert!(!m6.selected);
+    // The count is the cache's, not the item's: the note quotes the deletion
+    // and no field claims who removed the file.
+    assert_eq!(plan.stats.deleted, 1, "modern's pinned `deleted 1` is M6");
+    assert!(
+        m6.note
+            .as_deref()
+            .is_some_and(|note| note.contains("deletion at 700000000")),
+        "the note quotes the timestamp previews.db recorded: {:?}",
+        m6.note
+    );
+}
+
+#[test]
 fn m7_a_pyramid_with_no_file_at_all_is_missing_payload() {
     let vault = modern();
     let plan = vault.plan(&Options::default());
@@ -658,6 +700,42 @@ fn modern_counts_one_unmapped_item_per_unclaimed_pyramid() {
 }
 
 #[test]
+fn modern_reports_a_modern_layout_and_the_shapes_its_files_took() {
+    let vault = modern();
+    let plan = vault.plan(&Options::default());
+
+    assert_eq!(plan.cache.layout, Layout::Modern);
+    assert_eq!(plan.cache.layout.as_str(), "modern");
+    assert_eq!(plan.cache.db_version.as_deref(), Some("1504001"));
+    assert_eq!(plan.cache.crs_version.as_deref(), Some("18.0.0"));
+
+    // The cache counts are per vault, not per row: no pyramid here holds a
+    // legacy container, and none of the files is a shape this reader cannot
+    // name.
+    assert_eq!(plan.stats.superseded, 0);
+    assert_eq!(plan.stats.unrecognised, 0);
+
+    // `shapes` is derived from the files the composition wrote, never from a
+    // number copied out of `fixtures.md`.
+    assert_eq!(
+        plan.cache.shapes.level_file,
+        vault.level_files().len() as u64,
+        "every level file the builder wrote: {:?}",
+        vault.level_files()
+    );
+    assert_eq!(plan.cache.shapes.container, 0);
+    // Exactly one leaf names a long edge its own bytes do not measure: M5's
+    // file is named `_1616` and its `SOF` says 800x600. That single difference
+    // is what makes the count a measurement rather than a second reading of
+    // the name.
+    assert_eq!(
+        plan.cache.shapes.suffix_matches_sof,
+        plan.cache.shapes.level_file - 1,
+        "only M5's `_1616` leaf disagrees with its own frame"
+    );
+}
+
+#[test]
 fn m12_a_real_long_dimension_names_the_leaf_and_the_floor_only_excludes() {
     let vault = modern();
     let plan = vault.plan(&Options::default());
@@ -828,6 +906,26 @@ fn d5_all_levels_judges_each_level_by_its_own_row() {
     assert_eq!(certified.dimensions, (808, 539));
 }
 
+#[test]
+fn damaged_counts_the_frames_it_can_measure_even_when_they_are_incomplete() {
+    let vault = damaged();
+    let plan = vault.plan(&Options::default());
+
+    assert_eq!(plan.cache.layout, Layout::Modern);
+    assert_eq!(
+        plan.cache.shapes.level_file,
+        vault.level_files().len() as u64
+    );
+    // D1's truncated 1616 still declares its frame, so its leaf still matches;
+    // D2's non-JPEG and D3's body-without-SOI declare nothing, so two of the
+    // four files do not. Incompleteness is not the same as unreadable.
+    assert_eq!(
+        plan.cache.shapes.suffix_matches_sof,
+        plan.cache.shapes.level_file - 2,
+        "only the two unparseable files fail to name their own long edge"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // legacy
 // ---------------------------------------------------------------------------
@@ -954,6 +1052,25 @@ fn l6_an_unclaimed_container_is_one_orphan_item() {
 }
 
 #[test]
+fn legacy_reports_a_legacy_layout_with_no_level_files() {
+    let vault = legacy();
+    let plan = vault.plan(&Options::default());
+
+    assert_eq!(plan.cache.layout, Layout::Legacy);
+    assert_eq!(plan.cache.db_version.as_deref(), Some("1200001"));
+    assert_eq!(plan.cache.crs_version.as_deref(), Some("15.4.0"));
+    assert_eq!(
+        plan.cache.shapes.container,
+        vault.containers().len() as u64,
+        "one container per pyramid, L1 and L6"
+    );
+    assert_eq!(plan.cache.shapes.level_file, 0);
+    assert_eq!(plan.cache.shapes.suffix_matches_sof, 0);
+    // A `.lrprev`-only pyramid is legacy and is read, never superseded.
+    assert_eq!(plan.stats.superseded, 0);
+}
+
+#[test]
 fn n1_a_wrongly_shaped_file_is_not_an_orphan() {
     let u = uuid(1);
     let vault = Vault::unrecognised()
@@ -966,14 +1083,119 @@ fn n1_a_wrongly_shaped_file_is_not_an_orphan() {
         .write();
     let plan = vault.plan(&Options::default());
 
-    // The `unrecognised` count does not exist yet and is not asserted here; the
-    // claim this slice owns is that none of the three becomes an orphan.
+    // Three files that are payload-like and matched no shape: counted, and one
+    // item each they are not.
     assert_eq!(
         plan.stats.unmapped, 0,
         "no suffix, wrong shard and an unparseable uuid are not payloads: {:#?}",
         plan.items
     );
+    assert_eq!(plan.stats.unrecognised, 3, "N1's three files");
+    assert_eq!(
+        plan.cache.layout,
+        Layout::Unknown,
+        "`unknown` is not `none`: the cache holds something this reader cannot name"
+    );
+    assert_eq!(plan.cache.shapes.level_file, 0);
+    assert_eq!(plan.cache.shapes.suffix_matches_sof, 0);
+    assert_eq!(plan.cache.shapes.container, 0);
     assert_eq!(item_for(&plan, 1).status, Status::MissingPayload);
+}
+
+#[test]
+fn n2_a_version_no_release_produced_is_reported_verbatim_and_reads_anyway() {
+    let u = uuid(1);
+    let vault = Vault::unrecognised()
+        .image(ImageRow::new(1, "IMG_0001").cache(&u))
+        .pyramid(PyramidRow::new(&u).level(1616, 1077))
+        .row_without_file(Level::sized(&u, 1616, 1077))
+        .write();
+    let plan = vault.plan(&Options::default());
+
+    // No version refuses a run: the numbers are reasons to report, never to
+    // gate (`adr-0004-detect-layout-not-version`).
+    assert_eq!(plan.cache.db_version.as_deref(), Some("9900001"));
+    assert_eq!(plan.cache.crs_version.as_deref(), Some("99.0.0"));
+}
+
+#[test]
+fn e1_an_index_that_holds_nothing_is_the_none_layout() {
+    let vault = Vault::empty()
+        .image(ImageRow::new(1, "IMG_0001"))
+        .image(ImageRow::new(2, "IMG_0002"))
+        .write();
+    let plan = vault.plan(&Options::default());
+
+    assert_eq!(
+        plan.cache.layout,
+        Layout::None,
+        "\"this cache holds nothing\" is a layout, not an error"
+    );
+    assert_eq!(plan.stats.no_cache_entry, 2);
+    assert_eq!(plan.cache.shapes, Default::default(), "no file, no shape");
+    assert_eq!(plan.stats.superseded, 0);
+    assert_eq!(plan.stats.deleted, 0);
+    assert_eq!(plan.stats.unrecognised, 0);
+}
+
+#[test]
+fn x1_a_superseded_pyramid_is_read_from_its_level_files() {
+    let vault = mixed();
+    let plan = vault.plan(&Options::default());
+
+    let x1 = item_for(&plan, 1);
+    assert_eq!(x1.status, Status::Recoverable);
+    assert_eq!((x1.width, x1.height), (Some(1616), Some(1077)));
+    assert!(
+        is_level_file(x1),
+        "the level files are the pyramid: {:?}",
+        x1.payload
+    );
+
+    // Premise: reading that container would fail the row, so a `Recoverable`
+    // X1 is itself the proof that it was never read (ADR 0006 6). Its bytes
+    // stay untouched too.
+    let container = vault
+        .containers()
+        .first()
+        .expect("the superseded `.lrprev`")
+        .clone();
+    let before = fs::read(&container).expect("read the superseded container");
+    run_extract(&vault, &plan);
+    assert_eq!(
+        fs::read(&container).expect("read it again"),
+        before,
+        "a superseded container is never read and never rewritten"
+    );
+}
+
+#[test]
+fn mixed_reports_both_representations_and_one_superseded_pyramid() {
+    let vault = mixed();
+    let plan = vault.plan(&Options::default());
+
+    assert_eq!(plan.cache.layout, Layout::Mixed);
+    // X1 alone holds both representations; X2 is legacy and X3 modern, and
+    // neither of those is superseded. `mixed` describes the cache, so the
+    // per-pyramid fact is a separate count.
+    assert_eq!(
+        plan.stats.superseded, 1,
+        "mixed's pinned `superseded 1` is X1"
+    );
+    assert_eq!(
+        plan.cache.shapes.level_file,
+        vault.level_files().len() as u64,
+        "X1's and X3's level files"
+    );
+    assert_eq!(
+        plan.cache.shapes.container,
+        vault.containers().len() as u64,
+        "X1's superseded container and X2's readable one"
+    );
+    assert_eq!(
+        plan.cache.shapes.suffix_matches_sof, plan.cache.shapes.level_file,
+        "every leaf here names the long edge its own frame measures"
+    );
 }
 
 #[test]
@@ -981,7 +1203,7 @@ fn x2_a_container_only_pyramid_in_a_modern_cache_is_read_from_the_container() {
     let vault = mixed();
     let plan = vault.plan(&Options::default());
 
-    let x2 = item_for(&plan, 1);
+    let x2 = item_for(&plan, 2);
     assert_eq!(x2.status, Status::Recoverable);
     assert_eq!((x2.width, x2.height), (Some(1616), Some(1077)));
     assert_eq!(certified_level(x2), Some("level_1"));
@@ -996,13 +1218,13 @@ fn x3_a_level_file_only_pyramid_in_a_mixed_cache_is_read_from_the_file() {
     let vault = mixed();
     let plan = vault.plan(&Options::default());
 
-    let x3 = item_for(&plan, 2);
+    let x3 = item_for(&plan, 3);
     assert_eq!(x3.status, Status::Recoverable);
     assert_eq!((x3.width, x3.height), (Some(1616), Some(1077)));
     assert!(is_level_file(x3), "{:?}", x3.payload);
     assert_eq!(
         slashed(x3.payload.as_ref().expect("payload").path()),
-        slashed(&level_path(vault.previews(), &uuid(2), 1616)),
+        slashed(&level_path(vault.previews(), &uuid(3), 1616)),
         "the level file's own leaf is the payload"
     );
 }

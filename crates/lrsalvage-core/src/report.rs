@@ -392,7 +392,8 @@ fn item_json(item: &PlanItem) -> Value {
     object.insert("status".to_string(), json!(item.status.as_str()));
     if let Some(tier) = item.tier {
         object.insert("tier".to_string(), json!(tier.as_str()));
-    }    if let Some(width) = item.width {
+    }
+    if let Some(width) = item.width {
         object.insert("width".to_string(), json!(width));
     }
     if let Some(height) = item.height {
@@ -834,29 +835,50 @@ mod tests {
         let text = summary(&plan);
 
         assert!(
-            text.starts_with("cache layout: mixed
-"),
+            text.starts_with(
+                "cache layout: mixed
+"
+            ),
             "one leading line names the layout and nothing else:
 {text}"
         );
         // The three cache counts are summary lines while they are non-zero, and
         // a cache count is never mistaken for an image count.
         for label in ["superseded", "deleted", "unrecognised"] {
-            assert!(text.contains(label), "{label} is missing from:
-{text}");
+            assert!(
+                text.contains(label),
+                "{label} is missing from:
+{text}"
+            );
         }
-        assert!(text.contains("legacy .lrprev ignored; level files used"), "{text}");
-        assert!(text.contains("
-recovered"), "{text}");
+        assert!(
+            text.contains("legacy .lrprev ignored; level files used"),
+            "{text}"
+        );
+        assert!(
+            text.contains(
+                "
+recovered"
+            ),
+            "{text}"
+        );
 
         // A zero cache count is omitted, exactly like a zero image count.
         let quiet = summary(&Plan::default());
         for label in ["superseded", "deleted", "unrecognised"] {
-            assert!(!quiet.contains(label), "{label} is zero here:
-{quiet}");
+            assert!(
+                !quiet.contains(label),
+                "{label} is zero here:
+{quiet}"
+            );
         }
-        assert!(quiet.starts_with("cache layout: none
-"), "{quiet}");
+        assert!(
+            quiet.starts_with(
+                "cache layout: none
+"
+            ),
+            "{quiet}"
+        );
     }
 
     #[test]
@@ -1030,7 +1052,6 @@ recovered"), "{text}");
                         container: 2,
                     },
                 },
-                ..Plan::default()
             },
             &path,
             "1",

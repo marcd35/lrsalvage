@@ -164,12 +164,15 @@ impl PreviewIndex {
         }
 
         {
-            let mut stmt = conn.prepare("SELECT uuid, digest, deletedTimeStamp FROM DeletedPyramid")?;
+            let mut stmt =
+                conn.prepare("SELECT uuid, digest, deletedTimeStamp FROM DeletedPyramid")?;
             let mut rows = stmt.query([])?;
             while let Some(row) = rows.next()? {
                 let uuid = text(row.get_ref(0)?);
                 let digest = text(row.get_ref(1)?);
-                index.deleted.insert((uuid, digest), number(row.get_ref(2)?).unwrap_or(0.0));
+                index
+                    .deleted
+                    .insert((uuid, digest), number(row.get_ref(2)?).unwrap_or(0.0));
             }
         }
 
@@ -1027,11 +1030,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let cache = dir.path();
         // Three shapes the reader knows nothing about, each a real JPEG start.
-        write(
-            cache,
-            &format!("1/1A2B/{UUID_A}-{DIGEST_A}"),
-            &[0xFF, 0xD8],
-        );
+        write(cache, &format!("1/1A2B/{UUID_A}-{DIGEST_A}"), &[0xFF, 0xD8]);
         write(
             cache,
             &format!("0/0000/{UUID_A}-{DIGEST_A}_1616"),
@@ -1057,7 +1056,9 @@ mod tests {
         assert_eq!(
             sweep.unrecognised,
             vec![
-                cache.join("0/0000").join(format!("{UUID_A}-{DIGEST_A}_1616")),
+                cache
+                    .join("0/0000")
+                    .join(format!("{UUID_A}-{DIGEST_A}_1616")),
                 cache.join("1/1A2B").join(format!("{UUID_A}-{DIGEST_A}")),
                 cache.join("Z/ZZZZ/not-a-uuid_1616"),
             ],

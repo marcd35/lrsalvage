@@ -9,7 +9,7 @@ use std::path::{Component, Path, PathBuf};
 use crate::catalog::Catalog;
 use crate::error::Result;
 use crate::model::{CatalogImage, Orientation, Pyramid, PyramidLevel};
-use crate::previews_db::{Candidate, CacheSweep, LevelOnDisk, PreviewIndex, PyramidOnDisk};
+use crate::previews_db::{CacheSweep, Candidate, LevelOnDisk, PreviewIndex, PyramidOnDisk};
 use crate::{jpeg, lrprev, previews_db};
 
 /// Re-exported because a plan's cache facts name it: `CacheFacts::layout` is one
