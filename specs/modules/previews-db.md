@@ -7,6 +7,7 @@ parent: architecture
 depends-on:
   - snapshot
   - model
+  - jpeg
 references:
   - adr-0002-map-via-previews-db
   - adr-0005-discover-payloads-by-index
@@ -29,10 +30,11 @@ therefore the **layout** the cache holds.
 ## Boundary
 
 Knows the index schema and the cache's directory layout; knows nothing about
-catalog rows beyond the `imageId` it is given, reads directory entries and names
-and never a payload byte, and never writes. The database is opened through
-`snapshot`'s read-only opener. Which rows are live, which are stale, and what to
-do about either is `plan`'s decision.
+catalog rows beyond the `imageId` it is given, and never writes. It reads
+directory entries and names, and opens a payload only through `jpeg`'s two-byte
+sniff — never more than its first two bytes, and never to interpret them. The
+database is opened through `snapshot`'s read-only opener. Which rows are live,
+which are stale, and what to do about either is `plan`'s decision.
 
 ## Decisions
 

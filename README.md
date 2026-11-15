@@ -65,7 +65,7 @@ Two things version independently here, and conflating them is how a "supports
 v13+" claim goes wrong: the **catalog format** (`Adobe_DBVersion`, a SQLite
 schema Lightroom has changed slowly) and the **preview layout** (which Lightroom
 replaced in 13.3, when one `.lrprev` container per image became one JPEG file per
-level). `scan` reports both, and refuses a run over neither: `layout` is one of
+level). `scan` reports both, and neither of them gates a run: `layout` is one of
 five words, and the two version strings are printed exactly as the catalog stores
 them.
 
