@@ -62,28 +62,51 @@ on.
 ## Compatibility
 
 Two things version independently here, and conflating them is how a "supports
-v13+" claim goes wrong: the **catalog** (a SQLite schema Lightroom has changed
-slowly) and the **preview storage** (which Lightroom replaced in 13.3).
+v13+" claim goes wrong: the **catalog format** (`Adobe_DBVersion`, a SQLite
+schema Lightroom has changed slowly) and the **preview layout** (which Lightroom
+replaced in 13.3, when one `.lrprev` container per image became one JPEG file per
+level). `scan` reports both, and refuses a run over neither: `layout` is one of
+five words, and the two version strings are printed exactly as the catalog stores
+them.
 
-| Lightroom Classic | Catalog | Preview storage | Status |
+| Released | Preview layout | Catalog format | Tool run |
 |---|---|---|---|
-| 4 – 9 | older schema | `.lrprev` pyramid | Same reader, **untested** |
-| 10 – 12 | v10 – v12 | `.lrprev` pyramid | Same reader; **v11 verified** on real catalogs |
-| 13.0 – 13.2 | v13 | `.lrprev` pyramid | Same reader, **untested** |
-| 13.3 and later | v13+ | per-image folders of extensionless JPEGs | **Not supported yet** — [issue #2](https://github.com/marcd35/lrsalvage/issues/2) |
+| LrC 4 – 9 | `legacy` — one `.lrprev` pyramid per image | not measured | same reader, **untested** |
+| LrC 10 – 12 | `legacy` | `1200001` on an LrC 11 catalog | **v11 verified** on real catalogs |
+| LrC 13.0 – 13.2 | `legacy` | not measured | same reader, **untested** |
+| LrC 13.3 and later | `modern` — one extensionless JPEG per level, no `.lrprev` | `1504001` on a catalog upgraded by LrC 16.0 | layout **measured**, run **untested** |
+
+`Released` is for you, not for the code: no version decides whether a cache is
+read. The layout does, and it accounts for the two caches a release column cannot
+name — a cache upgraded in place, which holds `mixed` (both representations, one
+pyramid at a time), and a cache holding files that match no layout at all, which
+is `unknown`:
+
+| `layout` | Cache holds | `scan` |
+|---|---|---|
+| `legacy` | only `.lrprev` containers | reads each pyramid from its container |
+| `modern` | only loose payload files | reads each level file, certifying it against its `PyramidLevel` row |
+| `mixed` | both kinds, anywhere in the cache | resolves per pyramid: a level file wins, its container is never read |
+| `none` | an index and no payload files | every image is `no-cache-entry`, exit 3 |
+| `unknown` | payload-like files, none of a known shape | one hint naming what it saw, exit 3 |
 
 What those rows mean in practice:
 
 - **Verified**: Lightroom Classic 11 catalogs, the ones this tool was built and
   tested against — a 3,416-image catalog (2,659 previews recovered) and a
   78-image one (78/78).
-- **Same format, untested**: 10, 12 and 13.0 – 13.2 use the `.lrprev` pyramid
-  this tool parses. Nothing known stops them working; nobody has run it on one.
-- **Not supported: 13.3 and later.** On such a cache every image reports
-  `missing-payload` and the run exits 3 — or, if the cache has no `previews.db`,
-  it stops with a database error. That is the tool refusing to guess, not a
-  partial success. Work is tracked in
-  [issue #2](https://github.com/marcd35/lrsalvage/issues/2).
+- **Measured** for 13.3 and later means the byte facts of that layout were read
+  off real files — all 390 payloads of a cache upgraded in place by Lightroom
+  Classic 16.0, every one of which named its own `SOF` long edge (section 5.7 of
+  the notes). It does not mean someone has run this tool end to end on one; that
+  has not happened yet.
+- **Same reader, untested**: 4 – 10, 12 and 13.0 – 13.2 use the `.lrprev`
+  pyramid this tool parses. Nothing known stops them working; nobody has run it
+  on one.
+- **No version refuses a run.** A newer Lightroom release cannot silently turn a
+  readable cache into an empty run: the tool either reads it, or reports
+  `unknown` with the shape it saw. See
+  [ADR 0004](docs/adr/0004-detect-layout-not-version.md).
 
 Where this README says "verified", it means someone ran the tool against real
 files of that generation. Every claim below that with a byte-level basis carries
@@ -98,7 +121,7 @@ they give back.
 
 | | Needs Lightroom installed? | Reads 13.3+ previews? | Restores metadata? | Approach |
 |---|---|---|---|---|
-| `lrsalvage` | No | Not yet ([#2](https://github.com/marcd35/lrsalvage/issues/2)) | EXIF, ICC profile, star rating, capture-date mtime | Parses the container |
+| `lrsalvage` | No | Yes, one file per level | EXIF, ICC profile, star rating, capture-date mtime | Parses the container, then the level files |
 | Friedl "Extract Cached Image Previews" | Yes (plugin) | Yes, since build 20240611.65 | Yes, via bundled ExifTool | Runs inside Lightroom |
 | Adobe `ExtractPreviews.lua` | Yes (script) | Updated after 13.3 | No metadata, no ICC profile | Runs inside Lightroom |
 | Python `.lrprev` extractors | No | No | Rarely | Scan for `FFD8`…`FFD9` |
@@ -153,6 +176,8 @@ one machine-readable object; `--verbose` lines follow it.
 | Field | Meaning |
 |---|---|
 | `catalog`, `previews` | The two input paths, with `/` separators. |
+| `layout` | What the cache holds: `legacy`, `modern`, `mixed`, `none` or `unknown`. Decided from the tree, never from a version. |
+| `db_version`, `crs_version` | `Adobe_DBVersion` and `Adobe_CrsVersion`, exactly as the catalog stores them, or `null` when the catalog has no such row. Never interpreted. |
 | `images` | Catalog images examined. |
 | `recovered` | Images whose parsed payload agrees with the size `previews.db` declares. |
 | `bytes` | Payload bytes of the items `extract` would write, before metadata is added. |
@@ -163,7 +188,15 @@ one machine-readable object; `--verbose` lines follow it.
 | `failed` | A payload that is truncated, unreadable, or holds no complete JPEG level. |
 | `original_present` | Images skipped because the original file is still on disk. Always `0` with `--include-present`. |
 | `below_floor` | Items the floor excluded. |
+| `superseded` | Claimed pyramids held twice — level files and a legacy `.lrprev` — where only the level files are read. |
+| `deleted` | `missing-payload` images whose pyramid `previews.db` has a `DeletedPyramid` row for. Lightroom's own record; it never claims who removed the file. |
+| `unrecognised` | Payload-like files that matched no shape. They appear here and nowhere else: no status, no item, no exit code. |
 | `tiers` | Object keyed `full`, `large`, `standard`, `small`, `thumbnail`; absent tiers are absent keys. |
+| `shapes` | Object of three counts over the cache's files: `level_file`, how many of those leaves name the long edge their own frame measured (`suffix_matches_sof`), and `container`. |
+
+None of `superseded`, `deleted` or `unrecognised` is an image's status, and none
+of them changes the exit code: they describe the cache the run found, not what
+became of any photograph.
 
 `extract` takes the same two paths plus a destination. It shares
 `--min-long-edge`, `--all-levels`, and `--include-present` with `scan`; the table
@@ -217,6 +250,11 @@ that selected something and is not a dry run. None of them ever overwrites an
 existing file: if `report.csv` is already there, the run writes `report (2).csv`
 and says so. The numbered name applies to all three.
 
+`report.csv` ends with a `payload` column, and every item in `manifest.json` has
+a `payload` member: the file a preview was read from. For a `unmapped` payload
+that is the only path there is — no image, no output name — so it is a column to
+sort on rather than a sentence to parse out of `note`.
+
 The run ends with a line on stderr such as
 `78 evaluated, 78 written, 0 skipped, 0 failed, 25.3 MiB`. Sizes there are
 mebibytes (1 MiB = 1,048,576 bytes). The reports keep exact bytes:
@@ -266,10 +304,13 @@ live catalog image claims is listed as `unmapped`.
 | **unmapped** | A payload exists in the cache but no live catalog image claims it. It is listed with its payload path in `report.csv` and `manifest.json`, and never written: a payload with no catalog row has no file name to give it. |
 
 `missing-payload` is worth reading twice. It means Lightroom believed a preview
-existed and it is not on disk — either the cache was partially deleted, or you
-are looking at a 13.3+ cache, whose storage this tool does not read yet (see
-[Compatibility](#compatibility)). Either way it is a different problem from "no
-preview was ever built", which is why the report keeps them apart.
+existed and it is not on disk — the cache was partially deleted, a background
+prune took the level, or the file never made it to this drive. When `previews.db`
+still holds a `DeletedPyramid` row for that pyramid, `scan` counts it under
+`deleted` and the note quotes Lightroom's own deletion time; that is a record of
+what Lightroom did to its index, not an explanation of the missing file. It is a
+different problem from "no preview was ever built", which is why the report keeps
+them apart.
 
 ## Metadata restored
 
