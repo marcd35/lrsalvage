@@ -60,15 +60,11 @@ fn probe(vault: &Vault) -> BTreeMap<String, String> {
         .join("probe-cache.sh");
     assert!(script.is_file(), "the probe is at {}", script.display());
 
-    for tool in ["od", "awk", "sqlite3"] {
-        let found = Command::new(tool)
-            .arg("--version")
-            .output()
-            .map(|output| output.status.success())
-            .unwrap_or(false);
-        assert!(found, "the probe needs `{tool}`, which is not on PATH");
-    }
-
+    // No tool-presence guard: the probe names the missing tool itself
+    // (`missing od: coreutils`), and the assertion below prints its stderr. A
+    // guard that ran `--version` on each tool was worse than nothing — macOS's
+    // BSD `od` has no `--version`, so it reported a tool that is present as
+    // missing and failed this row on that platform alone.
     let output = Command::new("sh")
         .arg(&script)
         .arg(vault.previews())
