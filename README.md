@@ -85,10 +85,11 @@ mapping: an `Adobe_DBVersion` you have not seen here is not "unsupported", it is
 a cache whose **layout** the tool still reports and reads.
 
 `Released` is for you, not for the code: no version decides whether a cache is
-read. The layout does, and it accounts for the two caches a release column cannot
-name — a cache upgraded in place, which holds `mixed` (both representations, one
-pyramid at a time), and a cache holding files that match no layout at all, which
-is `unknown`:
+read. The layout does, and it accounts for two caches a release column cannot
+name: one upgraded in place, which *can* hold `mixed` — both representations, one
+pyramid at a time, though the upgrade measured here converted every `.lrprev` and
+reports `modern`; and one holding files that match no layout at all, which is
+`unknown`:
 
 | `layout` | Cache holds | `scan` |
 |---|---|---|
@@ -517,9 +518,9 @@ instead: `lrsalvage-cli`'s `tests/readme.rs` checks the flag list and the
 `lrsalvage` is a command-line binary you build from this tree. Packaging it is a
 separate concern, and none of it lives here: there is no installer, no signed or
 notarised bundle, no auto-updater, no package-manager formula, and no release
-workflow — CI runs the gates above on every push and pull request and publishes
-nothing. Those are their own decisions with their own platform and provenance
-questions, and they are out of scope for the reader.
+workflow — CI runs the gates above on every push to `main` and every pull
+request, and publishes nothing. Those are their own decisions with their own
+platform and provenance questions, and they are out of scope for the reader.
 
 A graphical interface is separate in the same way. Reading, planning and writing
 live in `crates/lrsalvage-core` behind a library interface, so a future UI would

@@ -687,9 +687,9 @@ The catalog version is not the marketing major: a catalog written by Lightroom
   390 rows on 2026-11-15: every row's `fileSize` matched its file exactly
   (delta 0, 390 of 390), and the `1418F22B…` pyramid's level 5 is `302569`
   declared and `302569` on disk. An earlier revision of this note paired
-  `311,930` — the `fileSize` of a *different* pyramid, `5C9687A0…` — with that
-  file and concluded the column was unusable. The pairing was wrong, not the
-  column. It is still a declaration rather than a measurement: a truncated or
+  `311,930`, the `fileSize` of a *different* pyramid in the same cache, with
+  that file and concluded the column was unusable. The pairing was wrong, not
+  the column. It is still a declaration rather than a measurement: a truncated or
   pruned file can disagree with it, and no such state was measured (§5.5).
 
 ### 5.5 Still reported, not measured
@@ -724,9 +724,9 @@ Adobe produces it:
 | A freshly built render's payload metadata | `M13` (§5.8) | everything about what Adobe writes |
 
 So the software's behaviour in those states is tested; the claim that Lightroom
-produces them is not. The one state with no row at all is a conversion from a
-catalog newer than `1200001`, which is a fact about Adobe's upgrader rather than
-about the reader.
+produces them is not. Two states have no row at all: the level set a fresh render
+chooses, which nothing measures, and a conversion from a catalog newer than
+`1200001`, which is a fact about Adobe's upgrader rather than about the reader.
 
 ### 5.6 Consequences
 
@@ -783,15 +783,12 @@ All 390 payloads of the upgraded cache were read (every file, not a sample) on
   declared payload, so a walk of the top-level chain never reaches its `SOF`.
   This is a property of the layout, not something observed in situ: no payload in
   this cache carries an `APP1` segment at all.
-- **The reader reproduces every fact above — verified, 2026-11-15.** A `scan` of
-  this same cache with the build from this tree reports `layout modern`,
-  `db_version 1504001`, `crs_version 18.0.0`, `images 78`, `recovered 78`,
-  `failed 0`, `unmapped 0`, `unrecognised 0`, and `shapes` of
-  `level_file 390`, `suffix_matches_sof 390`, `container 0`. The last pair is
-  §5.7's 390-of-390 measurement read back through the tool: each leaf's `_<n>`
-  matched the long edge its own `SOF` declared, on every file in the cache, so
-  the histogram is a measurement and not a second reading of the name.
-  Section 5.9 records the whole run, `--report` and `extract` included.
+- **The reader reproduces every fact above — verified, 2026-11-15.** A `scan`
+  with the build from this tree reports `shapes` of `level_file 390` and
+  `suffix_matches_sof 390`: §5.7's 390-of-390 measurement read back through the
+  tool, because each leaf's `_<n>` matched the long edge its own `SOF` declared,
+  on every file in the cache. The histogram is a measurement, not a second
+  reading of the name. §5.9 records that run in full.
 - **TODO**: `MotionPreview` and `FacePreview` (with their `Deleted*` and
   `CacheEntry` siblings) exist in this store and hold 0 rows. No video or
   face-preview cache has been inspected, so their modern payload shape is
@@ -832,12 +829,11 @@ All 390 payloads of the upgraded cache were read (every file, not a sample) on
   It remains evidence of the *decision*, never of an Adobe render: no payload on
   this machine has been measured with an `Exif` APP1 (§1.4), so what Lightroom
   writes stays **unverified**.
-- **Verified, 2026-11-15:** the run of §5.9 wrote 78 outputs from 26,330,281
-  payload bytes. `payload_metadata` was blank in all 78 rows of `report.csv` —
-  no `Exif`, no XMP, no `ICC_PROFILE` — which agrees with a fresh walk of all 390
-  level files that found no `APP1` and no `APP2` segment. The payloads on this
-  machine are the converted legacy levels, so the metadata-bearing state of M13
-  cannot come from here. It needs a cache Lightroom rendered from scratch.
+- **Verified, 2026-11-15:** `payload_metadata` was blank in all 78 items of
+  §5.9's `extract`, and a fresh walk of all 390 level files found no `APP1` and
+  no `APP2` segment. The payloads on this machine are the converted legacy
+  levels, so the metadata-bearing state of M13 cannot come from here; it needs a
+  cache Lightroom rendered from scratch.
 
 ### 5.9 The build from this tree, run against this cache — VERIFIED
 
@@ -852,7 +848,7 @@ output and the `--report` file, which is path-free by construction.
 | `scan --json` | 0 | `layout modern`, `db_version 1504001`, `crs_version 18.0.0`, `images 78`, `recovered 78`, `bytes 26330281`, `tiers {standard: 78}`, `shapes {level_file: 390, suffix_matches_sof: 390, container: 0}`, and `0` for every other count — `suspect`, `missing_payload`, `no_cache_entry`, `unmapped`, `failed`, `original_present`, `below_floor`, `superseded`, `deleted`, `unrecognised` |
 | `scan --report <file>` | 0 | `schema lrsalvage.verification`, `version 0.1.0`, `layout modern`, both version strings, `options {min_long_edge: 640, all_levels: false, include_present: false}`, the same stats plus `levels 78`, `selected_images 78`, `selected_items 78`, `shapes.level_file` as `{count: 390, suffix_matches_sof: 390, template: "<uuid[0]>/<uuid[0..4]>/<UUID>-<digest>_<longedge>"}`, and `shapes.container` as `{count: 0}` with no template |
 | `extract --out <root>` | 0 | `78 evaluated, 78 written, 0 skipped, 0 failed, 25.3 MiB` |
-| the same `extract` again | 0 | `78 evaluated, 0 written, 78 skipped, 0 failed, 0.0 MiB` — resume proves each output ours by its `Software` marker, completeness and `SOF`, and writes nothing |
+| the same `extract` again | 0 | `78 evaluated, 0 written, 78 skipped, 0 failed, 0.0 MiB` — resume proves each output ours by its `Software` marker, completeness and `SOF`, and writes no preview; its three report files are re-emitted as `(2)` copies |
 | `extract --all-levels --out <second root>` | 0 | `recovered 78 32.6 MiB`, tiers `standard 78`, `small 78`, `thumbnail 234`, `below floor (640px) 234`, `156 evaluated, 156 written, 0 skipped, 0 failed, 33.0 MiB` |
 
 What those numbers pinned, beyond the sections above:
