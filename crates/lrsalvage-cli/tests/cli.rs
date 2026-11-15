@@ -1,124 +1,58 @@
 //! End-to-end tests for the `lrsalvage` binary.
 //!
 //! Every test drives the real executable built by Cargo and speaks only
-//! through its command line, exit codes and stdout/stderr. A synthetic
-//! catalog, preview cache and `AgHg` payload are built inside a `TempDir`, so
-//! the suite needs no fixtures on disk, no network and no real Lightroom data.
+//! through its command line, exit codes and stdout/stderr. The catalog, the
+//! preview cache and its `AgHg` payload come from `lrsalvage-fixtures`, built
+//! inside a `TempDir`, so the suite needs no fixtures on disk, no network and
+//! no real Lightroom data.
 
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use assert_cmd::Command;
+use lrsalvage_fixtures::vault::{ImageRow, Level, PyramidRow, Vault};
 use predicates::prelude::*;
-use rusqlite::{Connection, params};
-use tempfile::TempDir;
 
 /// The `(uuid, digest)` pair Adobe wrote for the one preview in the fixture.
+/// The digest itself is derived by the builder, so rows and file always agree.
 const UUID: &str = "ABCDEF01-2345-6789-ABCD-EF0123456789";
-const DIGEST: &str = "0123456789abcdef0123456789abcdef";
-
-/// Catalog tables `catalog.rs` reads. `Adobe_AdditionalMetadata` is omitted on
-/// purpose: an old catalog that predates it must still be salvageable.
-const CATALOG_SCHEMA: &str = r#"
-    CREATE TABLE Adobe_images (id_local INTEGER PRIMARY KEY, copyName TEXT,
-      orientation TEXT, fileFormat TEXT, rootFile INTEGER);
-    CREATE TABLE AgLibraryFile (id_local INTEGER PRIMARY KEY, folder INTEGER,
-      baseName TEXT, extension TEXT);
-    CREATE TABLE AgLibraryFolder (id_local INTEGER PRIMARY KEY, pathFromRoot TEXT,
-      rootFolder INTEGER);
-    CREATE TABLE AgLibraryRootFolder (id_local INTEGER PRIMARY KEY, absolutePath TEXT);
-"#;
-
-/// The `previews.db` tables and columns `previews_db.rs` reads. The numeric
-/// columns that real caches store as REAL are declared REAL here, so the
-/// coercion is exercised rather than assumed.
-const PREVIEWS_SCHEMA: &str = r#"
-    CREATE TABLE Pyramid (uuid TEXT NOT NULL, digest TEXT NOT NULL,
-      colorProfile TEXT NOT NULL, quality TEXT NOT NULL,
-      croppedWidth REAL NOT NULL, croppedHeight REAL NOT NULL);
-    CREATE TABLE PyramidLevel (uuid TEXT NOT NULL, digest TEXT NOT NULL,
-      level INTEGER NOT NULL, longDimension REAL NOT NULL, lastAccess REAL NOT NULL,
-      width INTEGER NOT NULL, height INTEGER NOT NULL);
-    CREATE TABLE ImageCacheEntry (imageId REAL NOT NULL, uuid TEXT NOT NULL,
-      digest TEXT NOT NULL, orientation TEXT);
-"#;
 
 fn lrsalvage() -> Command {
     Command::cargo_bin("lrsalvage").expect("the integration-test binary path")
 }
 
-/// One `AgHg` chunk: magic, header length, version, kind, payload/padding
-/// lengths, name, payload. Mirrors `docs/format-notes.md` §1.
-fn chunk(name: &str, payload: &[u8]) -> Vec<u8> {
-    let header_len = 24 + name.len();
-    let mut bytes = Vec::with_capacity(header_len + payload.len());
-    bytes.extend_from_slice(b"AgHg");
-    bytes.extend_from_slice(&u16::try_from(header_len).unwrap().to_be_bytes());
-    bytes.push(0); // version
-    bytes.push(0); // kind
-    bytes.extend_from_slice(&(payload.len() as u64).to_be_bytes());
-    bytes.extend_from_slice(&0u64.to_be_bytes()); // padding
-    bytes.extend_from_slice(name.as_bytes());
-    bytes.extend_from_slice(payload);
-    bytes
-}
-
-/// A structurally valid baseline JPEG at `width` x `height`.
-///
-/// Tiny, but `jpeg::dimensions` finds the SOF and `jpeg::is_complete` finds the
-/// final EOI. No pixels are ever decoded.
-fn jpeg(width: u16, height: u16) -> Vec<u8> {
-    let mut bytes = vec![0xFF, 0xD8];
-    bytes.extend_from_slice(&[0xFF, 0xC0, 0x00, 0x11, 0x08]);
-    bytes.extend_from_slice(&height.to_be_bytes());
-    bytes.extend_from_slice(&width.to_be_bytes());
-    bytes.extend_from_slice(&[0x03, 0x01, 0x11, 0x00, 0x02, 0x11, 0x01, 0x03, 0x11, 0x01]);
-    bytes.extend_from_slice(&[
-        0xFF, 0xDA, 0x00, 0x0C, 0x03, 0x01, 0x00, 0x02, 0x11, 0x03, 0x11, 0x00, 0x3F, 0x00,
-    ]);
-    bytes.extend_from_slice(&[0x00, 0xFF, 0xD9]);
-    bytes
-}
-
 /// A catalog with one image named `synthetic.CR2`, whose original is gone,
 /// plus the preview cache that holds its one 800x600 JPEG.
+///
+/// Both databases and the payload come from `lrsalvage-fixtures`; this suite
+/// keeps no fixture of its own and describes no bytes.
 struct Fixture {
-    dir: TempDir,
-    catalog: PathBuf,
-    previews: PathBuf,
-    out: PathBuf,
+    vault: Vault,
 }
 
 impl Fixture {
     fn new() -> Self {
-        let dir = tempfile::tempdir().expect("temp dir");
-        let catalog_dir = dir.path().join("catalog");
-        fs::create_dir_all(&catalog_dir).expect("create catalog dir");
-        let out = dir.path().join("out");
-        fs::create_dir_all(&out).expect("create output dir");
-
-        let catalog = catalog_dir.join("Test.lrcat");
-        write_catalog(&catalog, &catalog_dir);
-        let previews = catalog_dir.join("Test Previews.lrdata");
-        write_previews(&previews);
-
-        Self {
-            dir,
-            catalog,
-            previews,
-            out,
-        }
+        Fixture { vault: build() }
     }
 
     fn dir(&self) -> &Path {
-        self.dir.path()
+        self.vault.dir()
     }
 
-    fn catalog_dir(&self) -> PathBuf {
-        self.catalog
-            .parent()
-            .expect("catalog has a parent")
-            .to_path_buf()
+    fn catalog(&self) -> &Path {
+        self.vault.catalog()
+    }
+
+    fn catalog_dir(&self) -> &Path {
+        self.catalog().parent().expect("the catalog has a parent")
+    }
+
+    fn previews(&self) -> &Path {
+        self.vault.previews()
+    }
+
+    fn out(&self) -> &Path {
+        self.vault.out()
     }
 
     fn scan(&self) -> Command {
@@ -126,9 +60,9 @@ impl Fixture {
         command
             .arg("scan")
             .arg("--catalog")
-            .arg(&self.catalog)
+            .arg(self.catalog())
             .arg("--previews")
-            .arg(&self.previews);
+            .arg(self.previews());
         command
     }
 
@@ -137,83 +71,31 @@ impl Fixture {
         command
             .arg("extract")
             .arg("--catalog")
-            .arg(&self.catalog)
+            .arg(self.catalog())
             .arg("--previews")
-            .arg(&self.previews)
+            .arg(self.previews())
             .arg("--out")
-            .arg(&self.out);
+            .arg(self.out());
         command
     }
 }
 
-fn write_catalog(catalog: &Path, catalog_dir: &Path) {
-    let conn = Connection::open(catalog).expect("create catalog");
-    conn.execute_batch(CATALOG_SCHEMA).expect("catalog schema");
-
-    // Lightroom stores POSIX separators and a trailing slash.
-    let originals = format!(
-        "{}/",
-        catalog_dir
-            .join("originals")
-            .to_string_lossy()
-            .replace('\\', "/")
-    );
-    conn.execute(
-        "INSERT INTO AgLibraryRootFolder (id_local, absolutePath) VALUES (1, ?1)",
-        params![originals],
-    )
-    .expect("root folder");
-    conn.execute(
-        "INSERT INTO AgLibraryFolder (id_local, pathFromRoot, rootFolder) VALUES (10, '', 1)",
-        [],
-    )
-    .expect("folder");
-    conn.execute(
-        "INSERT INTO AgLibraryFile (id_local, folder, baseName, extension) \
-         VALUES (100, 10, 'synthetic', 'CR2')",
-        [],
-    )
-    .expect("file row");
-    conn.execute(
-        "INSERT INTO Adobe_images (id_local, copyName, orientation, fileFormat, rootFile) \
-         VALUES (1, NULL, 'AB', 'CR2', 100)",
-        [],
-    )
-    .expect("image row");
-}
-
-fn write_previews(previews: &Path) {
-    fs::create_dir_all(previews).expect("create preview cache");
-    let conn = Connection::open(previews.join("previews.db")).expect("create previews.db");
-    conn.execute_batch(PREVIEWS_SCHEMA)
-        .expect("previews schema");
-    conn.execute(
-        "INSERT INTO ImageCacheEntry (imageId, uuid, digest, orientation) \
-         VALUES (1.0, ?1, ?2, 'AB')",
-        params![UUID, DIGEST],
-    )
-    .expect("cache entry");
-    conn.execute(
-        "INSERT INTO Pyramid (uuid, digest, colorProfile, quality, croppedWidth, croppedHeight) \
-         VALUES (?1, ?2, 'sRGB', 'standard', 800.0, 600.0)",
-        params![UUID, DIGEST],
-    )
-    .expect("pyramid");
-    conn.execute(
-        "INSERT INTO PyramidLevel \
-         (uuid, digest, level, longDimension, lastAccess, width, height) \
-         VALUES (?1, ?2, 1, 800.0, 0.0, 800, 600)",
-        params![UUID, DIGEST],
-    )
-    .expect("pyramid level");
-    drop(conn);
-
-    // `<cache>/<uuid[0]>/<uuid[0..4]>/<UUID>-<digest>.lrprev`
-    let payload_dir = previews.join("A").join("ABCD");
-    fs::create_dir_all(&payload_dir).expect("create payload dir");
-    let mut bytes = chunk("header", b"pyramid = { }");
-    bytes.extend(chunk("level_1", &jpeg(800, 600)));
-    fs::write(payload_dir.join(format!("{UUID}-{DIGEST}.lrprev")), bytes).expect("write payload");
+/// A `legacy` vault: one image, one `.lrprev` container, and no
+/// `Adobe_AdditionalMetadata` — an old catalog that predates it must still be
+/// salvageable.
+fn build() -> Vault {
+    Vault::legacy()
+        .catalog_name("Test")
+        .without_metadata_table()
+        .image(ImageRow::new(1, "synthetic").file(100).cache(UUID))
+        .pyramid(
+            PyramidRow::new(UUID)
+                .profile("sRGB")
+                .quality("standard")
+                .level(800, 600),
+        )
+        .level_file(Level::sized(UUID, 800, 600))
+        .write()
 }
 
 fn jpeg_files(dir: &Path) -> Vec<PathBuf> {
@@ -239,13 +121,13 @@ fn collect_jpegs(dir: &Path, found: &mut Vec<PathBuf>) {
 }
 
 fn assert_empty_output(fixture: &Fixture) {
-    let entries: Vec<_> = fs::read_dir(&fixture.out)
+    let entries: Vec<_> = fs::read_dir(fixture.out())
         .expect("read output dir")
         .collect();
     assert!(
         entries.is_empty(),
         "expected no files under {}, found {:?}",
-        fixture.out.display(),
+        fixture.out().display(),
         entries
             .into_iter()
             .map(|entry| entry.expect("directory entry").path())
@@ -289,7 +171,7 @@ fn missing_catalog_is_a_usage_error_that_names_the_path() {
         .arg("--catalog")
         .arg(&missing)
         .arg("--previews")
-        .arg(&fixture.previews)
+        .arg(fixture.previews())
         .assert()
         .code(1)
         .stderr(
@@ -309,7 +191,7 @@ fn a_text_file_is_rejected_as_a_catalog() {
         .arg("--catalog")
         .arg(&text)
         .arg("--previews")
-        .arg(&fixture.previews)
+        .arg(fixture.previews())
         .assert()
         .code(1)
         .stderr(predicate::str::contains("not a database"));
@@ -323,9 +205,9 @@ fn extract_refuses_an_output_inside_the_catalog_directory() {
     lrsalvage()
         .arg("extract")
         .arg("--catalog")
-        .arg(&fixture.catalog)
+        .arg(fixture.catalog())
         .arg("--previews")
-        .arg(&fixture.previews)
+        .arg(fixture.previews())
         .arg("--out")
         .arg(&inside)
         .assert()
@@ -342,14 +224,14 @@ fn extract_refuses_an_output_inside_the_catalog_directory() {
 #[test]
 fn extract_refuses_an_output_inside_the_preview_cache() {
     let fixture = Fixture::new();
-    let inside = fixture.previews.join("refused");
+    let inside = fixture.previews().join("refused");
 
     lrsalvage()
         .arg("extract")
         .arg("--catalog")
-        .arg(&fixture.catalog)
+        .arg(fixture.catalog())
         .arg("--previews")
-        .arg(&fixture.previews)
+        .arg(fixture.previews())
         .arg("--out")
         .arg(&inside)
         .assert()
@@ -375,14 +257,14 @@ fn scan_and_extract_recover_one_synthetic_preview() {
 
     fixture.extract().assert().code(0);
 
-    let jpegs = jpeg_files(&fixture.out);
+    let jpegs = jpeg_files(fixture.out());
     assert_eq!(
         jpegs.len(),
         1,
         "expected exactly one recovered JPEG, found {jpegs:?}"
     );
     assert_eq!(
-        jpegs[0].strip_prefix(&fixture.out).unwrap(),
+        jpegs[0].strip_prefix(fixture.out()).unwrap(),
         Path::new("originals").join("synthetic.jpg"),
         "the output tree must mirror the catalog's root folder"
     );
@@ -393,7 +275,7 @@ fn scan_and_extract_recover_one_synthetic_preview() {
     );
 
     for name in ["report.csv", "manifest.json", "extract.csv"] {
-        let path = fixture.out.join(name);
+        let path = fixture.out().join(name);
         assert!(path.is_file(), "expected {} to be written", path.display());
     }
 }
@@ -410,7 +292,7 @@ fn a_second_extract_is_idempotent() {
         .stderr(predicate::str::contains("0 written").and(predicate::str::contains("1 skipped")));
 
     assert_eq!(
-        jpeg_files(&fixture.out).len(),
+        jpeg_files(fixture.out()).len(),
         1,
         "resuming must not write a second copy of the same preview"
     );

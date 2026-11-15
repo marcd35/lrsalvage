@@ -634,10 +634,9 @@ dependencies = [
  "clap",
  "indicatif",
  "lrsalvage-core",
+ "lrsalvage-fixtures",
  "predicates",
- "rusqlite",
  "serde_json",
- "tempfile",
  "walkdir",
 ]
 
@@ -650,6 +649,7 @@ dependencies = [
  "filetime",
  "flate2",
  "kamadak-exif",
+ "lrsalvage-fixtures",
  "png",
  "proptest",
  "rusqlite",
@@ -658,6 +658,15 @@ dependencies = [
  "tempfile",
  "thiserror",
  "walkdir",
+]
+
+[[package]]
+name = "lrsalvage-fixtures"
+version = "0.1.0"
+dependencies = [
+ "lrsalvage-core",
+ "rusqlite",
+ "tempfile",
 ]
 
 [[package]]

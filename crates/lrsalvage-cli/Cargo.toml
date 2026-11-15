@@ -21,5 +21,6 @@ indicatif.workspace = true
 [dev-dependencies]
 assert_cmd.workspace = true
 predicates.workspace = true
-rusqlite.workspace = true
-tempfile.workspace = true
+# The vault (catalog, previews.db and payloads) comes from the shared builder,
+# so this crate needs no database driver or temp-directory crate of its own.
+lrsalvage-fixtures = { path = "../lrsalvage-fixtures", version = "0.1.0" }

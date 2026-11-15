@@ -49,6 +49,12 @@ segments.
 Format knowledge stays in the module named after the format. Nothing else parses
 bytes, and `plan` never learns a byte offset.
 
+`crates/lrsalvage-fixtures` is test-only and is not a module: it builds the
+synthetic vaults `specs/fixtures.md` requires — the byte shapes, the catalog and
+`previews.db` — and is a dev-dependency of both crates. A test composes a
+`Vault`; it does not write a fixture of its own, and a fourth ad-hoc writer is
+not allowed.
+
 ## Verification
 
 - `cargo test` must pass.
