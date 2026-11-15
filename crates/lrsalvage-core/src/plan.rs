@@ -253,11 +253,12 @@ impl Plan {
         // layout, the shape histogram, which pyramids are superseded and which
         // nobody claims. A second pass would be a second answer.
         let sweep = previews_db::sweep(cache_root);
+        let measured = measure(&sweep);
         let cache = CacheFacts {
             layout: sweep.layout(),
             db_version: versions.db_version,
             crs_version: versions.crs_version,
-            shapes: summarize_shapes(&sweep),
+            shapes: measured.shapes,
         };
         let mut items = Vec::new();
         let mut stats = Stats {
@@ -430,7 +431,7 @@ impl Plan {
         // representations is the `superseded` cache stat rather than an item.
         for pyramid in &sweep.pyramids {
             if !claimed.contains(&format!("{}-{}", pyramid.uuid, pyramid.digest)) {
-                let Some(payload) = unclaimed_payload(pyramid) else {
+                let Some(payload) = unclaimed_payload(pyramid, &measured) else {
                     continue;
                 };
                 let named = payload.path().to_string_lossy().replace('\\', "/");
@@ -500,13 +501,19 @@ fn distinct_selected_images(items: &[PlanItem]) -> usize {
         .len()
 }
 
-/// What an unclaimed pyramid is reported as: the largest level file it holds
-/// (`_<n>` descending, no read), or the `.lrprev` when it holds no level file.
+/// What an unclaimed pyramid is reported as: the largest level file it holds by
+/// **measured** `SOF` area, or the `.lrprev` when it holds no level file.
 ///
 /// Nothing is selected or written for either arm: an unclaimed payload has no
 /// catalog image, so there is no output path to plan for it.
-fn unclaimed_payload(pyramid: &PyramidOnDisk) -> Option<Payload> {
-    if let Some(level) = pyramid.largest_level() {
+///
+/// The rank is measured, in every mode, because the row is the claim and the
+/// bytes are the verdict (`adr-0005-discover-payloads-by-index` ¶5, ¶9). A leaf's
+/// `_<n>` is only its author's word; a file whose frame cannot be read at all
+/// ranks below one that can, then by that name, then by path, so the choice is
+/// never arbitrary.
+fn unclaimed_payload(pyramid: &PyramidOnDisk, measured: &Measured) -> Option<Payload> {
+    if let Some(level) = measured.largest_level(pyramid) {
         return Some(Payload::LevelFile {
             path: level.to_path_buf(),
         });
@@ -519,45 +526,78 @@ fn unclaimed_payload(pyramid: &PyramidOnDisk) -> Option<Payload> {
     })
 }
 
-/// The class each payload took, counted over the one tree walk.
+/// One read of every level file the cache holds, and the two facts it yields.
 ///
-/// `level_file` and `container` need nothing but names. `suffix_matches_sof` is
-/// the one count that reads a payload: it compares the `_<n>` a leaf names with
-/// the long edge that leaf's own `SOF` measured, which is why it is the count
-/// that can catch an index that rotted. Incompleteness does not disqualify a
-/// readable frame, and a file with no readable `SOF` simply does not match
-/// (`adr-0007-publish-a-verification-report`).
-///
-/// Each level file is read whole, and that is the cost this histogram adds to a
-/// scan: a bounded prefix could cut an `APPn` segment in half and lose a frame
-/// that is really there, and a frame that cannot be read counts as no match.
-fn summarize_shapes(sweep: &CacheSweep) -> Shapes {
-    let mut shapes = Shapes::default();
-    for pyramid in &sweep.pyramids {
-        shapes.level_file += pyramid.levels.len() as u64;
-        shapes.container += u64::from(pyramid.container.is_some());
-        shapes.suffix_matches_sof += pyramid
-            .levels
-            .iter()
-            .filter(|level| names_its_measured_sof(level))
-            .count() as u64;
-    }
-    shapes
+/// The histogram and the rank come from the same bytes, so a `scan` pays for one
+/// pass over the cache and not two: `suffix_matches_sof` is the count that catches
+/// an index whose names rotted, and the measured area is what orders a pyramid
+/// nobody claims (`adr-0005-discover-payloads-by-index` ¶9,
+/// `adr-0007-publish-a-verification-report`).
+#[derive(Debug, Default)]
+struct Measured {
+    shapes: Shapes,
+    /// `<cache>/<uuid[0]>/<uuid[0..4]>/<UUID>-<digest>_<n>` → the pixel area its
+    /// own `SOF` declared. Absent when the bytes declared no readable frame.
+    areas: HashMap<PathBuf, u64>,
 }
 
-/// `true` when the `_<n>` this leaf names is the long edge its own bytes
-/// declared.
-fn names_its_measured_sof(level: &LevelOnDisk) -> bool {
-    let Ok(bytes) = std::fs::read(&level.path) else {
-        return false;
-    };
-    match jpeg::certify(&bytes) {
-        Ok(certified) => {
-            let (width, height) = certified.dimensions;
-            width.max(height) == level.long_edge
-        }
-        Err(_) => false,
+impl Measured {
+    /// The largest level file of this pyramid, by measured area, then by the
+    /// `_<n>` the leaf names, then by path.
+    fn largest_level<'a>(&self, pyramid: &'a PyramidOnDisk) -> Option<&'a Path> {
+        pyramid
+            .levels
+            .iter()
+            .max_by(|a, b| {
+                (self.areas.get(&a.path), a.long_edge, &a.path).cmp(&(
+                    self.areas.get(&b.path),
+                    b.long_edge,
+                    &b.path,
+                ))
+            })
+            .map(|level| level.path.as_path())
     }
+}
+
+/// The class each payload took, counted over the one tree walk, and the area each
+/// level file's own frame declares.
+///
+/// `level_file` and `container` need nothing but names. `suffix_matches_sof` and
+/// the areas are the two counts that read a payload: they compare the `_<n>` a
+/// leaf names with the long edge its own `SOF` measured, which is what catches an
+/// index that rotted and what ranks an unclaimed pyramid. Incompleteness does not
+/// disqualify a readable frame, and a file with no readable `SOF` simply does not
+/// match (`adr-0007-publish-a-verification-report`).
+///
+/// Each level file is read whole, and that is the cost this pass adds to a scan:
+/// a bounded prefix could cut an `APPn` segment in half and lose a frame that is
+/// really there, and a frame that cannot be read counts as no match.
+fn measure(sweep: &CacheSweep) -> Measured {
+    let mut measured = Measured::default();
+    for pyramid in &sweep.pyramids {
+        measured.shapes.level_file += pyramid.levels.len() as u64;
+        measured.shapes.container += u64::from(pyramid.container.is_some());
+        for level in &pyramid.levels {
+            let Some((width, height)) = measured_frame(level) else {
+                continue;
+            };
+            if width.max(height) == level.long_edge {
+                measured.shapes.suffix_matches_sof += 1;
+            }
+            measured
+                .areas
+                .insert(level.path.clone(), u64::from(width) * u64::from(height));
+        }
+    }
+    measured
+}
+
+/// The frame this level file's own bytes declare, `None` when they declare none.
+fn measured_frame(level: &LevelOnDisk) -> Option<(u32, u32)> {
+    let bytes = std::fs::read(&level.path).ok()?;
+    jpeg::certify(&bytes)
+        .ok()
+        .map(|certified| certified.dimensions)
 }
 
 /// One level of one pyramid, as the plan found it.

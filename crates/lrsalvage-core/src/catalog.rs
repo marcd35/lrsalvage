@@ -455,7 +455,7 @@ mod tests {
 
     use crate::error::Error;
     use crate::model::{CatalogImage, Orientation, XmpMetadata};
-    use crate::previews_db::PreviewIndex;
+    use crate::previews_db;
     use crate::snapshot::CatalogSnapshot;
 
     use super::{Catalog, CatalogVersions};
@@ -831,7 +831,7 @@ mod tests {
         );
         assert_eq!(images.len(), 78, "expected 78 images");
 
-        let index = PreviewIndex::open(&cache_root.join("previews.db")).unwrap();
+        let index = previews_db::open(&cache_root.join("previews.db")).index;
         assert_eq!(index.entries.len(), 78, "expected 78 cache entries");
 
         let mut with_xmp = 0;

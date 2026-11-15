@@ -8,8 +8,8 @@ use indicatif::{ProgressBar, ProgressStyle};
 use lrsalvage_core::catalog::Catalog;
 use lrsalvage_core::extract::{self, ExtractOptions, OutcomeStatus};
 use lrsalvage_core::plan::{Options, Plan, Status, Tier};
-use lrsalvage_core::previews_db::{Layout, PreviewIndex};
-use lrsalvage_core::{Error, Result, masks, report};
+use lrsalvage_core::previews_db::{IndexProblem, Layout};
+use lrsalvage_core::{Error, Result, masks, previews_db, report};
 
 const EXIT_OK: u8 = 0;
 const EXIT_USAGE: u8 = 1;
@@ -157,18 +157,26 @@ fn open_plan(
     previews: &Path,
     options: &Options,
     output_root: &Path,
-) -> Result<(lrsalvage_core::snapshot::CatalogSnapshot, Plan)> {
-    let previews_db = previews.join("previews.db");
-    if !previews_db.exists() {
-        eprintln!(
-            "warning: {} has no previews.db; this cache holds no previews",
-            previews.display()
-        );
+) -> Result<(
+    lrsalvage_core::snapshot::CatalogSnapshot,
+    Plan,
+    Option<IndexProblem>,
+)> {
+    // A path that is not a directory has nothing to salvage, which is a different
+    // fact from an empty cache: a typo must never read as one
+    // (`adr-0006-degrade-without-guessing` ¶3).
+    if !previews.is_dir() {
+        return Err(Error::PreviewsNotADirectory {
+            path: previews.to_path_buf(),
+        });
     }
+
     let (snapshot, catalog) = Catalog::open(catalog_path)?;
-    let index = PreviewIndex::open(&previews_db)?;
-    let plan = Plan::build(&catalog, &index, previews, output_root, options)?;
-    Ok((snapshot, plan))
+    // A missing or unreadable index is a mode, never a fatal error: the plan is
+    // built from an empty index and the reason is carried out for the hint.
+    let opened = previews_db::open(&previews.join("previews.db"));
+    let plan = Plan::build(&catalog, &opened.index, previews, output_root, options)?;
+    Ok((snapshot, plan, opened.problem))
 }
 
 fn scan(args: ScanArgs) -> Result<u8> {
@@ -177,13 +185,15 @@ fn scan(args: ScanArgs) -> Result<u8> {
         all_levels: args.all_levels,
         include_present: args.include_present,
     };
-    let (_snapshot, plan) = open_plan(&args.catalog, &args.previews, &options, Path::new("."))?;
+    let (_snapshot, plan, index_problem) =
+        open_plan(&args.catalog, &args.previews, &options, Path::new("."))?;
 
     if args.json {
         println!("{}", scan_json(&plan, &args.catalog, &args.previews));
     } else {
         print!("{}", report::summary_with_floor(&plan, args.min_long_edge));
     }
+    index_hint(&plan, index_problem.as_ref(), &args.previews);
     layout_hint(&plan);
 
     if args.verbose {
@@ -218,6 +228,41 @@ fn scan(args: ScanArgs) -> Result<u8> {
         return Ok(EXIT_NOTHING);
     }
     Ok(EXIT_OK)
+}
+
+/// ADR 0006 ¶1–¶2's one block for a cache whose index is missing or unreadable.
+///
+/// It names the file and the counts the plan produced, and it never claims the
+/// cache is empty: no index means no *mapping*, not no payloads.
+fn index_hint(plan: &Plan, problem: Option<&IndexProblem>, previews: &Path) {
+    let Some(problem) = problem else {
+        return;
+    };
+    let file = previews
+        .join("previews.db")
+        .to_string_lossy()
+        .replace('\\', "/");
+    let stats = &plan.stats;
+    match problem {
+        IndexProblem::Missing => {
+            eprintln!(
+                "hint: {file} is missing, so {} payloads cannot be matched to any of the {} catalog images.",
+                stats.unmapped, stats.images
+            );
+            eprintln!(
+                "      They are listed as unmapped and never written; scan --verbose prints each path, extract records them in report.csv."
+            );
+        }
+        IndexProblem::Unreadable(reason) => {
+            eprintln!(
+                "hint: {file} could not be read ({reason}), so {} payloads cannot be matched to any of the {} catalog images.",
+                stats.unmapped, stats.images
+            );
+            eprintln!(
+                "      They are listed as unmapped and never written; fix or move the file to name them."
+            );
+        }
+    }
 }
 
 /// ADR 0004's one hint for a cache whose payloads are all of a shape this reader
@@ -289,12 +334,20 @@ fn extract(args: ExtractArgs) -> Result<u8> {
         extract::ensure_safe_destination_create(&args.out, &args.catalog, &args.previews)?;
     }
 
-    let (_snapshot, plan) = open_plan(&args.catalog, &args.previews, &options, &args.out)?;
+    let (_snapshot, plan, index_problem) =
+        open_plan(&args.catalog, &args.previews, &options, &args.out)?;
     print!("{}", report::summary_with_floor(&plan, args.min_long_edge));
+    index_hint(&plan, index_problem.as_ref(), &args.previews);
     layout_hint(&plan);
 
     let selected = plan.selected().count();
     if plan.selected_images() == 0 {
+        // ADR 0006 ¶7: a run that named nothing still hands over what it found
+        // when it found orphan payloads. A run with neither writes no file at
+        // all — an empty run is not something to report on.
+        if !args.dry_run && plan.stats.unmapped > 0 {
+            write_plan_reports(&plan, &args.out)?;
+        }
         eprintln!("nothing to extract");
         return Ok(EXIT_NOTHING);
     }
@@ -336,19 +389,9 @@ fn extract(args: ExtractArgs) -> Result<u8> {
         .count();
 
     if !args.dry_run {
-        // These three files are the tool's own report, but a name on disk may
-        // belong to somebody else: take the next free number, never clobber.
-        let csv = claim(args.out.join("report.csv"));
-        at_destination(&csv, report::write_csv(&plan, &csv))?;
-        let manifest = claim(args.out.join("manifest.json"));
-        at_destination(
-            &manifest,
-            report::write_json(&plan, &manifest, env!("CARGO_PKG_VERSION")),
-        )?;
+        write_plan_reports(&plan, &args.out)?;
         let run_csv = claim(args.out.join("extract.csv"));
         at_destination(&run_csv, extract::write_outcomes_csv(&outcomes, &run_csv))?;
-        eprintln!("wrote {}", csv.display());
-        eprintln!("wrote {}", manifest.display());
         eprintln!("wrote {}", run_csv.display());
     }
 
@@ -359,6 +402,24 @@ fn extract(args: ExtractArgs) -> Result<u8> {
         return Ok(EXIT_PARTIAL);
     }
     Ok(EXIT_OK)
+}
+
+/// The plan's own record: `report.csv` and `manifest.json`, written whenever a
+/// run has something to report on and never on a dry run (`adr-0006` ¶7).
+///
+/// Each name is claimed, never assumed: a name on disk may belong to somebody
+/// else, so an existing one takes the next free number.
+fn write_plan_reports(plan: &Plan, out: &Path) -> Result<()> {
+    let csv = claim(out.join("report.csv"));
+    at_destination(&csv, report::write_csv(plan, &csv))?;
+    let manifest = claim(out.join("manifest.json"));
+    at_destination(
+        &manifest,
+        report::write_json(plan, &manifest, env!("CARGO_PKG_VERSION")),
+    )?;
+    eprintln!("wrote {}", csv.display());
+    eprintln!("wrote {}", manifest.display());
+    Ok(())
 }
 
 /// A failure to use `path` as a destination is exit 4, not "bad arguments".
