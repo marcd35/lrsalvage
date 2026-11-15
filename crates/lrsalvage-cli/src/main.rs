@@ -34,8 +34,7 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
-    /// Report what is recoverable. Writes nothing except an explicitly
-    /// requested contact sheet.
+    /// Report what is recoverable. Writes nothing except the files you name.
     Scan(ScanArgs),
     /// Write the recoverable JPEGs, plus a report and a JSON manifest.
     Extract(ExtractArgs),
@@ -57,6 +56,9 @@ struct ScanArgs {
     /// Write a self-contained HTML contact sheet of the best previews.
     #[arg(long)]
     contact_sheet: Option<PathBuf>,
+    /// Write the path-free verification report to this file.
+    #[arg(long)]
+    report: Option<PathBuf>,
     /// Print one line per plan item instead of only totals.
     #[arg(long)]
     verbose: bool,
@@ -219,14 +221,22 @@ fn scan(args: ScanArgs) -> Result<u8> {
         }
     }
 
+    // Both artifacts a scan can be asked for are written here: on exit 0 and on
+    // exit 3 alike, before the "nothing selected" decision, because a run that
+    // recovered nothing is the run most worth handing over. Neither decides the
+    // code (`adr-0007-publish-a-verification-report`).
+    if let Some(path) = args.report {
+        write_verification_report(&plan, &options, &path, &args.catalog, &args.previews)?;
+    }
+
     if let Some(path) = args.contact_sheet {
-        // The sheet is the one thing `scan` writes, so it gets the same
+        // The sheet is a named artifact like any other, so it gets the same
         // destination rule as `--out`: never inside the evidence.
-        let parent = path
-            .parent()
-            .filter(|parent| !parent.as_os_str().is_empty())
-            .unwrap_or_else(|| Path::new("."));
-        extract::ensure_safe_destination_pending(parent, &args.catalog, &args.previews)?;
+        extract::ensure_safe_destination_pending(
+            destination_parent(&path),
+            &args.catalog,
+            &args.previews,
+        )?;
         at_destination(
             &path,
             report::write_contact_sheet(&plan, &path, &args.previews),
@@ -299,11 +309,6 @@ fn layout_hint(plan: &Plan) {
 
 fn scan_json(plan: &Plan, catalog: &Path, previews: &Path) -> String {
     let stats = &plan.stats;
-    let tiers: serde_json::Map<String, serde_json::Value> = stats
-        .tiers
-        .iter()
-        .map(|(k, v)| ((*k).to_string(), serde_json::json!(v)))
-        .collect();
     serde_json::json!({
         "catalog": catalog.to_string_lossy().replace('\\', "/"),
         "previews": previews.to_string_lossy().replace('\\', "/"),
@@ -325,7 +330,7 @@ fn scan_json(plan: &Plan, catalog: &Path, previews: &Path) -> String {
         "superseded": stats.superseded,
         "deleted": stats.deleted,
         "unrecognised": stats.unrecognised,
-        "tiers": tiers,
+        "tiers": report::tiers_json(stats),
         "shapes": report::shapes_json(&plan.cache.shapes),
     })
     .to_string()
@@ -435,6 +440,36 @@ fn write_plan_reports(plan: &Plan, out: &Path) -> Result<()> {
     )?;
     eprintln!("wrote {}", csv.display());
     eprintln!("wrote {}", manifest.display());
+    Ok(())
+}
+
+/// The directory a named artifact lands in, `.` when only a name was given.
+fn destination_parent(path: &Path) -> &Path {
+    path.parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."))
+}
+
+/// `--report`: the path-free verification report, written for the plan the run
+/// made and moved by no exit code (`adr-0007-publish-a-verification-report`).
+///
+/// The parent obeys the `--out` destination rule, and the name is claimed: a
+/// name already on disk may belong to somebody else. What the file says is
+/// `report`'s; the path, the claim and the code are this module's.
+fn write_verification_report(
+    plan: &Plan,
+    options: &Options,
+    path: &Path,
+    catalog: &Path,
+    previews: &Path,
+) -> Result<()> {
+    extract::ensure_safe_destination_pending(destination_parent(path), catalog, previews)?;
+    let path = claim(path.to_path_buf());
+    at_destination(
+        &path,
+        report::write_verification(plan, options, &path, env!("CARGO_PKG_VERSION")),
+    )?;
+    eprintln!("wrote {}", path.display());
     Ok(())
 }
 

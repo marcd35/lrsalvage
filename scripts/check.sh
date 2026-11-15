@@ -71,7 +71,9 @@ gate_typos() {
 gate_deny() {
     printf '%s\n' '== deny'
     require cargo-deny 'cargo install cargo-deny --locked'
-    cargo deny check
+    # The inclusion graphs are a tree per duplicate crate — thousands of lines
+    # about `syn` that no gate run needs; the verdict line survives.
+    cargo deny check --hide-inclusion-graph
 }
 
 require() {

@@ -84,11 +84,12 @@ struct a path.
   `manifest.json` groups its image counts under `stats`, so they join them there.
   That nesting is the contract, not an accident of who wrote which file. Both
   carry `layout`, `db_version`, `crs_version` and `shapes` as three numbers —
-  `level_file`, `suffix_matches_sof`, `container` — and `shapes` is built by one
-  shared helper, the only part of the pair a single function can own because it
-  is the only part shaped identically. The nested-per-class form with a grammar
-  template in it is the verification report's and belongs there alone. An absent
-  version string is `null`, never `""` and never a stand-in.
+  `level_file`, `suffix_matches_sof`, `container` — and `shapes` and the tier
+  histogram are each built by one shared helper: they are the parts a single
+  function can own because they are the parts shaped identically on every
+  machine surface. The nested-per-class form with a grammar template in it is the
+  verification report's and belongs there alone. An absent version string is
+  `null`, never `""` and never a stand-in.
 - **The summary counts images and names the floor actually applied.** The default
   summary assumes 640, so a caller that changed the floor calls
   `summary_with_floor`; a summary that reports a `below_floor` count for a floor
@@ -115,7 +116,9 @@ struct a path.
   `lrsalvage.verification`, the tool `version` that wrote it, `generated_unix`;
   then `layout`, `db_version` and `crs_version` (ADR 0004's five words and two
   verbatim strings), `options` (`min_long_edge`, `all_levels`,
-  `include_present`), `stats`, and `shapes`. `stats` carries exactly `images`,
+  `include_present`), `stats`, and `shapes`. `options` echoes the knobs the run
+  applied, which the caller hands over with the plan: a plan records what the
+  run decided, not the options that shaped it. `stats` carries exactly `images`,
   `recovered`, `suspect`, `missing_payload`, `no_cache_entry`, `unmapped`,
   `failed`, `original_present`, `below_floor`, `bytes`, `levels`,
   `selected_items`, `selected_images`, `tiers`, `superseded`, `deleted` and
@@ -131,16 +134,18 @@ struct a path.
   asserts the written bytes contain none of a vault's absolute paths, uuids,
   digests, shard folder names or leaf names (`adr-0007-publish-a-verification-report`).
 - **`shapes` counts the class each payload took, and carries that class's
-  grammar.** `level_file` holds its `count` and `suffix_matches_sof` — how many of
-  those leaves name the long edge the `SOF` measured, the one claim derived from
-  the index that can rot — and `container` holds its `count`. Each class also
-  carries the template it stands for, printed verbatim from the constants
-  `previews_db` owns: a mixed cache therefore publishes both grammars, which one
-  cache-wide string could only get wrong. A class with no file reports `count: 0`
-  and no grammar, because a template for a shape the cache never showed is an
-  example nobody asked for. `unrecognised` has no class here on purpose: it counts
-  files that took no shape, and it already has a `stats` field
-  (`adr-0005-discover-payloads-by-index`).
+  grammar.** `level_file` is `{"count", "suffix_matches_sof", "template"}`:
+  its `count`, how many of those leaves name the long edge the `SOF` measured —
+  the one claim derived from the index that can rot — and its grammar.
+  `container` is `{"count", "template"}`, because a container's own size is
+  nothing the cache publishes. Each class's `template` is printed verbatim from
+  the constants `previews_db` owns — `LEVEL_FILE_GRAMMAR` and
+  `CONTAINER_GRAMMAR` — so a mixed cache publishes both grammars, which one
+  cache-wide string could only get wrong. A class with no file reports
+  `count: 0` and **no** `template` key, because a template for a shape the
+  cache never showed is an example nobody asked for. `unrecognised` has no class
+  here on purpose: it counts files that took no shape, and it already has a
+  `stats` field (`adr-0005-discover-payloads-by-index`).
 - **`--json` stays the stdout surface; the report is the only path-free one.** A
   redaction switch would leave two ways to produce one object and a flag whose
   whole job is to be remembered, so there is none: `--json` gains only what

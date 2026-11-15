@@ -181,10 +181,9 @@ On macOS or Linux, use a trailing backslash instead of `^` to continue a line.
 `scan` is the safe first move: it opens everything read-only, joins the catalog
 against the preview index, and prints totals — recoverable images, their size
 tiers, and a count for each other state that occurs. It writes no files unless
-you ask for a contact sheet. Give `--contact-sheet` a path to get a
-self-contained HTML page of the images `extract` would write, each shown with the
-smallest level in its pyramid — a contact sheet wants recognition, not
-resolution.
+you name one. Give `--contact-sheet` a path to get a self-contained HTML page of
+the images `extract` would write, each shown with the smallest level in its
+pyramid — a contact sheet wants recognition, not resolution.
 
 A count is not a verdict. `--verbose` adds one line per plan item — per image at
 its best level, plus one per extra level with `--all-levels`, plus one per
@@ -226,6 +225,24 @@ None of `superseded`, `deleted` or `unrecognised` is an image's status, and none
 of them changes the exit code: they describe the cache the run found, not what
 became of any photograph.
 
+`--json` keeps the two input paths, because stdout is for you or a script on your
+own machine. When you want to hand a run to somebody else, use
+`--report <file>`: it writes the **verification report**, one JSON object with
+schema `lrsalvage.verification`, the tool `version` and `generated_unix`, the
+`layout` and both version strings, the `options` the run applied (`min_long_edge`,
+`all_levels`, `include_present`), the same `stats` counts as above, and `shapes`
+as one object per class — `level_file` with its `count`, how many of those leaves
+name the long edge their own frame measures (`suffix_matches_sof`) and the
+grammar they follow, `container` with its `count` and grammar. A class the cache
+showed no file for reports `count: 0` and carries no grammar, so an absent
+template means "no such file", never a broken one. The only names in
+the file are templates with `<uuid…>`, `<digest>` and `<longedge>` in place of the
+real ones, so it carries no catalog or cache path, no folder, no uuid and no file
+name. It is written whenever you ask for it and a plan exists — a run that
+recovered nothing included — and it never moves the exit code. There is no
+redaction flag on `--json`: two ways to produce one object would only be a flag
+to forget.
+
 `extract` takes the same two paths plus a destination. It shares
 `--min-long-edge`, `--all-levels`, and `--include-present` with `scan`; the table
 names which command each flag belongs to:
@@ -237,6 +254,7 @@ names which command each flag belongs to:
 | `--include-present` | Also include images whose original file still exists on disk. |
 | `--verbose` | `scan` only: print one line per plan item instead of only totals. |
 | `--json` | `scan` only: emit one machine-readable object instead of the table. |
+| `--report <file>` | `scan` only: write the path-free verification report to this file. Written whenever the flag is given and a plan exists, exit `3` included; its parent must not be inside the catalog, the cache or `.lrcat-data`; an existing name takes the next free number (`scan (2).json`). |
 | `--dry-run` | Do everything except write files, report files included. |
 | `--force` | Replace a destination file that does not verify as ours. A file is ours only when it carries the `Software` marker `lrsalvage <version>`, is a complete JPEG, and its dimensions match the planned item. Anything else — a same-size file another tool wrote, or one of our own outputs from before the marker existed — is reported as failed and left byte-identical. |
 | `--no-metadata` | Do not add any metadata to the recovered JPEGs: no EXIF (so no orientation or rating), no rating XMP packet, no ICC profile, and no marker. Such output carries no proof of authorship, so a later run reports every destination as not a verified extraction and leaves it alone unless `--force` is given. |
@@ -307,8 +325,8 @@ The catalog is the only copy of the map. It is treated as read-only evidence:
   or inside the preview cache is rejected before anything is written. Pointing
   the tool at `My Catalog Previews.lrdata` and telling it to fill that folder is
   how a recovery becomes a second data loss. The same check covers the report
-  files in the output root and a requested `--contact-sheet`, whose parent
-  directory is validated before the page is written.
+  files in the output root, a requested `--contact-sheet` and a requested
+  `--report`, each validated before its own file is written.
 - **`scan` writes only what you name.** Without a flag that gives it a path, it
   writes no file anywhere the user can see; every file it does write obeys the
   destination rule above and takes a free numbered name instead of overwriting
@@ -414,7 +432,7 @@ payload is written unchanged and carries no marker. See
 | 1 | Usage or input error: bad arguments, a catalog that is missing, unreadable or not a catalog, or a `--previews` path that is not a directory. |
 | 2 | `extract` completed with some failures: at least one selected image could not be written. The run did real work and also hit something it could not do. `scan` never returns 2. |
 | 3 | Nothing selected to do: no image was selected to write — for example, every original is still present, every preview is below the floor, or the cache has no readable `previews.db` so no payload could be named. `scan` and `extract` use the same test, so they agree on this code. `masks` returns 3 when it finds no `.dat` file or decodes none. |
-| 4 | Unsafe or unwritable destination: `--out` (or the contact-sheet directory) resolves inside the catalog or preview cache — or, for `masks`, inside the `.lrcat-data` directory — or cannot be created or written. |
+| 4 | Unsafe or unwritable destination: `--out` (or the contact sheet's or verification report's directory) resolves inside the catalog or preview cache — or, for `masks`, inside the `.lrcat-data` directory — or cannot be created or written. |
 
 `2` is the one to pay attention to in scripts: the report says which items failed
 and why. `3` is not an error — a catalog where every original is still on disk
