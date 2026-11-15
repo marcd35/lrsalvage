@@ -867,8 +867,9 @@ impl Vault {
         };
         let mut level_values = String::from("?1, ?2, ?3, ?4, ?5, ?6, ?7");
         if modern {
-            // §5.4: `fileSize` is not the on-disk size, so a synthetic value
-            // would be a fabricated fact. No row pins it yet.
+            // Nothing reads `fileSize`, and a synthetic number here would be a
+            // fact no row pins: a level file is written to its own bytes, and
+            // §5.4 measures `fileSize` against them rather than the reverse.
             level_values.push_str(", NULL");
         }
 

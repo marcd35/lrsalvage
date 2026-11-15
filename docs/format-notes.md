@@ -616,9 +616,9 @@ picture upright without touching a pixel (ADR 0003).
 > `unmapped`, and the run exits 3 with one hint. `scan --report` writes the
 > path-free verification artifact a stranger can hand over, and `extract` writes
 > one JPEG per image with the same metadata treatment legacy payloads get.
-> Closed against [issue #2](https://github.com/marcd35/lrsalvage/issues/2).
+> Delivery: [issue #2](https://github.com/marcd35/lrsalvage/issues/2).
 
-Lightroom Classic 13.3 changed preview storage. Sections 5.1–5.4 and 5.7–5.9 are
+Lightroom Classic 13.3 changed preview storage. Sections 5.1–5.4, 5.7 and 5.9 are
 **verified** on an upgraded catalog; sections 5.5 and 5.8 list what remains
 unmeasured, which is not the same as untested software. The tool must still
 detect the layout rather than assume either one.
@@ -710,19 +710,23 @@ stale rows; a cache holding both `.lrprev` and modern payloads (this upgrade
 converted everything in place, so coexistence was not observed); any conversion
 from a catalog newer than `1200001`.
 
-Each state that *can* be constructed has an executable row in
-`specs/fixtures.md`, labelled `unmeasured` there because a fixture proves how the
-reader behaves in a state and never that Adobe produces it:
+Every state above that a fixture *can* construct has a row in
+`specs/fixtures.md`. Those rows are labelled `unmeasured` — `unverified` for
+M13 — because a fixture proves how the reader behaves in a state and never that
+Adobe produces it:
 
 | Unmeasured state | Row that pins the reader | What the row cannot show |
 |---|---|---|
 | Pruned level: the row's file is gone, a smaller level survives | `M3` | that a Lightroom upgrade prunes this way |
 | Level file with no row (found by the bounded glob) | `M4` | that the index ever forgets a row |
 | Both representations for one pyramid (`superseded`) | `X1` | that this upgrade leaves a `.lrprev` behind |
+| Coexistence, resolved per pyramid rather than per cache | `X2` | that Adobe produces a mixed cache at all |
 | A freshly built render's payload metadata | `M13` (§5.8) | everything about what Adobe writes |
 
 So the software's behaviour in those states is tested; the claim that Lightroom
-produces them is not.
+produces them is not. The one state with no row at all is a conversion from a
+catalog newer than `1200001`, which is a fact about Adobe's upgrader rather than
+about the reader.
 
 ### 5.6 Consequences
 
@@ -780,7 +784,7 @@ All 390 payloads of the upgraded cache were read (every file, not a sample) on
   This is a property of the layout, not something observed in situ: no payload in
   this cache carries an `APP1` segment at all.
 - **The reader reproduces every fact above — verified, 2026-11-15.** A `scan` of
-  this same cache with the shipped build reports `layout modern`,
+  this same cache with the build from this tree reports `layout modern`,
   `db_version 1504001`, `crs_version 18.0.0`, `images 78`, `recovered 78`,
   `failed 0`, `unmapped 0`, `unrecognised 0`, and `shapes` of
   `level_file 390`, `suffix_matches_sof 390`, `container 0`. The last pair is
@@ -828,15 +832,14 @@ All 390 payloads of the upgraded cache were read (every file, not a sample) on
   It remains evidence of the *decision*, never of an Adobe render: no payload on
   this machine has been measured with an `Exif` APP1 (§1.4), so what Lightroom
   writes stays **unverified**.
-- **Measured again through `extract`, and still empty:** the 2026-11-15 run of
-  §5.9 wrote 78 outputs from 26,330,281 payload bytes. `payload_metadata` was
-  blank in all 78 rows of `report.csv` — no `Exif`, no XMP, no `ICC_PROFILE` —
-  which agrees with a fresh walk of all 390 level files that found no `APP1` and
-  no `APP2` segment. The payloads on this machine are the converted legacy
-  levels, so the metadata-bearing state of M13 cannot come from here. It needs a
-  cache Lightroom rendered from scratch.
+- **Verified, 2026-11-15:** the run of §5.9 wrote 78 outputs from 26,330,281
+  payload bytes. `payload_metadata` was blank in all 78 rows of `report.csv` —
+  no `Exif`, no XMP, no `ICC_PROFILE` — which agrees with a fresh walk of all 390
+  level files that found no `APP1` and no `APP2` segment. The payloads on this
+  machine are the converted legacy levels, so the metadata-bearing state of M13
+  cannot come from here. It needs a cache Lightroom rendered from scratch.
 
-### 5.9 The shipped build, run against this cache — VERIFIED
+### 5.9 The build from this tree, run against this cache — VERIFIED
 
 On 2026-11-15 the binary built from this tree (`0.1.0`) was run against the
 upgraded catalog and its cache, read-only, with every write going to a scratch
@@ -864,10 +867,11 @@ What those numbers pinned, beyond the sections above:
   which is the `bytes` stat both `scan` surfaces report. That is ADR 0003 on the
   modern layout measured rather than inferred.
 - **Only metadata segments are added, and always the same three.** Every output
-  is its payload plus exactly 2,753 bytes: an `Exif` APP1, a rating XMP APP1, and
-  a 2,100-byte `ICC_PROFILE` APP2 rebuilt from `Pyramid.colorProfile` (§6.4) —
-  the payload carries none of its own, so `payload_metadata` is empty everywhere
-  and the rebuild is the one that lands.
+  is its payload plus exactly 2,753 bytes of segments: a 330-byte `Exif` APP1, a
+  321-byte rating XMP APP1, and a 2,102-byte `ICC_PROFILE` APP2 whose length
+  field is 2,100 and whose payload is the 2,084-byte `sRGB` profile rebuilt from
+  `Pyramid.colorProfile` (§6.4). The level file carries none of its own, so
+  `payload_metadata` is empty everywhere and the rebuild is the one that lands.
 - **The catalog half of the metadata arrives.** 78 of 78 rows carry a capture
   time, a rating (`0`, written as EXIF `0x4746`), an orientation (`AB` 75, `DA`
   3) and `color_profile sRGB`, and all 78 outputs carry the `lrsalvage 0.1.0`
