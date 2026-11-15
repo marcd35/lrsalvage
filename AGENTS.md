@@ -88,6 +88,10 @@ not allowed.
   `lrsalvage-cli`'s `tests/readme.rs` checks the README's flag and `--json`
   tables against the binary. A new dependency or a new field lands with its spec
   and its table.
+- **The real-vault test asserts the numbers `format-notes.md` publishes**, and it
+  is the only thing that can: §5.4 carried a false claim for months because
+  nothing checked it. Editing a byte-level claim means running
+  `sh scripts/check.sh real`, not re-reading the claim.
 - Byte-level facts learned from real files must be recorded in
   `docs/format-notes.md` with an evidence label (**verified**, **reported**,
   **unverified**, or **TODO**) before they are built on. Unlabelled claims are
@@ -109,6 +113,8 @@ compatibility table calls verified.
 
 ## Docs
 
+- `CODING_STANDARDS.md` — the judgement calls a check cannot hold. Read it before
+  reviewing a diff, and before writing a claim a stranger will act on.
 - `docs/agents/issue-tracker.md` — how to read a ticket before implementing it.
 - `docs/format-notes.md` — byte layouts, evidence labels, the `.lrcat-data` trap.
 - `docs/adr/` — decisions and their consequences; read before changing a seam.

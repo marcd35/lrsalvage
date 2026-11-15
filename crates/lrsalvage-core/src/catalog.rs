@@ -454,6 +454,7 @@ mod tests {
     use rusqlite::Connection;
 
     use crate::error::Error;
+    use crate::jpeg;
     use crate::model::{CatalogImage, Orientation, XmpMetadata};
     use crate::previews_db;
     use crate::snapshot::CatalogSnapshot;
@@ -879,6 +880,123 @@ mod tests {
         }
         assert_eq!(with_xmp, 78, "every image should carry xmp");
         assert_eq!(sony, 78, "every image should be a SONY capture");
+
+        // The numbers `docs/format-notes.md` §5 publishes were measured by hand,
+        // and one of them (§5.4) was wrong for months because nothing checked it.
+        // The ones with a mechanical shape are asserted here instead: run this
+        // after touching a byte-level claim in the notes.
+        let declared = declared_file_sizes(&cache_root);
+        assert_eq!(declared.len(), 390, "five levels for each of the 78 images");
+
+        let mut level_files = 0;
+        let mut declared_bytes = 0u64;
+        let mut digests = std::collections::HashSet::new();
+        for image in &images {
+            let entry = index
+                .entries
+                .get(&image.id_local)
+                .unwrap_or_else(|| panic!("no cache entry for image {}", image.id_local));
+            let pyramid = index
+                .pyramids
+                .get(&entry.uuid)
+                .unwrap_or_else(|| panic!("no Pyramid row for uuid {}", entry.uuid));
+            digests.insert(pyramid.digest.as_str());
+
+            // §5.2/§5.7: the level set is a doubling series, five leaves a
+            // pyramid, every one of them on disk.
+            let candidates = index.candidates(&cache_root, &entry.uuid, &entry.digest);
+            let mut series: Vec<u32> = candidates.iter().map(|one| one.long_edge).collect();
+            series.sort_unstable();
+            assert_eq!(series, vec![101, 202, 404, 808, 1616], "level series");
+            let best = index.best_level(&entry.uuid).expect("pyramid level");
+
+            for candidate in candidates {
+                let bytes = std::fs::read(&candidate.path)
+                    .unwrap_or_else(|why| panic!("{}: {why}", candidate.path.display()));
+                let certified = jpeg::certify(&bytes)
+                    .unwrap_or_else(|why| panic!("{}: {why:?}", candidate.path.display()));
+                level_files += 1;
+
+                // §5.7: the leaf names the long edge its own frame declares, and
+                // a converted level is a whole bare frame — no metadata of its
+                // own (§5.3), which is why the notes' metadata case needs a
+                // fixture (M13) rather than this cache.
+                let (width, height) = certified.dimensions;
+                assert_eq!(
+                    width.max(height),
+                    candidate.long_edge,
+                    "{}: leaf suffix against its own SOF",
+                    candidate.path.display()
+                );
+                assert!(
+                    certified.complete,
+                    "{}: FF D9 at EOF",
+                    candidate.path.display()
+                );
+                for segment in &certified.segments {
+                    assert!(
+                        segment.marker != 0xE1 && segment.marker != 0xE2,
+                        "{}: a level file carrying APP1/APP2",
+                        candidate.path.display()
+                    );
+                }
+
+                // §5.4: `PyramidLevel.fileSize` is the on-disk byte count.
+                let row = candidate.row.expect("every level of this cache has a row");
+                let claimed = declared
+                    .get(&(row.uuid.clone(), row.long_dimension))
+                    .unwrap_or_else(|| panic!("no fileSize for {} level", row.uuid));
+                assert_eq!(
+                    claimed,
+                    &(bytes.len() as u64),
+                    "§5.4: fileSize against the file's own bytes for {} level {}",
+                    row.uuid,
+                    row.level
+                );
+                declared_bytes += if row.long_dimension == best.long_dimension {
+                    *claimed
+                } else {
+                    0
+                };
+            }
+        }
+        assert_eq!(level_files, 390, "every payload file was read");
+        // What `scan` calls `bytes`: the payloads `extract` selects, so the
+        // largest level of each pyramid and not the whole store.
+        assert_eq!(declared_bytes, 26_330_281, "the payload total scan reports");
+        assert_eq!(digests.len(), 1, "§5.2: this store holds one digest");
+
         drop(snapshot);
+    }
+
+    /// Every `PyramidLevel.fileSize`, keyed by its pyramid and long edge.
+    ///
+    /// `previews_db` does not read the column — nothing in the reader needs a
+    /// declared size — so the assertion that the declaration matches the file
+    /// lives here, next to the real-cache evidence it backs.
+    fn declared_file_sizes(cache_root: &Path) -> std::collections::HashMap<(String, u32), u64> {
+        let conn = crate::snapshot::open_readonly(&cache_root.join("previews.db"))
+            .expect("the cache's previews.db");
+        let mut stmt = conn
+            .prepare("SELECT uuid, longDimension, fileSize FROM PyramidLevel")
+            .expect("the PyramidLevel columns");
+        let rows = stmt
+            .query_map([], |row| {
+                // `PyramidLevel` stores its numbers as REAL, so both the long
+                // edge and the size come back `1616.0`/`302569.0` (§5.7).
+                let long_dimension: f64 = row.get(1)?;
+                let file_size: f64 = row.get(2)?;
+                Ok((
+                    row.get::<_, String>(0)?,
+                    long_dimension.round() as u32,
+                    file_size.round() as u64,
+                ))
+            })
+            .expect("a readable PyramidLevel");
+        rows.map(|row| {
+            let (uuid, long_edge, file_size) = row.expect("a PyramidLevel row");
+            ((uuid, long_edge), file_size)
+        })
+        .collect()
     }
 }
