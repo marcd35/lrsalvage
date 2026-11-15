@@ -18,7 +18,7 @@
 //! | 6     | virtual copy ("Copy 1")                           | Recoverable     |
 //! | 7, 8  | two images over one file row (output collision)   | Recoverable     |
 //!
-//! plus one payload (uuid `ZZZZ…`) that no cache entry claims: Unmapped.
+//! plus one payload (uuid `FFFF…`) that no cache entry claims: Unmapped.
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -167,7 +167,10 @@ const IMAGES: &[ImageSpec] = &[
 ];
 
 /// Present in the cache, claimed by no `ImageCacheEntry`.
-const ORPHAN_UUID: &str = "ZZZZ0009-1111-4111-8111-000000000009";
+///
+/// The uuid is hex because a payload address is: the sweep parses the leaf and
+/// requires both shard folders to agree with it (§5.2).
+const ORPHAN_UUID: &str = "FFFF0009-1111-4111-8111-000000000009";
 
 /// A catalog, a preview cache and its payloads, all inside one temp dir.
 ///
@@ -314,7 +317,7 @@ fn plan_classifies_every_kind_of_image_and_still_selects_suspects() {
         .iter()
         .filter(|item| item.status == Status::Unmapped)
         .collect();
-    assert_eq!(unmapped.len(), 1, "exactly the ZZZZ payload is unclaimed");
+    assert_eq!(unmapped.len(), 1, "exactly the FFFF payload is unclaimed");
     assert!(unmapped[0].image.is_none());
     assert!(!unmapped[0].selected);
     assert!(

@@ -9,12 +9,15 @@
 //!
 //! **No total is asserted here.** The pinned totals belong to the slice that
 //! completes each vault, because they include counts this slice cannot produce:
-//! `modern`'s `unmapped 2` needs the orphan sweep over level files, `mixed`'s
-//! `superseded 1` is a stat that does not exist yet, and `legacy`'s totals
-//! include the unclaimed container L6. Rows still without a test are M4 and M11
-//! (the bounded glob), M6 and M10 (the sweep and a tombstone count), M13 and M14
-//! (`payload_metadata`, `effective_orientation`), X1 (the `superseded` stat),
-//! and every `unrecognised`/layout row.
+//! `modern`'s `deleted 1` needs the tombstone count, `mixed`'s `superseded 1`
+//! is a stat that does not exist yet, and no vault's `shapes` histogram exists
+//! at all. `unmapped` is the exception: this slice is what produces it, so it is
+//! asserted per vault below. The totals still open for `modern` are `recovered`,
+//! `suspect`, `missing_payload`, `no_cache_entry`, `original_present`,
+//! `below_floor`, `levels` and `selected_images`; for `legacy`, everything but
+//! `unmapped 1`. Rows still without a test are M6 (the `deleted` stat), M13 and
+//! M14 (`payload_metadata`, `effective_orientation`), X1 (the `superseded`
+//! stat), and every `unrecognised`/layout row but N1's `unmapped 0`.
 //!
 //! `modern` holds only the rows asserted below, so its `images` count is the
 //! count of this file's rows, not the thirteen the spec pins.
@@ -26,7 +29,7 @@ use lrsalvage_core::extract::{self, ExtractOptions, Outcome};
 use lrsalvage_core::jpeg;
 use lrsalvage_core::plan::{Options, Payload, Plan, PlanItem, Status, Tier};
 use lrsalvage_fixtures::bytes;
-use lrsalvage_fixtures::vault::{ImageRow, Level, PyramidRow, Vault, digest_of};
+use lrsalvage_fixtures::vault::{ImageRow, Level, PyramidRow, UnrecognisedFile, Vault, digest_of};
 
 // ---------------------------------------------------------------------------
 // Composition
@@ -63,6 +66,10 @@ fn m1_uuid() -> String {
     uuid(1)
 }
 
+/// M11's leaf carries a digest its row does not name, so it is another pyramid
+/// (`adr-0005-discover-payloads-by-index` ¶6).
+const DIGEST_B: &str = "b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0";
+
 /// `modern`, built from the rows this slice owns.
 ///
 /// | id | row |
@@ -76,11 +83,16 @@ fn m1_uuid() -> String {
 /// | 7 | M8 no index row |
 /// | 8 | M9 original still on disk |
 /// | 9 | M12 `longDimension` stored REAL, below the floor |
+/// | 10 | M4 level file found only by the widening, its 1616 row's file absent |
+/// | 11 | M11 row digestA, file digestB: missing-payload plus one orphan |
+/// | — | M10 an unclaimed pyramid of two level files (uuid 20) |
 fn modern() -> Vault {
     let (m1, m2) = (uuid(1), uuid(2));
     let (m3, m5) = (uuid(3), uuid(4));
     let (m5b, m7) = (uuid(5), uuid(6));
     let (m9, m12) = (uuid(8), uuid(9));
+    let (m4, m11) = (uuid(10), uuid(11));
+    let m10 = uuid(20);
 
     Vault::modern()
         // M1
@@ -129,6 +141,18 @@ fn modern() -> Vault {
         .image(ImageRow::new(9, "IMG_0009").cache(&m12))
         .pyramid(PyramidRow::new(&m12).level(101, 68))
         .level_file(Level::sized(&m12, 101, 68).long_dimension(101.0))
+        // M4: the 1616 row's file is gone; the `_640` file has no row at all and
+        // is found by the widening inside this pyramid's own shard folder.
+        .image(ImageRow::new(10, "IMG_0010").cache(&m4))
+        .pyramid(PyramidRow::new(&m4).level(1616, 1077))
+        .file_without_row(Level::sized(&m4, 640, 427))
+        // M11: the row names digestA, the file carries digestB, so the image has
+        // no payload and the file is another pyramid's.
+        .image(ImageRow::new(11, "IMG_0011").cache(&m11))
+        .pyramid(PyramidRow::new(&m11).level(1616, 1077))
+        .file_without_row(Level::sized(&m11, 1616, 1077).digest(DIGEST_B))
+        // M10: a pyramid no image claims, two level files, one orphan.
+        .unclaimed(&[Level::sized(&m10, 640, 427), Level::sized(&m10, 1616, 1077)])
         .write()
 }
 
@@ -159,10 +183,11 @@ fn damaged() -> Vault {
         .write()
 }
 
-/// `legacy`, built from L1-L5: one container per pyramid.
+/// `legacy`, built from L1-L6: one container per pyramid.
 fn legacy() -> Vault {
     let (l1, l2) = (uuid(1), uuid(2));
     let (l3, l4) = (uuid(3), uuid(4));
+    let l6 = uuid(20);
 
     Vault::legacy()
         // L1: three levels, the largest chunk is the last one
@@ -197,6 +222,8 @@ fn legacy() -> Vault {
         .row_without_file(Level::sized(&l4, 1616, 1077))
         // L5: an image with no cache row
         .image(ImageRow::new(5, "IMG_0005"))
+        // L6: a container no image claims — the container arm of the sweep.
+        .unclaimed(&[Level::sized(&l6, 1616, 1077)])
         .write()
 }
 
@@ -492,6 +519,145 @@ fn m9_an_image_whose_original_survives_is_not_a_salvage_target() {
 }
 
 #[test]
+fn m4_a_level_file_only_the_widening_found_recovers_the_image() {
+    let vault = modern();
+    let plan = vault.plan(&Options::default());
+
+    let m4 = item_for(&plan, 10);
+    assert_eq!(m4.status, Status::Recoverable);
+    assert_eq!(
+        (m4.width, m4.height),
+        (Some(640), Some(427)),
+        "the payload's own SOF, since no row declares this leaf"
+    );
+    assert_eq!(
+        m4.declared, None,
+        "a file with no row has nothing declared for it"
+    );
+    assert!(m4.selected);
+    assert!(is_level_file(m4), "{:?}", m4.payload);
+
+    // Premise: the row's own 1616 file is absent, so only the widening found it.
+    let expected = level_path(vault.previews(), &uuid(10), 640);
+    assert!(!level_path(vault.previews(), &uuid(10), 1616).exists());
+    assert_eq!(
+        m4.payload.as_ref().map(|payload| slashed(payload.path())),
+        Some(slashed(&expected))
+    );
+    assert_eq!(
+        m4.smallest_level.as_deref().map(slashed),
+        Some(slashed(&expected)),
+        "the sheet gets the one level the same widening found"
+    );
+    // `levels +1`: one item, so one level, for this image.
+    assert_eq!(items_for(&plan, 10).len(), 1);
+
+    // `bytes`: the file it produced is that payload, certified at its own size.
+    run_extract(&vault, &plan);
+    let written = written(m4);
+    let certified = jpeg::certify(&written).expect("the output is a JPEG");
+    assert!(certified.complete, "the output ends with EOI");
+    assert_eq!(certified.dimensions, (640, 427));
+}
+
+#[test]
+fn m10_an_unclaimed_pyramid_is_one_orphan_item() {
+    let vault = modern();
+    let plan = vault.plan(&Options::default());
+
+    let pyramid = uuid(20);
+    let items: Vec<&PlanItem> = plan
+        .items
+        .iter()
+        .filter(|item| {
+            item.payload
+                .as_ref()
+                .is_some_and(|payload| slashed(payload.path()).contains(&pyramid))
+        })
+        .collect();
+    assert_eq!(
+        items.len(),
+        1,
+        "two level files, one pyramid, one orphan: {items:#?}"
+    );
+
+    let orphan = items[0];
+    assert_eq!(orphan.status, Status::Unmapped);
+    assert!(orphan.image.is_none(), "nothing claims it");
+    assert!(!orphan.selected, "listed, never selected");
+    assert!(orphan.output.is_none(), "an orphan has no output path");
+    assert!(is_level_file(orphan), "{:?}", orphan.payload);
+    assert_eq!(
+        slashed(orphan.payload.as_ref().expect("payload").path()),
+        slashed(&level_path(vault.previews(), &pyramid, 1616)),
+        "the payload is the largest level it holds, chosen from the name alone"
+    );
+    assert!(
+        orphan
+            .note
+            .as_deref()
+            .is_some_and(|note| note.contains(&pyramid)),
+        "the note names the payload: {:?}",
+        orphan.note
+    );
+}
+
+#[test]
+fn m11_a_digest_mismatched_file_is_another_pyramid() {
+    let vault = modern();
+    let plan = vault.plan(&Options::default());
+
+    // The image's row names digestA; the only file carries digestB.
+    let m11 = item_for(&plan, 11);
+    assert_eq!(m11.status, Status::MissingPayload);
+    assert!(!m11.selected);
+    let digest_a = digest_of(&uuid(11));
+    assert_ne!(digest_a, DIGEST_B);
+    assert!(
+        !vault
+            .previews()
+            .join("A")
+            .join("AAAA")
+            .join(bytes::leaf(&uuid(11), &digest_a, 1616))
+            .exists()
+    );
+
+    // ... so the file is a pyramid of its own, and one orphan.
+    let orphans: Vec<&PlanItem> = plan
+        .items
+        .iter()
+        .filter(|item| item.status == Status::Unmapped)
+        .filter(|item| {
+            item.payload
+                .as_ref()
+                .is_some_and(|payload| slashed(payload.path()).contains(DIGEST_B))
+        })
+        .collect();
+    assert_eq!(orphans.len(), 1, "{:#?}", plan.items);
+    let (first, first_four) = bytes::leaf_dir(&uuid(11));
+    assert_eq!(
+        slashed(orphans[0].payload.as_ref().expect("payload").path()),
+        slashed(
+            &vault
+                .previews()
+                .join(first)
+                .join(first_four)
+                .join(bytes::leaf(&uuid(11), DIGEST_B, 1616))
+        ),
+        "only the pair maps, so the file is named by the pair it carries"
+    );
+}
+
+#[test]
+fn modern_counts_one_unmapped_item_per_unclaimed_pyramid() {
+    let plan = modern().plan(&Options::default());
+    assert_eq!(
+        plan.stats.unmapped, 2,
+        "M10's two level files are one orphan, M11's file is the other"
+    );
+}
+
+#[test]
 fn m12_a_real_long_dimension_names_the_leaf_and_the_floor_only_excludes() {
     let vault = modern();
     let plan = vault.plan(&Options::default());
@@ -750,6 +916,65 @@ fn l5_a_legacy_image_without_a_cache_row_is_no_cache_entry() {
 // ---------------------------------------------------------------------------
 // mixed
 // ---------------------------------------------------------------------------
+
+#[test]
+fn l6_an_unclaimed_container_is_one_orphan_item() {
+    let vault = legacy();
+    let plan = vault.plan(&Options::default());
+
+    let pyramid = uuid(20);
+    let items: Vec<&PlanItem> = plan
+        .items
+        .iter()
+        .filter(|item| item.status == Status::Unmapped)
+        .collect();
+    assert_eq!(items.len(), 1, "one orphan pyramid: {items:#?}");
+
+    let orphan = items[0];
+    assert!(orphan.image.is_none());
+    assert!(!orphan.selected);
+    assert!(orphan.output.is_none());
+    assert_eq!(
+        slashed(orphan.payload.as_ref().expect("payload").path()),
+        slashed(
+            &vault
+                .previews()
+                .join("A")
+                .join("AAAA")
+                .join(format!("{pyramid}-{}.lrprev", digest_of(&pyramid)))
+        ),
+        "a pyramid with no level file is named by its container"
+    );
+    assert_eq!(
+        certified_level(orphan),
+        None,
+        "nothing was certified, because nothing is written"
+    );
+    assert_eq!(plan.stats.unmapped, 1, "legacy's pinned `unmapped 1` is L6");
+}
+
+#[test]
+fn n1_a_wrongly_shaped_file_is_not_an_orphan() {
+    let u = uuid(1);
+    let vault = Vault::unrecognised()
+        .image(ImageRow::new(1, "IMG_0001").cache(&u))
+        .pyramid(PyramidRow::new(&u).level(1616, 1077))
+        .row_without_file(Level::sized(&u, 1616, 1077))
+        .unrecognised_file(UnrecognisedFile::no_suffix())
+        .unrecognised_file(UnrecognisedFile::wrong_shard())
+        .unrecognised_file(UnrecognisedFile::bad_uuid())
+        .write();
+    let plan = vault.plan(&Options::default());
+
+    // The `unrecognised` count does not exist yet and is not asserted here; the
+    // claim this slice owns is that none of the three becomes an orphan.
+    assert_eq!(
+        plan.stats.unmapped, 0,
+        "no suffix, wrong shard and an unparseable uuid are not payloads: {:#?}",
+        plan.items
+    );
+    assert_eq!(item_for(&plan, 1).status, Status::MissingPayload);
+}
 
 #[test]
 fn x2_a_container_only_pyramid_in_a_modern_cache_is_read_from_the_container() {
