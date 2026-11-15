@@ -78,7 +78,7 @@ work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT INT TERM
 
 # --- the walk -------------------------------------------------------------
-# One pass per file over `od -An -v -tx1`, so every decision below is made on
+# One pass per file over `od -A n -v -tx1`, so every decision below is made on
 # the bytes rather than on a name. A JPEG's top-level chain is: `SOI`, then
 # segments whose length field counts itself, until `SOS` (after which the rest
 # is entropy-coded data) or `EOI`.
@@ -338,8 +338,8 @@ while IFS= read -r rel; do
     leaf=${rel##*/}
     edge=${leaf##*_}
     size=$(wc -c <"$path" | tr -d ' ')
-    eoi=$(tail -c 2 "$path" | od -An -v -tx1 | tr -d ' \n')
-    line=$(od -An -v -tx1 -N 262144 "$path" | awk -f "$work/walk.awk")
+    eoi=$(tail -c 2 "$path" | od -A n -v -tx1 | tr -d ' \n')
+    line=$(od -A n -v -tx1 -N 262144 "$path" | awk -f "$work/walk.awk")
     printf '%s|%s|%s|%s|%s\n' "$rel" "$edge" "$size" "$eoi" "$line" >>"$work/walk"
     if [ "$verbose" = 1 ]; then
         printf '%s\n' "$rel $line"

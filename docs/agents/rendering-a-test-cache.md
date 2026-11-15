@@ -90,6 +90,14 @@ Take a screenshot after every step and look at it. That is the whole safety mode
 a step is not done because a call returned, it is done because the picture shows
 it. Aborting on an unexpected window is the correct outcome, not a failure.
 
+**Crop to the control before you read it.** A full-screen capture of a scaled-up
+display is the most expensive thing a run reads and the least informative: the
+last measurement of this took 31 image reads, about two thirds of every token the
+run's tools returned, and the early clicks were aimed by eyeballing coordinates on
+a downscaled picture — which missed. Crop the region around the control to 1:1,
+read that, and take the coordinates from it; the picture then answers both
+"did the step happen" and "where exactly do I click next".
+
 ## Measuring it
 
 Quit Lightroom first: a running app leaves `previews.db` beside a `-wal`, and the
