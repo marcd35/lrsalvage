@@ -98,6 +98,7 @@ Vault::unclaimed(levels)            a pyramid no image claims
 Vault::superseded(levels)           level files plus a deliberately unreadable .lrprev
 Vault::unrecognised_file(shape)     payload-like, wrong shard / no suffix / bad uuid
 Vault::preoccupied_destination(relative, bytes)  a file already in the output tree
+Vault::raw_index(bytes)            bytes at `previews.db` instead of an index (a torn file)
 Vault::write() -> Vault             catalog(), previews(), out(), plan(&Options),
                                     level_files(), containers()
 ```
@@ -180,6 +181,7 @@ Pinned totals for a plain `plan`: `images 13`, `recovered 7`, `suspect 1`,
 | M8 | no index row | image row, no `ImageCacheEntry` | `no-cache-entry` | `no_cache_entry +1` | `scan` | 0 | count | — | |
 | M9 | original still on disk | image + pyramid + level file + the original file present | `original-present` | `original_present +1`, not selected | `scan` | 0 | count | — | not a salvage target unless `--include-present` |
 | M10 | unclaimed pyramid | level files for a `(uuid, digest)` no image claims | `unmapped` | `unmapped +1` | `scan` | 0 | count | synthetic; ADR 0005 ¶8 | one orphan per pyramid; listed, never written |
+| M10b | an orphan whose names lie | one unclaimed pyramid, its `_640` file holding a 1616×1077 frame and its `_1616` file a 640×427 one | `unmapped` | `unmapped +1`, `shapes.suffix_matches_sof 0` | `scan` | 0 | count | synthetic; ADR 0005 ¶9 | the item names the file whose **bytes** are the largest — one rule in every mode, so an indexless cache ranks the same way (U1) |
 | M11 | digest-mismatched file | row `(UUID, digestA)`; file `<UUID>-digestB_1616` | `missing-payload` + `unmapped` | `missing_payload +1`, `unmapped +1` | `scan` | 0 | count | synthetic; ADR 0005 ¶6 | only the pair maps, so the file is a second pyramid, not this one's level |
 | M12 | `longDimension` stored REAL | row `longDimension 101.0`, file `_101` at 101×68 | `recovered` | `below_floor +1`, tier `thumbnail`, unselected | `scan` | 0 | count | verified §5.7 | the suffix is the rounded integer, and the floor excludes without failing |
 | M13 | payload carrying its own EXIF, XMP and ICC | `jpeg_with(1616×1077, [exif_app1(6), xmp_app1(x), icc_app2(p)])`; catalog orientation `AB`, catalog XMP | `recovered` | `payload_metadata = exif,xmp,icc`, `effective_orientation = 6` | `extract` | 0 | both | unverified §5.8 | ADR 0003's precedence: the payload's orientation and ICC win, our EXIF replaces its EXIF, its XMP packet is untouched |
@@ -259,6 +261,7 @@ selected, so `extract` never starts. A vault of failures alone therefore reads a
 | U1 | no `previews.db` | level files for two pyramids (one with two levels); catalog with two images | `no-cache-entry` for both | `images 2`, `no_cache_entry 2`, `unmapped 2`, layout `modern` | `scan` | 3 | count | verified §5.2 + ADR 0006 ¶1 | identity survives without rows: the leaf gives `(uuid, digest)`, the shard must agree; one hint names the missing file |
 | U2 | the run still hands over its list | the same vault | — | — | `extract` | 3 | count | ADR 0006 ¶4, ¶7 | `report.csv` and `manifest.json` are written because `unmapped > 0`; the output tree holds no JPEG |
 | U3 | a mistyped `--previews` | the same vault, `--previews` pointing at a file | — | — | `scan` | 1 | count | ADR 0006 ¶3 | a path that is not a directory is a usage error, never an empty cache |
+| U4 | a torn `previews.db` | the same vault with `.raw_index` bytes SQLite cannot read | `no-cache-entry`, the payload still listed | `images 1`, `unmapped 1`, layout `modern` | `scan` | 3 | count | ADR 0006 ¶2 | a damaged index degrades exactly like a missing one: the hint carries `could not be read (sqlite error: …)` and `fix or move the file to name them`, and no fatal SQLite line escapes |
 
 ### `unrecognised` — 1 image
 

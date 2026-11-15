@@ -20,8 +20,13 @@
 //! run's code moved.** An unclaimed payload is listed and never selected, so it
 //! can neither make a run partial nor turn "nothing to extract" into work; a
 //! row-less level file is simply the level the image is written from. The codes
-//! asserted below are the same before and after, which is the claim — not an
-//! omission to be filled in later.
+//! asserted by the `modern`, `damaged` and `unrecognised` runs are the same
+//! before and after, which is the claim — not an omission to be filled in later.
+//!
+//! The `unindexed` rows *do* assert codes that moved, which is their reason to
+//! exist: a missing index used to die with a SQLite error and exit 1, and a
+//! damaged one the same way (ADR 0006 ¶1–¶2), while a `--previews` that is not a
+//! directory stayed exit 1 on purpose (¶3).
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -377,4 +382,254 @@ fn a_floor_above_every_level_exits_three_and_writes_nothing() {
         "nothing was selected, so nothing may be written: {:?}",
         jpeg_names(vault.out())
     );
+}
+
+// ---------------------------------------------------------------------------
+// `unindexed` — a missing or unreadable index is a mode, not an error
+// ---------------------------------------------------------------------------
+
+/// U1's vault: two images, two pyramids (the second with two levels), no
+/// `previews.db` at all.
+fn unindexed() -> Vault {
+    let (first, second) = (uuid(1), uuid(2));
+    Vault::unindexed()
+        .image(ImageRow::new(1, "IMG_0001"))
+        .image(ImageRow::new(2, "IMG_0002"))
+        .level_file(Level::sized(&first, 1616, 1077))
+        .level_file(Level::sized(&second, 1616, 1077))
+        .level_file(Level::sized(&second, 808, 539))
+        .write()
+}
+
+#[test]
+fn u1_an_indexless_cache_exits_three_and_names_the_missing_file() {
+    let vault = unindexed();
+
+    let output = scan(&vault).arg("--json").output().expect("run scan");
+    assert_eq!(output.status.code(), Some(3));
+    let object: Value = serde_json::from_slice(&output.stdout).expect("one object on stdout");
+    assert_eq!(object["layout"], "modern");
+    assert_eq!(object["images"], 2);
+    assert_eq!(object["no_cache_entry"], 2);
+    assert_eq!(object["unmapped"], 2);
+    assert_eq!(object["recovered"], 0);
+
+    // ADR 0006 ¶1: one hint, naming the file that is missing, with the counts
+    // the plan produced. Nothing about previews the cache does not have.
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("previews.db is missing"),
+        "the hint names the file:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("2 payloads cannot be matched to any of the 2 catalog images"),
+        "with the counts from the plan:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("listed as unmapped and never written"),
+        "and what became of them:\n{stderr}"
+    );
+    assert!(
+        !stderr.contains("sqlite error"),
+        "an absent index is not a database error:\n{stderr}"
+    );
+    assert!(
+        !stderr.contains("no previews"),
+        "nothing claims the cache is empty:\n{stderr}"
+    );
+
+    // And the human summary says the same thing in its own words.
+    let text = scan(&vault)
+        .output()
+        .expect("run scan")
+        .stdout
+        .iter()
+        .map(|byte| *byte as char)
+        .collect::<String>();
+    assert!(
+        text.starts_with("cache layout: modern\n"),
+        "the layout survives without rows:\n{text}"
+    );
+    assert!(text.contains("unmapped payloads"), "{text}");
+
+    // The hint promises `scan --verbose` prints each path, so it does: one line
+    // per orphan pyramid, naming a file the builder actually wrote.
+    let verbose = scan(&vault)
+        .arg("--verbose")
+        .output()
+        .expect("run scan --verbose")
+        .stdout
+        .iter()
+        .map(|byte| *byte as char)
+        .collect::<String>();
+    let listed: Vec<&str> = verbose
+        .lines()
+        .filter(|line| line.starts_with("unmapped  -"))
+        .collect();
+    assert_eq!(listed.len(), 2, "one line per orphan pyramid:\n{verbose}");
+    for line in listed {
+        assert!(
+            vault
+                .level_files()
+                .iter()
+                .any(|file| line
+                    .contains(file.file_name().expect("a leaf").to_string_lossy().as_ref())),
+            "the line names a payload on disk: {line}"
+        );
+    }
+}
+
+#[test]
+fn u2_an_indexless_extract_hands_over_the_orphan_list_and_writes_no_jpeg() {
+    let vault = unindexed();
+
+    extract(&vault)
+        .assert()
+        .code(3)
+        .stderr(predicate::str::contains("nothing to extract"));
+
+    // ADR 0006 ¶7: a run that selected nothing still writes its report when it
+    // found orphan payloads — and writes nothing at all for them.
+    let csv = fs::read_to_string(vault.out().join("report.csv")).expect("report.csv");
+    let orphans = csv
+        .lines()
+        .filter(|row| row.starts_with("unmapped"))
+        .count();
+    assert_eq!(orphans, 2, "one row per orphan pyramid:\n{csv}");
+
+    let manifest: Value =
+        serde_json::from_str(&fs::read_to_string(vault.out().join("manifest.json")).unwrap())
+            .expect("one object in manifest.json");
+    assert_eq!(manifest["layout"], "modern");
+    let listed = manifest["items"]
+        .as_array()
+        .expect("an item list")
+        .iter()
+        .filter(|item| item["status"] == "unmapped")
+        .count();
+    assert_eq!(listed, 2, "one manifest member per orphan pyramid");
+
+    assert!(
+        jpeg_names(vault.out()).is_empty(),
+        "an orphan is listed, never written: {:?}",
+        jpeg_names(vault.out())
+    );
+    assert!(
+        !vault.out().join("extract.csv").exists(),
+        "nothing was evaluated, so there are no outcomes to list"
+    );
+}
+
+#[test]
+fn u3_a_previews_path_that_is_not_a_directory_is_a_usage_error() {
+    let vault = unindexed();
+
+    // The catalog is a real file, so this is a mistyped cache path — not an
+    // empty cache (ADR 0006 ¶3).
+    let mut command = lrsalvage();
+    command
+        .arg("scan")
+        .arg("--catalog")
+        .arg(vault.catalog())
+        .arg("--previews")
+        .arg(vault.catalog());
+    let output = command.output().expect("run scan");
+    assert_eq!(output.status.code(), Some(1));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("is not a preview cache directory"),
+        "a real message, not a SQLite one:\n{stderr}"
+    );
+    assert!(!stderr.contains("sqlite error"), "{stderr}");
+
+    // A path that exists nowhere is the same mistake, and reads the same way.
+    let missing = vault.dir().join("no such cache");
+    let mut command = lrsalvage();
+    command
+        .arg("scan")
+        .arg("--catalog")
+        .arg(vault.catalog())
+        .arg("--previews")
+        .arg(&missing);
+    command
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains("is not a preview cache directory"));
+
+    // `extract` asks the same question before it touches `--out`, so a run that
+    // cannot read its cache leaves no directory behind.
+    let uncreated = vault.dir().join("not created");
+    let mut command = lrsalvage();
+    command
+        .arg("extract")
+        .arg("--catalog")
+        .arg(vault.catalog())
+        .arg("--previews")
+        .arg(vault.catalog())
+        .arg("--out")
+        .arg(&uncreated);
+    command
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains("is not a preview cache directory"));
+    assert!(
+        !uncreated.exists(),
+        "a refused cache path creates no output directory"
+    );
+}
+
+#[test]
+fn u4_a_damaged_index_degrades_exactly_like_a_missing_one() {
+    let index = uuid(1);
+    let vault = Vault::modern()
+        .image(ImageRow::new(1, "IMG_0001"))
+        .pyramid(PyramidRow::new(&index).level(1616, 1077))
+        .level_file(Level::sized(&index, 1616, 1077))
+        .raw_index(&bytes::not_a_jpeg())
+        .write();
+
+    let output = scan(&vault).arg("--json").output().expect("run scan");
+    assert_eq!(output.status.code(), Some(3));
+    let object: Value = serde_json::from_slice(&output.stdout).expect("one object on stdout");
+    assert_eq!(object["unmapped"], 1, "the payload is still listed");
+    assert_eq!(object["no_cache_entry"], 1);
+
+    // The reason replaces `is missing`, and the second line says what to do
+    // about it (ADR 0006 ¶2).
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("could not be read (sqlite error: "),
+        "the hint carries the reason:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("fix or move the file to name them"),
+        "and the instruction:\n{stderr}"
+    );
+    assert!(
+        !stderr.contains("lrsalvage: sqlite error"),
+        "a damaged index never aborts the run:\n{stderr}"
+    );
+}
+
+#[test]
+fn e2_an_empty_run_writes_no_report_at_all() {
+    let vault = Vault::empty()
+        .image(ImageRow::new(1, "IMG_0001"))
+        .image(ImageRow::new(2, "IMG_0002"))
+        .write();
+
+    extract(&vault)
+        .assert()
+        .code(3)
+        .stderr(predicate::str::contains("nothing to extract"));
+
+    // Nothing selected *and* nothing unclaimed is not something to report on:
+    // the contrast with U2, where the orphan list is worth writing.
+    for name in ["report.csv", "manifest.json"] {
+        assert!(
+            !vault.out().join(name).exists(),
+            "{name} must not be written by an empty run"
+        );
+    }
+    assert!(jpeg_names(vault.out()).is_empty());
 }

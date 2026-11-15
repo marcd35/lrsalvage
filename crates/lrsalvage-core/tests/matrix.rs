@@ -24,8 +24,8 @@
 //! shrinking it.
 //!
 //! Rows still without a test are M13 and M14 (`payload_metadata`,
-//! `effective_orientation`), and `unindexed`'s layout: an indexless plan is a
-//! later ticket, so `Vault::plan` has nothing to build there yet.
+//! `effective_orientation`). `unindexed` is here because an absent index is a
+//! mode: `Vault::plan` builds one the same way it builds any other.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -33,7 +33,7 @@ use std::path::{Path, PathBuf};
 use lrsalvage_core::extract::{self, ExtractOptions, Outcome};
 use lrsalvage_core::jpeg;
 use lrsalvage_core::plan::{Options, Payload, Plan, PlanItem, Status, Tier};
-use lrsalvage_core::previews_db::Layout;
+use lrsalvage_core::previews_db::{IndexProblem, Layout};
 use lrsalvage_fixtures::bytes;
 use lrsalvage_fixtures::vault::{ImageRow, Level, PyramidRow, UnrecognisedFile, Vault, digest_of};
 
@@ -1228,4 +1228,134 @@ fn x3_a_level_file_only_pyramid_in_a_mixed_cache_is_read_from_the_file() {
         slashed(&level_path(vault.previews(), &uuid(3), 1616)),
         "the level file's own leaf is the payload"
     );
+}
+
+// ---------------------------------------------------------------------------
+// `unindexed` — an absent index is a mode, not an error
+// ---------------------------------------------------------------------------
+
+/// U1's vault: two images, two pyramids (the second with two levels), no
+/// `previews.db` at all.
+fn unindexed() -> Vault {
+    let (first, second) = (uuid(1), uuid(2));
+    Vault::unindexed()
+        .image(ImageRow::new(1, "IMG_0001"))
+        .image(ImageRow::new(2, "IMG_0002"))
+        .level_file(Level::sized(&first, 1616, 1077))
+        .level_file(Level::sized(&second, 1616, 1077))
+        .level_file(Level::sized(&second, 808, 539))
+        .write()
+}
+
+#[test]
+fn u1_an_indexless_cache_lists_every_pyramid_and_claims_none() {
+    let vault = unindexed();
+    let plan = vault.plan(&Options::default());
+
+    // ADR 0006 ¶1: no index means no *mapping*, so every image has no cache
+    // entry and every payload pyramid is an orphan. Nothing is invented to fill
+    // the gap (ADR 0002).
+    assert_eq!(plan.stats.images, 2);
+    assert_eq!(plan.stats.no_cache_entry, 2);
+    assert_eq!(plan.stats.unmapped, 2);
+    assert_eq!(plan.stats.recoverable, 0);
+    assert_eq!(
+        plan.selected_images(),
+        0,
+        "nothing is named, so nothing is selected"
+    );
+    for image in plan.items.iter().filter(|item| item.image.is_some()) {
+        assert_eq!(image.status, Status::NoCacheEntry);
+        assert!(!image.selected);
+    }
+
+    // The layout is detected from the tree, because there are no rows to ask.
+    assert_eq!(plan.cache.layout, Layout::Modern);
+    assert_eq!(plan.cache.shapes.level_file, 3);
+    assert_eq!(plan.cache.shapes.container, 0);
+    assert_eq!(
+        plan.cache.shapes.suffix_matches_sof, 3,
+        "identity came from the leaf, and every leaf names its own frame"
+    );
+
+    // One orphan per pyramid, never one per level file.
+    let orphans: Vec<&PlanItem> = plan
+        .items
+        .iter()
+        .filter(|item| item.status == Status::Unmapped)
+        .collect();
+    assert_eq!(orphans.len(), 2, "{:#?}", plan.items);
+    for orphan in &orphans {
+        assert!(orphan.image.is_none(), "nothing claims it");
+        assert!(!orphan.selected, "listed, never written");
+        assert!(orphan.output.is_none(), "an orphan has no output path");
+        assert!(is_level_file(orphan), "{:?}", orphan.payload);
+    }
+    assert!(
+        orphans.iter().any(
+            |orphan| slashed(orphan.payload.as_ref().expect("payload").path()).ends_with("_1616")
+                && slashed(orphan.payload.as_ref().expect("payload").path()).contains(&uuid(2))
+        ),
+        "the two-level pyramid is named by its largest level: {:#?}",
+        orphans
+            .iter()
+            .map(|orphan| &orphan.payload)
+            .collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn an_unclaimed_pyramid_is_named_by_its_largest_measured_level() {
+    // The names lie: `_640` holds a 1616 frame and `_1616` a 640 one. ADR 0005
+    // ¶9 ranks by the measured `SOF` area in every mode, so the payload this
+    // orphan reports is the file whose *bytes* are the largest, and the shapes
+    // histogram says out loud that no leaf here names its own frame.
+    let lying = uuid(30);
+    let indexed = Vault::modern()
+        .unclaimed(&[
+            Level::sized(&lying, 640, 427).raw(&bytes::jpeg(1616, 1077)),
+            Level::sized(&lying, 1616, 1077).raw(&bytes::jpeg(640, 427)),
+        ])
+        .write();
+    let plan = indexed.plan(&Options::default());
+
+    let orphan = plan
+        .items
+        .iter()
+        .find(|item| item.status == Status::Unmapped)
+        .unwrap_or_else(|| panic!("one orphan: {:#?}", plan.items));
+    assert_eq!(
+        slashed(orphan.payload.as_ref().expect("payload").path()),
+        slashed(&level_path(indexed.previews(), &lying, 640)),
+        "the bytes are the verdict, not the suffix"
+    );
+    assert_eq!(
+        plan.cache.shapes.suffix_matches_sof, 0,
+        "neither leaf names the long edge its own frame measures"
+    );
+}
+
+#[test]
+fn an_unreadable_index_is_an_empty_one() {
+    // ADR 0006 ¶2: a damaged file degrades exactly like a missing one, and the
+    // reason travels with it instead of aborting the run.
+    let vault = Vault::modern()
+        .image(ImageRow::new(1, "IMG_0001").cache(&uuid(1)))
+        .pyramid(PyramidRow::new(&uuid(1)).level(1616, 1077))
+        .level_file(Level::sized(&uuid(1), 1616, 1077))
+        .raw_index(&bytes::not_a_jpeg())
+        .write();
+
+    let opened = lrsalvage_core::previews_db::open(&vault.previews().join("previews.db"));
+    assert!(
+        matches!(opened.problem, Some(IndexProblem::Unreadable(_))),
+        "a torn file reports why: {:?}",
+        opened.problem
+    );
+    assert!(opened.index.entries.is_empty());
+
+    let plan = vault.plan(&Options::default());
+    assert_eq!(plan.stats.no_cache_entry, 1);
+    assert_eq!(plan.stats.unmapped, 1);
+    assert_eq!(plan.cache.layout, Layout::Modern);
 }

@@ -23,7 +23,7 @@ use std::path::{Path, PathBuf};
 
 use lrsalvage_core::catalog::Catalog;
 use lrsalvage_core::plan::{Options, Plan};
-use lrsalvage_core::previews_db::PreviewIndex;
+use lrsalvage_core::previews_db;
 use rusqlite::{Connection, params};
 use tempfile::TempDir;
 
@@ -432,6 +432,9 @@ pub struct Vault {
     out_path: PathBuf,
     layout: Layout,
     has_index: bool,
+    /// Bytes to write at `previews.db` instead of an index: the torn file U4
+    /// degrades on.
+    raw_index: Option<Vec<u8>>,
     db_version: String,
     crs_version: String,
     root_folder: Option<String>,
@@ -505,6 +508,7 @@ impl Vault {
             out_path,
             layout,
             has_index: true,
+            raw_index: None,
             db_version: db_version.to_string(),
             crs_version: crs_version.to_string(),
             root_folder: None,
@@ -649,6 +653,14 @@ impl Vault {
         self
     }
 
+    /// Write these bytes at `previews.db` instead of an index: a file SQLite
+    /// cannot read, degrading exactly like a missing one (ADR 0006 ¶2).
+    #[must_use]
+    pub fn raw_index(mut self, bytes: &[u8]) -> Self {
+        self.raw_index = Some(bytes.to_vec());
+        self
+    }
+
     fn representation(&self) -> Representation {
         match self.layout {
             Layout::Legacy => Representation::Container,
@@ -736,15 +748,17 @@ impl Vault {
 
     /// The plan a v1 build makes for this vault: catalog plus index plus cache.
     ///
+    /// An indexless vault yields a plan too: an absent index is a mode, so the
+    /// index degrades to an empty one rather than refusing the vault
+    /// (`adr-0006-degrade-without-guessing` ¶1–¶2).
+    ///
     /// # Panics
     ///
-    /// Panics if the vault was not written, or if it has no index — v1 has no
-    /// plan for a cache it cannot map.
+    /// Panics if the vault was not written, or if either store cannot be read.
     pub fn plan(&self, options: &Options) -> Plan {
         assert!(self.written, "call write() before plan()");
         let (_snapshot, catalog) = Catalog::open(self.catalog()).expect("open the vault catalog");
-        let index =
-            PreviewIndex::open(&self.previews().join("previews.db")).expect("open the vault index");
+        let index = previews_db::open(&self.previews().join("previews.db")).index;
         Plan::build(&catalog, &index, self.previews(), self.out(), options).expect("build a plan")
     }
 
@@ -829,8 +843,12 @@ impl Vault {
     }
 
     fn write_previews(&self) {
-        let conn =
-            Connection::open(self.previews().join("previews.db")).expect("create previews.db");
+        let db = self.previews().join("previews.db");
+        if let Some(bytes) = &self.raw_index {
+            write_file(&db, bytes);
+            return;
+        }
+        let conn = Connection::open(db).expect("create previews.db");
         let modern = self.layout != Layout::Legacy;
         conn.execute_batch(
             &PREVIEWS_SCHEMA.replace("{FILE_SIZE}", if modern { ", fileSize" } else { "" }),
@@ -1158,7 +1176,7 @@ mod tests {
                 .join(bytes::leaf(UUID, &digest_of(UUID), 101));
         assert!(leaf.is_file(), "{}", leaf.display());
 
-        let index = PreviewIndex::open(&vault.previews().join("previews.db")).expect("index");
+        let index = previews_db::open(&vault.previews().join("previews.db")).index;
         assert_eq!(index.best_level(UUID).expect("declared level").width, 101);
     }
 
@@ -1242,7 +1260,7 @@ mod tests {
             .tombstone(orphan, 700_000_000.0)
             .write();
 
-        let index = PreviewIndex::open(&vault.previews().join("previews.db")).expect("index");
+        let index = previews_db::open(&vault.previews().join("previews.db")).index;
         // The row exists with no file behind it, and the file beside it has no row.
         assert_eq!(index.levels[pruned].len(), 1);
         assert_eq!(index.levels[pruned][0].width, 1616);

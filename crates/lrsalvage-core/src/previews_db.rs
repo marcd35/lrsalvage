@@ -17,6 +17,10 @@ use walkdir::WalkDir;
 use crate::error::Result;
 use crate::model::{CacheEntry, Pyramid, PyramidLevel};
 
+/// The index file at a cache root. The one place its name is written, so the CLI
+/// that opens it and the hint that names it cannot disagree.
+pub const INDEX_FILE: &str = "previews.db";
+
 /// The container name template: `<uuid[0]>/<uuid[0..4]>/<UUID>-<digest>.lrprev`.
 ///
 /// Placeholders only, never a name. `report` prints it verbatim so the shape of
@@ -95,8 +99,12 @@ pub struct Candidate<'a> {
 }
 
 impl PreviewIndex {
-    /// Open `<cache>/previews.db` read-only.
-    pub fn open(db: &Path) -> Result<Self> {
+    /// Read the index's rows, refusing rather than degrading.
+    ///
+    /// Private on purpose: absence is a mode, so [`open`] is the only public way
+    /// in and there is no way to mistake "no index" for a failure
+    /// (`adr-0006-degrade-without-guessing` ¶1–¶2).
+    fn read(db: &Path) -> Result<Self> {
         let conn = crate::snapshot::open_readonly(db)?;
         let mut index = Self::default();
 
@@ -286,16 +294,53 @@ pub struct PyramidOnDisk {
     pub container: Option<PathBuf>,
 }
 
-impl PyramidOnDisk {
-    /// The largest level file this pyramid holds, by the `_<n>` its leaf names.
-    ///
-    /// No byte is read: the name is the only ranking a sweep has, which is why
-    /// it can never certify a payload — `plan` does that for a claimed one.
-    pub fn largest_level(&self) -> Option<&Path> {
-        self.levels
-            .iter()
-            .max_by_key(|level| level.long_edge)
-            .map(|level| level.path.as_path())
+/// Why a cache has no usable index.
+///
+/// Absence is a mode, not an error: the caller reports every image as
+/// `no-cache-entry` and every payload pyramid as `unmapped`, and only the hint
+/// needs the reason (`adr-0002-map-via-previews-db`,
+/// `adr-0006-degrade-without-guessing` ¶1–¶2).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum IndexProblem {
+    /// There is no `previews.db` at the cache root.
+    Missing,
+    /// SQLite refused the file: its own error text, prefix included, so a hint
+    /// can print it without re-deriving one. A damaged file never aborts a run.
+    Unreadable(String),
+}
+
+/// A `previews.db` read that degraded rather than failed: the index, and why it
+/// is empty when there was nothing to read.
+#[derive(Debug, Clone, Default)]
+pub struct Opened {
+    pub index: PreviewIndex,
+    /// `None` when the index was read.
+    pub problem: Option<IndexProblem>,
+}
+
+/// Read `<cache>/previews.db` into an index, degrading to an empty one when the
+/// file is missing or SQLite cannot read it.
+///
+/// A missing and an unreadable index degrade identically, because nothing is
+/// mapped either way and the payloads sitting beside the file are still worth
+/// listing (`adr-0006-degrade-without-guessing` ¶1–¶2). Which of those two it
+/// was travels in [`Opened::problem`], for the caller's one hint.
+pub fn open(db: &Path) -> Opened {
+    if !db.exists() {
+        return Opened {
+            index: PreviewIndex::default(),
+            problem: Some(IndexProblem::Missing),
+        };
+    }
+    match PreviewIndex::read(db) {
+        Ok(index) => Opened {
+            index,
+            problem: None,
+        },
+        Err(error) => Opened {
+            index: PreviewIndex::default(),
+            problem: Some(IndexProblem::Unreadable(error.to_string())),
+        },
     }
 }
 
@@ -572,7 +617,7 @@ mod tests {
         conn.execute_batch(SCHEMA).unwrap();
         seed(&conn);
         drop(conn);
-        PreviewIndex::open(&path).unwrap()
+        open(&path).index
     }
 
     fn base_pyramid(conn: &Connection, uuid: &str) {
@@ -964,16 +1009,17 @@ mod tests {
             "path order, each carrying the long edge its leaf names"
         );
         assert!(level_files.container.is_some(), "the .lrprev is merged in");
-        assert_eq!(
-            level_files.largest_level(),
-            Some(shard.join(format!("{uuid}-{digest}_1616")).as_path()),
-            "the payload is the largest level, chosen from the name alone"
+        assert!(
+            level_files
+                .levels
+                .iter()
+                .any(|level| level.path == shard.join(format!("{uuid}-{digest}_1616"))),
+            "the largest level is one of its levels; ranking it is `plan`'s"
         );
 
         let container_only = &pyramids[1];
         assert_eq!(container_only.uuid, other);
         assert!(container_only.levels.is_empty());
-        assert_eq!(container_only.largest_level(), None);
         assert!(container_only.container.is_some());
     }
 
@@ -1122,20 +1168,45 @@ mod tests {
         .unwrap();
         drop(conn);
 
-        let index = PreviewIndex::open(&path).expect("a store without tombstones still opens");
+        let index = open(&path).index;
         assert!(index.deleted.is_empty());
         assert!(index.entries.is_empty());
     }
 
     #[test]
-    fn missing_tables_surface_as_a_sqlite_error() {
+    fn a_missing_index_is_an_empty_index_and_a_reason() {
+        let dir = tempfile::tempdir().unwrap();
+        let opened = open(&dir.path().join("previews.db"));
+        assert_eq!(opened.problem, Some(IndexProblem::Missing));
+        assert!(opened.index.entries.is_empty());
+        assert!(opened.index.pyramids.is_empty());
+    }
+
+    #[test]
+    fn a_file_that_is_not_a_database_degrades_with_its_reason() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("previews.db");
-        fs::write(&path, b"").unwrap();
+        fs::write(&path, b"These bytes were never a database.\n").unwrap();
 
-        match PreviewIndex::open(&path) {
-            Err(crate::error::Error::Sqlite(_)) => {}
-            other => panic!("expected Error::Sqlite, got {:?}", other.err()),
+        let opened = open(&path);
+        match &opened.problem {
+            Some(IndexProblem::Unreadable(reason)) => assert!(
+                reason.starts_with("sqlite error: "),
+                "the caller prints this verbatim: {reason}"
+            ),
+            other => panic!("expected a reason, got {other:?}"),
         }
+        assert!(opened.index.entries.is_empty());
+    }
+
+    #[test]
+    fn a_readable_index_reports_no_problem() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("previews.db");
+        let conn = Connection::open(&path).unwrap();
+        conn.execute_batch(SCHEMA).unwrap();
+        drop(conn);
+
+        assert_eq!(open(&path).problem, None);
     }
 }

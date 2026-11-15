@@ -19,6 +19,9 @@ pub enum Error {
     #[error("{path} is not a Lightroom catalog (no Adobe_images table)")]
     NotACatalog { path: PathBuf },
 
+    #[error("{path} is not a preview cache directory")]
+    NotAPreviewCache { path: PathBuf },
+
     #[error("preview payload not found: {path}")]
     PayloadMissing { path: PathBuf },
 
