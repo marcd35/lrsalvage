@@ -174,11 +174,15 @@ fn the_documented_report_csv_columns_match_the_header() {
     let csv = std::fs::read_to_string(vault.out().join("report.csv")).expect("report.csv");
     let header = csv.lines().next().expect("a header");
     assert!(
-        header.ends_with(",note,payload"),
-        "the README promises a trailing `payload` column: {header}"
+        header.ends_with(",note,payload,payload_metadata"),
+        "the README promises `payload` and then `payload_metadata`, last: {header}"
     );
-    assert!(
-        !header.contains("payload_metadata"),
-        "`payload_metadata` is reserved to follow `payload`, not shipped yet: {header}"
+    assert_eq!(
+        header
+            .split(',')
+            .filter(|column| *column == "payload")
+            .count(),
+        1,
+        "`payload_metadata` is a field of its own, not a second `payload`: {header}"
     );
 }

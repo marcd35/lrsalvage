@@ -92,6 +92,13 @@ everything else is always compiled. `report` reads its two name templates from
   and writes nothing; `extract` writes and decides nothing about which image
   deserves to be recovered. A scan and an extract for the same inputs therefore
   agree by construction.
+- **A module's prose states only what it observed or performed.** An item note or
+  a report line names the facts the module itself holds and the act the module
+  itself takes. `plan` decides and never writes, so it can say a payload carries
+  its own EXIF and what writing metadata does with it, while replacing that
+  segment is `extract`'s to report. A note that claims another module's act
+  becomes a lie the moment a flag — `--no-metadata`, say — changes what that
+  module does, and the note is what a stranger reads instead of the cache.
 - **One error type.** Every fallible core function returns `error::Error`, with
   the path context that produced it. Exit codes are the CLI's mapping of that
   type, never a status smuggled through the core.
