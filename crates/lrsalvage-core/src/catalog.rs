@@ -456,7 +456,7 @@ mod tests {
     use crate::error::Error;
     use crate::jpeg;
     use crate::model::{CatalogImage, Orientation, XmpMetadata};
-    use crate::previews_db;
+    use crate::previews_db::{self, PyramidKey};
     use crate::snapshot::CatalogSnapshot;
 
     use super::{Catalog, CatalogVersions};
@@ -846,9 +846,9 @@ mod tests {
             // disk": an upgraded cache has level files where the container used
             // to be, and a legacy one has the container. This row is about the
             // catalog joining the cache, not about the layout.
-            let payload = index.payload_path(&cache_root, entry);
+            let payload = index.payload_path(&cache_root, &PyramidKey::of(entry));
             let level_files: Vec<PathBuf> = index
-                .candidates(&cache_root, &entry.uuid, &entry.digest)
+                .candidates(&cache_root, &PyramidKey::of(entry))
                 .into_iter()
                 .map(|candidate| candidate.path)
                 .filter(|path| path.is_file())
@@ -862,12 +862,13 @@ mod tests {
             );
 
             let pyramid = index
-                .pyramids
-                .get(&entry.uuid)
+                .pyramid(&PyramidKey::of(entry))
                 .unwrap_or_else(|| panic!("no Pyramid row for uuid {}", entry.uuid));
             assert_eq!(pyramid.cropped_width, 1616, "cropped width");
             assert_eq!(pyramid.cropped_height, 1077, "cropped height");
-            let best = index.best_level(&entry.uuid).expect("pyramid level");
+            let best = index
+                .best_level(&PyramidKey::of(entry))
+                .expect("pyramid level");
             assert_eq!(best.width, 1616);
             assert_eq!(best.height, 1077);
 
@@ -897,18 +898,19 @@ mod tests {
                 .get(&image.id_local)
                 .unwrap_or_else(|| panic!("no cache entry for image {}", image.id_local));
             let pyramid = index
-                .pyramids
-                .get(&entry.uuid)
+                .pyramid(&PyramidKey::of(entry))
                 .unwrap_or_else(|| panic!("no Pyramid row for uuid {}", entry.uuid));
             digests.insert(pyramid.digest.as_str());
 
             // §5.2/§5.7: the level set is a doubling series, five leaves a
             // pyramid, every one of them on disk.
-            let candidates = index.candidates(&cache_root, &entry.uuid, &entry.digest);
+            let candidates = index.candidates(&cache_root, &PyramidKey::of(entry));
             let mut series: Vec<u32> = candidates.iter().map(|one| one.long_edge).collect();
             series.sort_unstable();
             assert_eq!(series, vec![101, 202, 404, 808, 1616], "level series");
-            let best = index.best_level(&entry.uuid).expect("pyramid level");
+            let best = index
+                .best_level(&PyramidKey::of(entry))
+                .expect("pyramid level");
 
             for candidate in candidates {
                 let bytes = std::fs::read(&candidate.path)

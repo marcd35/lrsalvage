@@ -107,6 +107,13 @@ bytes.**
    are counted when they have the payload shape — their modern shape is
    unverified (§5.7 TODO), and subtracting them would commit to an assumption
    instead of measuring one.
+   **Amended 2026-11-15 by ADR 0008:** one exception, because a fresh render
+   produces it for every image. An unclaimed pyramid that is a render's second
+   pyramid — a claimed pyramid on the same uuid, `quality` exactly `thumbnail`,
+   and every level it holds inside the `thumbnail` tier — is counted as
+   `thumbnail_pyramids` and is no item at all; `unmapped` keeps meaning "nobody
+   names this". Every other unclaimed pyramid is still one `unmapped` item, now
+   carrying its row's `quality` and `color_profile`.
 9. **Without an index, identity comes from the name.** With no rows, parse
    `(uuid, digest)` from the leaf, require both shard folders to agree with it,
    rank by measured `SOF` area (a legacy `.lrprev` by its declared dimensions),

@@ -1124,6 +1124,8 @@ fn write_file(path: &Path, bytes: &[u8]) {
 
 #[cfg(test)]
 mod tests {
+    use lrsalvage_core::previews_db::PyramidKey;
+
     use super::*;
 
     const XMP: &str = r#"<x:xmpmeta xmlns:x="adobe:ns:meta/">
@@ -1178,7 +1180,13 @@ mod tests {
         assert!(leaf.is_file(), "{}", leaf.display());
 
         let index = previews_db::open(&vault.previews().join("previews.db")).index;
-        assert_eq!(index.best_level(UUID).expect("declared level").width, 101);
+        assert_eq!(
+            index
+                .best_level(&PyramidKey::new(UUID, digest_of(UUID)))
+                .expect("declared level")
+                .width,
+            101
+        );
     }
 
     #[test]
@@ -1263,9 +1271,14 @@ mod tests {
 
         let index = previews_db::open(&vault.previews().join("previews.db")).index;
         // The row exists with no file behind it, and the file beside it has no row.
-        assert_eq!(index.levels[pruned].len(), 1);
-        assert_eq!(index.levels[pruned][0].width, 1616);
-        assert!(!index.levels.contains_key(orphan));
+        let pruned_key = PyramidKey::new(pruned, digest_of(pruned));
+        assert_eq!(index.levels(&pruned_key).len(), 1);
+        assert_eq!(index.levels(&pruned_key)[0].width, 1616);
+        assert!(
+            index
+                .levels(&PyramidKey::new(orphan, digest_of(orphan)))
+                .is_empty()
+        );
 
         let file = vault.previews().join("A").join("AAAA").join(bytes::leaf(
             pruned,

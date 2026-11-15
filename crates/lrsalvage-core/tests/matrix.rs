@@ -730,6 +730,149 @@ fn m10_an_unclaimed_pyramid_is_one_orphan_item() {
     );
 }
 
+/// M10c — a render writes two pyramids for one uuid, and the reader reads both
+/// halves of the pair from the cache entry.
+///
+/// The thumbnail row is written **last**, which is the order that used to decide
+/// the answer: keyed by uuid, the later `Pyramid` row won, so the preview's
+/// `AdobeRGB` profile and its 3840 level were returned by luck of row order
+/// rather than by rule (issue #42).
+#[test]
+fn m10c_two_pyramids_of_one_uuid_are_read_by_the_pair() {
+    let pyramid = uuid(21);
+    let thumbnail = uuid(21);
+    let thumbnail_digest = "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1";
+    let vault = Vault::modern()
+        .image(ImageRow::new(21, "IMG_0021").cache(&pyramid))
+        .pyramid(
+            PyramidRow::new(&pyramid)
+                .profile("AdobeRGB")
+                .quality("standard")
+                .level(320, 213)
+                .level(960, 640)
+                .level(1920, 1280)
+                .level(3840, 2560),
+        )
+        .level_file(Level::sized(&pyramid, 320, 213))
+        .level_file(Level::sized(&pyramid, 960, 640))
+        .level_file(Level::sized(&pyramid, 1920, 1280))
+        .level_file(Level::sized(&pyramid, 3840, 2560))
+        // The render's second pyramid, written after the one the entry claims.
+        .pyramid(
+            PyramidRow::new(&thumbnail)
+                .digest(thumbnail_digest)
+                .profile("sRGB")
+                .quality("thumbnail")
+                .level(320, 213),
+        )
+        .level_file(Level::sized(&thumbnail, 320, 213).digest(thumbnail_digest))
+        .write();
+
+    let plan = vault.plan(&Options::default());
+    let item = item_for(&plan, 21);
+    assert_eq!(item.status, Status::Recoverable);
+    assert_eq!(
+        item.color_profile.as_deref(),
+        Some("AdobeRGB"),
+        "the row the entry's pair names, not the later thumbnail row"
+    );
+    assert_eq!(item.quality.as_deref(), Some("standard"));
+    assert_eq!(
+        (item.width, item.height),
+        (Some(3840), Some(2560)),
+        "the preview pyramid's best level, never the companion's 320"
+    );
+
+    assert_eq!(
+        plan.stats.unmapped, 0,
+        "a render companion is not an orphan"
+    );
+    assert_eq!(plan.cache.thumbnail_pyramids, 1);
+    assert_eq!(
+        plan.cache.shapes.level_file, 5,
+        "both pyramids' files are still counted: nothing is hidden from the tree"
+    );
+}
+
+/// M10d — a `thumbnail` row whose uuid no live image claims.
+///
+/// The clause that keeps a lost photograph visible: a pyramid nothing maps stays
+/// an orphan even when its row calls it a thumbnail.
+#[test]
+fn m10d_a_thumbnail_row_with_no_live_claim_stays_unmapped() {
+    let pyramid = uuid(22);
+    let vault = Vault::modern()
+        // The catalog holds the image; no cache entry names any pyramid of it.
+        .image(ImageRow::new(22, "IMG_0022"))
+        .pyramid(
+            PyramidRow::new(&pyramid)
+                .profile("sRGB")
+                .quality("thumbnail")
+                .level(320, 213),
+        )
+        .level_file(Level::sized(&pyramid, 320, 213))
+        .write();
+
+    let plan = vault.plan(&Options::default());
+    assert_eq!(item_for(&plan, 22).status, Status::NoCacheEntry);
+    assert_eq!(
+        plan.stats.unmapped, 1,
+        "nothing claims it, so it is an orphan"
+    );
+    assert_eq!(plan.cache.thumbnail_pyramids, 0);
+
+    let orphan = plan
+        .items
+        .iter()
+        .find(|item| item.status == Status::Unmapped)
+        .expect("the orphan");
+    assert_eq!(
+        orphan.quality.as_deref(),
+        Some("thumbnail"),
+        "an orphan now carries the row facts its pair reaches"
+    );
+    assert_eq!(orphan.color_profile.as_deref(), Some("sRGB"));
+}
+
+/// M10e — a `thumbnail` row beside a claimed pyramid, holding a level that is
+/// not small.
+///
+/// The row's word is never enough on its own: a row that lies about its size may
+/// not hide a payload the tool would otherwise be willing to write.
+#[test]
+fn m10e_a_thumbnail_row_with_a_large_level_stays_unmapped() {
+    let pyramid = uuid(23);
+    let thumbnail_digest = "b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1";
+    let vault = Vault::modern()
+        .image(ImageRow::new(23, "IMG_0023").cache(&pyramid))
+        .pyramid(
+            PyramidRow::new(&pyramid)
+                .profile("AdobeRGB")
+                .quality("standard")
+                .level(3840, 2560),
+        )
+        .level_file(Level::sized(&pyramid, 3840, 2560))
+        // The row says `thumbnail` and declares 320; the only file of it measures
+        // 3840, so the bytes outrank the word.
+        .pyramid(
+            PyramidRow::new(&pyramid)
+                .digest(thumbnail_digest)
+                .profile("sRGB")
+                .quality("thumbnail")
+                .level(320, 213),
+        )
+        .file_without_row(Level::sized(&pyramid, 3840, 2560).digest(thumbnail_digest))
+        .write();
+
+    let plan = vault.plan(&Options::default());
+    assert_eq!(item_for(&plan, 23).status, Status::Recoverable);
+    assert_eq!(
+        plan.stats.unmapped, 1,
+        "a level above the thumbnail tier disqualifies the companion"
+    );
+    assert_eq!(plan.cache.thumbnail_pyramids, 0);
+}
+
 #[test]
 fn m11_a_digest_mismatched_file_is_another_pyramid() {
     let vault = modern();

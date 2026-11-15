@@ -119,6 +119,20 @@ Record, for the notes: the preview setting and quality, the level series as file
 tool's exit code and stats. Record the negative as carefully as the positive: "a
 render looks like the conversion" retires a doubt just as well as "it does not".
 
+Once such a cache exists on the machine, the numbers stop being prose: put its two
+halves in `LRSALVAGE_RENDER_CATALOG` and `LRSALVAGE_RENDER_PREVIEWS` (same file as
+the real pair, `.env.example` names both) and run
+
+```console
+sh scripts/check.sh real-render
+```
+
+That gate holds `format-notes` §5.10 to the cache itself — `unmapped 0`, one
+`thumbnail_pyramids` per image, 48 level files, and an `extract` that writes one
+file per image and no companion (`crates/lrsalvage-cli/tests/render.rs`). It is
+separate from `check.sh real` because the two caches are different evidence and a
+machine may hold one without the other.
+
 ## What not to do
 
 - **Do not launch Lightroom to find out what it does with a cache you care

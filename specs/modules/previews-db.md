@@ -13,6 +13,7 @@ references:
   - adr-0005-discover-payloads-by-index
   - adr-0006-degrade-without-guessing
   - adr-0007-publish-a-verification-report
+  - adr-0008-a-render-companion-is-not-an-orphan
   - format-notes
 ---
 
@@ -21,7 +22,8 @@ references:
 ## Responsibility
 
 Load the cache's `previews.db` into an in-memory index — `imageId → CacheEntry`,
-`uuid → Pyramid`, `uuid → [PyramidLevel]`, plus the `DeletedPyramid` tombstones —
+`(uuid, digest) → Pyramid`, `(uuid, digest) → [PyramidLevel]`, plus the
+`DeletedPyramid` tombstones —
 derive the paths its rows name: the container file of a pyramid, each level file
 of one, and the best level of a pyramid; and enumerate the cache tree once into
 the pyramids present on disk, the payload-like files that are no pyramid, and
@@ -53,15 +55,20 @@ which are stale, and what to do about either is `plan`'s decision.
   travels with the file because it is the claim `plan` compares `suspect`
   against; that is the one place it can be attached without a second matcher
   (`adr-0005-discover-payloads-by-index` ¶2–3).
-- **A store may hold more than one pyramid per uuid** — verified, `format-notes`
-  §5.10. A render keeps a `standard` pyramid and a `thumbnail` pyramid for the
-  same image, and only the first is claimed by `ImageCacheEntry`. `pyramids` and
-  `levels` are keyed by uuid, so the later `Pyramid` row wins the lookup and both
-  pyramids' level rows land in one list. The measured fresh caches resolve
-  correctly — the claimed pyramid is the larger one and its row is the later one —
-  but that is row order, not a rule: the key has to become `(uuid, digest)` before
-  anything else reads `pyramids` or `levels` for a fresh cache. Until then
-  `plan`'s `color_profile` and `best_level` inherit the same assumption.
+- **A pyramid is keyed by its pair, and a store may hold two for one uuid.**
+  `PyramidKey` is `(uuid, digest)` — the identity ADR 0005 ¶1 gives a pyramid —
+  and `pyramids`, `levels` and `deleted` are keyed by it behind `pyramid`,
+  `levels`, `best_level`, `deletion`, `candidates` and `payload_path`. A render
+  keeps a `standard` pyramid and a `thumbnail` pyramid for the same image, and
+  only the first is claimed by an `ImageCacheEntry` (`format-notes` §5.10), so a
+  lookup by uuid alone returns whichever `Pyramid` row the database wrote last
+  and mixes both pyramids' levels into one list. `PyramidLevel`'s own `digest`
+  column is read for the same reason: without it a level row of the image's
+  other pyramid answers for this one whenever the two share a long edge. A
+  duplicate row for one pair keeps the later row, as `entries` does for a
+  repeated `imageId` — no table declares a primary key. What an unclaimed
+  pyramid *becomes* is `plan`'s decision; this module only says which pyramid a
+  row names.
 - **`imageId` is not assumed unique.** No table in the schema declares a primary
   key, so `all_entries` keeps every row. `entries` is the last row wins map used
   for lookup; the full list exists so that a payload belonging to a duplicate row
@@ -112,7 +119,7 @@ which are stale, and what to do about either is `plan`'s decision.
 - **The level set is enumerated here, and it widens inside the row's identity.**
   `adr-0005-discover-payloads-by-index` keeps the identity here (`(uuid, digest)`
   is this module's key) and moves per-file certification into `jpeg`, which owns
-  the one walk a payload is believed by. `candidates(cache_root, uuid, digest)`
+  the one walk a payload is believed by. `candidates(cache_root, key)`
   returns one leaf per `PyramidLevel` row, carrying the row that derived it, and
   then reads **that pyramid's own** shard folder — `<cache>/<uuid[0]>/<uuid[0..4]>`
   and nothing else — accepting only a file whose name is exactly

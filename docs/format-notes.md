@@ -444,6 +444,12 @@ of invented claim this file exists to prevent.
 |---|---|
 | present + missing = `ImageCacheEntry` rows | 3,057 + 363 = 3,420 ✓ exact |
 | `Pyramid` rows vs `ImageCacheEntry` rows | 3,422 vs 3,420 — 2 more pyramids than entries (TODO) |
+
+Since `adr-0008-a-render-companion-is-not-an-orphan`, an unclaimed pyramid's row
+facts reach its report row (`quality`, `color_profile`), so whatever those two
+stray rows say is now readable from `report.csv` instead of requiring a query. A
+`thumbnail`-quality stray is still reported as an orphan here: the companion rule
+also needs a claimed pyramid on the same uuid, and this store holds none for them.
 | best-level buckets vs payloads present | 3,077 vs 3,057 — 20 more images have level dimensions than have files (TODO) |
 | orphan payloads vs motion previews | both 3; whether the same objects is unchecked (TODO) |
 
@@ -981,10 +987,11 @@ pyramid, the two told apart by `Pyramid.quality`:
 | (1:1 build) | — | — | 10 | one pyramid per image, `AdobeRGB`, every level metadata-bearing |
 
 - **No `ImageCacheEntry` claims the thumbnail pyramid.** Every image maps to its
-  preview pyramid, so all ten thumbnail pyramids are payloads no image names —
-  which is why the shipped build reports `unmapped payloads 10` on A (§5.9's
-  shape vocabulary is unchanged; this is a state, not a bug in the reader's
-  vocabulary).
+  preview pyramid, so all ten thumbnail pyramids are payloads no image names.
+  `0.1.0` reported them as `unmapped payloads 10` on A; since
+  `adr-0008-a-render-companion-is-not-an-orphan` they are counted as
+  `thumbnail pyramids` and `unmapped` stays `0` (§5.9's shape vocabulary is
+  unchanged; this is a state, not a bug in the reader's vocabulary).
 - **Digests are per pyramid class here, and neither one per image nor one per
   store** (§5.2, §5.7): A held four over twenty pyramids — nine preview pyramids
   shared one digest, nine thumbnail pyramids another, and two pyramids had their
@@ -1010,6 +1017,16 @@ and its XMP packet was untouched at 693 bytes, while our `Exif` APP1 replaced th
 payload's — `adr-0003-preserve-preview-bytes` observed rather than asserted.
 `PyramidLevel.fileSize` also agreed with the disk in 48 of 48, a second cache
 confirming §5.4.
+
+**What the rule makes those runs report — added 2026-11-15.** The counts above
+are what `0.1.0` printed, and they stay as printed. With
+`adr-0008-a-render-companion-is-not-an-orphan`, A's ten thumbnail pyramids are a
+cache fact rather than orphans: the same runs print `unmapped 0` and
+`thumbnail pyramids 10`, `scan --json` carries `thumbnail_pyramids: 10`, and the
+ten pyramid files still count in `shapes.level_file 48`. This is the rule's
+consequence pinned by fixtures `M10c`–`M10e`, not a re-run of the three caches.
+The rendered-cache gate `scripts/check.sh real-render` asserts it against the
+`Auto (3840px)` cache itself when this machine holds it.
 
 **What this does not measure.** A render of an image the catalog already holds (a
 re-render, or a preview rebuilt after pruning), what `14.0+` does when it prunes

@@ -9,7 +9,9 @@ use std::path::{Component, Path, PathBuf};
 use crate::catalog::Catalog;
 use crate::error::Result;
 use crate::model::{CatalogImage, Orientation, Pyramid, PyramidLevel};
-use crate::previews_db::{CacheSweep, Candidate, Layout, LevelOnDisk, PreviewIndex, PyramidOnDisk};
+use crate::previews_db::{
+    CacheSweep, Candidate, Layout, LevelOnDisk, PreviewIndex, PyramidKey, PyramidOnDisk,
+};
 use crate::{
     exif::{self, PayloadMetadata},
     jpeg, lrprev, previews_db,
@@ -226,6 +228,11 @@ pub struct CacheFacts {
     /// `Adobe_CrsVersion`, verbatim. Absent stays absent.
     pub crs_version: Option<String>,
     pub shapes: Shapes,
+    /// Unclaimed pyramids that are a render's second pyramid: a `thumbnail`
+    /// row beside a pyramid an image claims, holding only small levels. Counted
+    /// as a cache fact and never listed as an orphan, because every fresh
+    /// render produces them (`adr-0008-a-render-companion-is-not-an-orphan`).
+    pub thumbnail_pyramids: u64,
 }
 
 /// The class each payload took, counted once over the cache's files.
@@ -264,11 +271,12 @@ impl Plan {
         // nobody claims. A second pass would be a second answer.
         let sweep = previews_db::sweep(cache_root);
         let measured = measure(&sweep);
-        let cache = CacheFacts {
+        let mut cache = CacheFacts {
             layout: sweep.layout(),
             db_version: versions.db_version,
             crs_version: versions.crs_version,
             shapes: measured.shapes,
+            thumbnail_pyramids: 0,
         };
         let mut items = Vec::new();
         let mut stats = Stats {
@@ -284,10 +292,12 @@ impl Plan {
         // stale row (`imageId` no longer in `Adobe_images`) must not suppress
         // the orphan sweep: its payload is exactly what salvage is for.
         let image_ids: HashSet<i64> = images.iter().map(|image| image.id_local).collect();
-        let mut claimed: HashSet<String> = HashSet::new();
+        let mut claimed: HashSet<PyramidKey> = HashSet::new();
+        let mut claimed_uuids: HashSet<String> = HashSet::new();
         for entry in &index.all_entries {
             if image_ids.contains(&entry.image_id) {
-                claimed.insert(format!("{}-{}", entry.uuid, entry.digest));
+                claimed_uuids.insert(entry.uuid.clone());
+                claimed.insert(PyramidKey::of(entry));
             }
         }
 
@@ -349,17 +359,18 @@ impl Plan {
                 continue;
             };
 
-            claimed.insert(format!("{}-{}", entry.uuid, entry.digest));
-            let pyramid = index.pyramids.get(&entry.uuid);
+            let key = PyramidKey::of(entry);
+            claimed.insert(key.clone());
+            let pyramid = index.pyramid(&key);
             let orientation = image.orientation;
-            let container = index.payload_path(cache_root, entry);
+            let container = index.payload_path(cache_root, &key);
 
             // What the cache holds for this pyramid decides how it is read: a
             // level file is the modern representation, and where one exists the
             // container is never opened (`adr-0005-discover-payloads-by-index`
             // ¶7). Existence is the decision, so the stat happens here.
             let present: Vec<Candidate<'_>> = index
-                .candidates(cache_root, &entry.uuid, &entry.digest)
+                .candidates(cache_root, &key)
                 .into_iter()
                 .filter(|candidate| candidate.path.is_file())
                 .collect();
@@ -368,7 +379,7 @@ impl Plan {
                 level_file_levels(present, options)
             } else if container.is_file() {
                 (
-                    container_levels(&container, pyramid, index.best_level(&entry.uuid), options),
+                    container_levels(&container, pyramid, index.best_level(&key), options),
                     None,
                 )
             } else {
@@ -379,10 +390,7 @@ impl Plan {
                 // A tombstone is Lightroom's own record that it deleted the
                 // *row*, quoted and counted, never a claimed cause for the file
                 // being gone (`adr-0006-degrade-without-guessing`).
-                let tombstone = index
-                    .deleted
-                    .get(&(entry.uuid.clone(), entry.digest.clone()))
-                    .copied();
+                let tombstone = index.deletion(&key);
                 if tombstone.is_some() {
                     stats.deleted += 1;
                 }
@@ -446,7 +454,17 @@ impl Plan {
         // by the claim set above, and a claimed pyramid holding both
         // representations is the `superseded` cache stat rather than an item.
         for pyramid in &sweep.pyramids {
-            if !claimed.contains(&format!("{}-{}", pyramid.uuid, pyramid.digest)) {
+            let key = PyramidKey::new(&pyramid.uuid, &pyramid.digest);
+            if !claimed.contains(&key) {
+                let row = index.pyramid(&key);
+                // A render writes a second, thumbnail-sized pyramid beside the
+                // one an image claims, and no entry names it (§5.10). It is a
+                // fact about the cache, not an orphan: counted, never listed
+                // (`adr-0008-a-render-companion-is-not-an-orphan`).
+                if is_thumbnail_pyramid(pyramid, row, &claimed_uuids, &measured) {
+                    cache.thumbnail_pyramids += 1;
+                    continue;
+                }
                 let Some(payload) = unclaimed_payload(pyramid, &measured) else {
                     continue;
                 };
@@ -460,8 +478,10 @@ impl Plan {
                     output: None,
                     width: None,
                     height: None,
-                    color_profile: None,
-                    quality: None,
+                    // The pair reaches the row now, so an orphan says what kind
+                    // of pyramid it is instead of printing two dashes.
+                    color_profile: row.map(|row| row.color_profile.clone()),
+                    quality: row.map(|row| row.quality.clone()),
                     orientation: Orientation::Unknown,
                     effective_orientation: Orientation::Unknown,
                     payload_metadata: PayloadMetadata::default(),
@@ -519,6 +539,47 @@ fn distinct_selected_images(items: &[PlanItem]) -> usize {
         .len()
 }
 
+/// The `Pyramid.quality` value a render writes on its second pyramid (§5.10).
+const THUMBNAIL_QUALITY: &str = "thumbnail";
+
+/// `true` when this unclaimed pyramid is the second pyramid a render writes
+/// beside a preview pyramid, rather than an orphan.
+///
+/// All three clauses are needed, and each is a way the state can differ from a
+/// rendered cache's ordinary one
+/// (`adr-0008-a-render-companion-is-not-an-orphan`):
+///
+/// - **a claimed pyramid on the same uuid**, from the live claim set — so a uuid
+///   nothing maps keeps every pyramid it holds `unmapped`, tombstoned or not;
+/// - **the row's own word**, `quality` exactly `thumbnail`, with no case folding
+///   and no guess from size;
+/// - **only small levels**, every one of them measured inside the `thumbnail`
+///   tier, so a row that lies about its size can never hide a payload the tool
+///   would otherwise be willing to write. A level whose frame cannot be read
+///   disqualifies the pyramid too: the answer stays visible.
+fn is_thumbnail_pyramid(
+    pyramid: &PyramidOnDisk,
+    row: Option<&Pyramid>,
+    claimed_uuids: &HashSet<String>,
+    measured: &Measurements,
+) -> bool {
+    if !claimed_uuids.contains(&pyramid.uuid) {
+        return false;
+    }
+    if row.map(|row| row.quality.as_str()) != Some(THUMBNAIL_QUALITY) {
+        return false;
+    }
+    !pyramid.levels.is_empty()
+        && pyramid.levels.iter().all(|level| {
+            measured
+                .frames
+                .get(&level.path)
+                .is_some_and(|(width, height)| {
+                    Tier::from_long_edge((*width).max(*height)) == Tier::Thumbnail
+                })
+        })
+}
+
 /// What an unclaimed pyramid is reported as: the largest level file it holds by
 /// **measured** `SOF` area, or the `.lrprev` when it holds no level file.
 ///
@@ -554,12 +615,19 @@ fn unclaimed_payload(pyramid: &PyramidOnDisk, measured: &Measurements) -> Option
 #[derive(Debug, Default)]
 struct Measurements {
     shapes: Shapes,
-    /// `<cache>/<uuid[0]>/<uuid[0..4]>/<UUID>-<digest>_<n>` → the pixel area its
-    /// own `SOF` declared. Absent when the bytes declared no readable frame.
-    areas: HashMap<PathBuf, u64>,
+    /// `<cache>/<uuid[0]>/<uuid[0..4]>/<UUID>-<digest>_<n>` → the frame its own
+    /// `SOF` declared. Absent when the bytes declared no readable frame.
+    frames: HashMap<PathBuf, (u32, u32)>,
 }
 
 impl Measurements {
+    /// The pixel area this level file's own frame declared.
+    fn area(&self, path: &Path) -> Option<u64> {
+        self.frames
+            .get(path)
+            .map(|(width, height)| u64::from(*width) * u64::from(*height))
+    }
+
     /// The largest level file of this pyramid, by measured area, then by the
     /// `_<n>` the leaf names, then by path.
     fn largest_level<'a>(&self, pyramid: &'a PyramidOnDisk) -> Option<&'a Path> {
@@ -567,8 +635,8 @@ impl Measurements {
             .levels
             .iter()
             .max_by(|a, b| {
-                (self.areas.get(&a.path), a.long_edge, &a.path).cmp(&(
-                    self.areas.get(&b.path),
+                (self.area(&a.path), a.long_edge, &a.path).cmp(&(
+                    self.area(&b.path),
                     b.long_edge,
                     &b.path,
                 ))
@@ -602,9 +670,7 @@ fn measure(sweep: &CacheSweep) -> Measurements {
             if width.max(height) == level.long_edge {
                 measured.shapes.suffix_matches_sof += 1;
             }
-            measured
-                .areas
-                .insert(level.path.clone(), u64::from(width) * u64::from(height));
+            measured.frames.insert(level.path.clone(), (width, height));
         }
     }
     measured
@@ -1256,7 +1322,7 @@ mod tests {
                 index.entries.insert(row.id, entry.clone());
                 index.all_entries.push(entry);
                 index.pyramids.insert(
-                    cache.uuid.clone(),
+                    PyramidKey::new(&cache.uuid, &cache.digest),
                     Pyramid {
                         uuid: cache.uuid.clone(),
                         digest: cache.digest.clone(),
@@ -1267,7 +1333,7 @@ mod tests {
                     },
                 );
                 index.levels.insert(
-                    cache.uuid.clone(),
+                    PyramidKey::new(&cache.uuid, &cache.digest),
                     cache
                         .declared
                         .iter()
