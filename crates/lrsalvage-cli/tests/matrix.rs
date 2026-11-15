@@ -208,8 +208,15 @@ fn scan_json_and_the_summary_name_the_layout_and_the_cache_counts() {
 fn scan_json_reports_an_unknown_layout_and_counts_what_it_could_not_name() {
     let vault = unrecognised();
 
-    // A version no release produced is reported, never used as a gate.
-    let object = scan_json(&vault);
+    // A version no release produced is reported, never used as a gate, and N1's
+    // run exits 3 because nothing can be selected — with one hint, on stderr, so
+    // stdout stays the one object `--json` promises.
+    let output = scan(&vault)
+        .arg("--json")
+        .output()
+        .expect("run scan --json");
+    assert_eq!(output.status.code(), Some(3));
+    let object: Value = serde_json::from_slice(&output.stdout).expect("one object on stdout");
     assert_eq!(object["layout"], "unknown");
     assert_eq!(object["db_version"], "9900001");
     assert_eq!(object["crs_version"], "99.0.0");
@@ -217,6 +224,18 @@ fn scan_json_reports_an_unknown_layout_and_counts_what_it_could_not_name() {
     assert_eq!(object["unmapped"], 0, "unrecognised is not an orphan");
     assert_eq!(object["shapes"]["level_file"], 0);
     assert_eq!(object["shapes"]["container"], 0);
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("3 payload-like files in the cache match no layout"),
+        "the layout word alone does not say why nothing could be named:
+{stderr}"
+    );
+    assert!(
+        stderr.contains("never written"),
+        "and the hint says what became of them:
+{stderr}"
+    );
 }
 
 #[test]

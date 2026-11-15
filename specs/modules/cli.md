@@ -58,6 +58,13 @@ it needs to know about an image comes from a `Plan`.
   error: <reason>)` in place of `is missing` and `fix or move the file to name
   them` in place of the last clause. Counts come from the plan; no hint ever says
   the cache holds no previews.
+
+  An `unknown` layout has no file to name, so its hint names the count instead:
+  how many payload-like files matched no shape, that they are counted and never
+  written, and that the layout is therefore unknown. It goes to stderr under
+  `--json` and moves no exit code: an `unknown` layout selects nothing, so the
+  run is already exit `3`. The hint states a fact about this cache and never
+  suggests a workaround (`adr-0004-detect-layout-not-version`).
 - **A clap parse failure never escapes as `2`**, because `2` already means
   "partial" to a script. Only `--help` / `--version` are successes there, decided
   by whether the error goes to stderr.

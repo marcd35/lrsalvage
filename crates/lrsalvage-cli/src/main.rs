@@ -8,7 +8,7 @@ use indicatif::{ProgressBar, ProgressStyle};
 use lrsalvage_core::catalog::Catalog;
 use lrsalvage_core::extract::{self, ExtractOptions, OutcomeStatus};
 use lrsalvage_core::plan::{Options, Plan, Status, Tier};
-use lrsalvage_core::previews_db::PreviewIndex;
+use lrsalvage_core::previews_db::{Layout, PreviewIndex};
 use lrsalvage_core::{Error, Result, masks, report};
 
 const EXIT_OK: u8 = 0;
@@ -184,6 +184,7 @@ fn scan(args: ScanArgs) -> Result<u8> {
     } else {
         print!("{}", report::summary_with_floor(&plan, args.min_long_edge));
     }
+    layout_hint(&plan);
 
     if args.verbose {
         for line in report::item_lines(&plan) {
@@ -217,6 +218,26 @@ fn scan(args: ScanArgs) -> Result<u8> {
         return Ok(EXIT_NOTHING);
     }
     Ok(EXIT_OK)
+}
+
+/// ADR 0004's one hint for a cache whose payloads are all of a shape this reader
+/// does not know: the layout word alone tells a user the cache is unreadable but
+/// not why, and there is no path to name because nothing was ever a payload as
+/// far as this tool is concerned.
+///
+/// Nothing here refuses the run: an `unknown` layout selects no image, so it
+/// exits 3 the same way an empty cache does.
+fn layout_hint(plan: &Plan) {
+    if plan.cache.layout != Layout::Unknown {
+        return;
+    }
+    eprintln!(
+        "hint: {} payload-like files in the cache match no layout this tool knows, so no preview could be named.",
+        plan.stats.unrecognised
+    );
+    eprintln!(
+        "      They are counted as unrecognised and never written; the cache's layout is unknown."
+    );
 }
 
 fn scan_json(plan: &Plan, catalog: &Path, previews: &Path) -> String {
@@ -270,6 +291,7 @@ fn extract(args: ExtractArgs) -> Result<u8> {
 
     let (_snapshot, plan) = open_plan(&args.catalog, &args.previews, &options, &args.out)?;
     print!("{}", report::summary_with_floor(&plan, args.min_long_edge));
+    layout_hint(&plan);
 
     let selected = plan.selected().count();
     if plan.selected_images() == 0 {

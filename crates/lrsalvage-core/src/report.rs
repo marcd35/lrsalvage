@@ -667,7 +667,8 @@ mod tests {
     use std::path::PathBuf;
 
     use crate::model::CatalogImage;
-    use crate::plan::{CacheFacts, Layout, PlanItem, Shapes, Stats, Status};
+    use crate::plan::{CacheFacts, PlanItem, Shapes, Stats, Status};
+    use crate::previews_db::Layout;
 
     fn plan_with(stats: Stats) -> Plan {
         Plan {

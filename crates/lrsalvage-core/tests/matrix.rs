@@ -32,7 +32,8 @@ use std::path::{Path, PathBuf};
 
 use lrsalvage_core::extract::{self, ExtractOptions, Outcome};
 use lrsalvage_core::jpeg;
-use lrsalvage_core::plan::{Layout, Options, Payload, Plan, PlanItem, Status, Tier};
+use lrsalvage_core::plan::{Options, Payload, Plan, PlanItem, Status, Tier};
+use lrsalvage_core::previews_db::Layout;
 use lrsalvage_fixtures::bytes;
 use lrsalvage_fixtures::vault::{ImageRow, Level, PyramidRow, UnrecognisedFile, Vault, digest_of};
 

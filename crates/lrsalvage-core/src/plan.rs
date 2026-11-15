@@ -9,12 +9,8 @@ use std::path::{Component, Path, PathBuf};
 use crate::catalog::Catalog;
 use crate::error::Result;
 use crate::model::{CatalogImage, Orientation, Pyramid, PyramidLevel};
-use crate::previews_db::{CacheSweep, Candidate, LevelOnDisk, PreviewIndex, PyramidOnDisk};
+use crate::previews_db::{CacheSweep, Candidate, Layout, LevelOnDisk, PreviewIndex, PyramidOnDisk};
 use crate::{jpeg, lrprev, previews_db};
-
-/// Re-exported because a plan's cache facts name it: `CacheFacts::layout` is one
-/// of ADR 0004's five words, decided by `previews_db` from the tree alone.
-pub use crate::previews_db::Layout;
 
 /// Where a payload lives, decided once so no reader has to sniff it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -198,7 +194,7 @@ pub struct Stats {
     /// `missing-payload` items whose pyramid carries a `DeletedPyramid` row
     /// Lightroom wrote. Its own record, never a claimed cause.
     pub deleted: u64,
-    /// Payload-like files no shape matched, in an `unknown` layout. Counted but
+    /// Payload-like files no shape matched, whatever the layout. Counted but
     /// never planned: an unrecognised file is not an orphan
     /// (`adr-0005-discover-payloads-by-index` ¶6).
     pub unrecognised: u64,
@@ -531,6 +527,10 @@ fn unclaimed_payload(pyramid: &PyramidOnDisk) -> Option<Payload> {
 /// that can catch an index that rotted. Incompleteness does not disqualify a
 /// readable frame, and a file with no readable `SOF` simply does not match
 /// (`adr-0007-publish-a-verification-report`).
+///
+/// Each level file is read whole, and that is the cost this histogram adds to a
+/// scan: a bounded prefix could cut an `APPn` segment in half and lose a frame
+/// that is really there, and a frame that cannot be read counts as no match.
 fn summarize_shapes(sweep: &CacheSweep) -> Shapes {
     let mut shapes = Shapes::default();
     for pyramid in &sweep.pyramids {

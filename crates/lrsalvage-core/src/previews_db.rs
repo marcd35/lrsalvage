@@ -10,6 +10,7 @@
 use std::collections::HashMap;
 use std::path::{Component, Path, PathBuf};
 
+use rusqlite::Connection;
 use rusqlite::types::ValueRef;
 use walkdir::WalkDir;
 
@@ -164,15 +165,19 @@ impl PreviewIndex {
         }
 
         {
-            let mut stmt =
-                conn.prepare("SELECT uuid, digest, deletedTimeStamp FROM DeletedPyramid")?;
-            let mut rows = stmt.query([])?;
-            while let Some(row) = rows.next()? {
-                let uuid = text(row.get_ref(0)?);
-                let digest = text(row.get_ref(1)?);
-                index
-                    .deleted
-                    .insert((uuid, digest), number(row.get_ref(2)?).unwrap_or(0.0));
+            // A store that predates the table reports no tombstones rather than
+            // refusing a cache whose payloads are all readable.
+            if table_exists(&conn, "DeletedPyramid")? {
+                let mut stmt =
+                    conn.prepare("SELECT uuid, digest, deletedTimeStamp FROM DeletedPyramid")?;
+                let mut rows = stmt.query([])?;
+                while let Some(row) = rows.next()? {
+                    let uuid = text(row.get_ref(0)?);
+                    let digest = text(row.get_ref(1)?);
+                    index
+                        .deleted
+                        .insert((uuid, digest), number(row.get_ref(2)?).unwrap_or(0.0));
+                }
             }
         }
 
@@ -491,6 +496,16 @@ fn level_leaf_long_edge(name: &str, uuid: &str, digest: &str) -> Option<u32> {
         return None;
     }
     suffix.parse().ok()
+}
+
+/// `true` when `name` is one of this database's tables.
+fn table_exists(conn: &Connection, name: &str) -> Result<bool> {
+    let exists: bool = conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1)",
+        [name],
+        |row| row.get(0),
+    )?;
+    Ok(exists)
 }
 
 /// Text column, tolerating odd storage classes.
@@ -1087,6 +1102,29 @@ mod tests {
             "the timestamp is kept verbatim for a note to quote"
         );
         assert!(index.entries.is_empty(), "a tombstone is not a mapping");
+    }
+
+    #[test]
+    fn a_store_without_the_tombstone_table_reports_no_deletions() {
+        // Not every store version carries `DeletedPyramid`; losing the count is
+        // not a reason to refuse a cache whose payloads are all readable.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("previews.db");
+        let conn = Connection::open(&path).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE Pyramid (uuid NOT NULL, digest NOT NULL, colorProfile NOT NULL,
+               quality NOT NULL, croppedWidth NOT NULL, croppedHeight NOT NULL);
+             CREATE TABLE PyramidLevel (uuid NOT NULL, digest NOT NULL, level NOT NULL,
+               longDimension NOT NULL, lastAccess NOT NULL, width NOT NULL, height NOT NULL);
+             CREATE TABLE ImageCacheEntry (imageId NOT NULL, uuid NOT NULL, digest NOT NULL,
+               orientation);",
+        )
+        .unwrap();
+        drop(conn);
+
+        let index = PreviewIndex::open(&path).expect("a store without tombstones still opens");
+        assert!(index.deleted.is_empty());
+        assert!(index.entries.is_empty());
     }
 
     #[test]

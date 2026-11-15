@@ -72,9 +72,17 @@ them.
 | Released | Preview layout | Catalog format | Tool run |
 |---|---|---|---|
 | LrC 4 – 9 | `legacy` — one `.lrprev` pyramid per image | not measured | same reader, **untested** |
-| LrC 10 – 12 | `legacy` | `1200001` on an LrC 11 catalog | **v11 verified** on real catalogs |
+| LrC 10 – 12 | `legacy` | `1200001` (see below) | **v11 verified** on real catalogs |
 | LrC 13.0 – 13.2 | `legacy` | not measured | same reader, **untested** |
-| LrC 13.3 and later | `modern` — one extensionless JPEG per level, no `.lrprev` | `1504001` on a catalog upgraded by LrC 16.0 | layout **measured**, run **untested** |
+| LrC 13.3 and later | `modern` — one extensionless JPEG per level, no `.lrprev` | `1504001` (see below) | layout **measured**, run **untested** |
+
+Exactly two `Adobe_DBVersion` values have been read off real files: `1200001`,
+and `1504001` on that same catalog after Lightroom Classic 16.0 upgraded it in
+place. Both are *that catalog's* numbers at two moments — not a table keyed by
+release, since a 16.0 application wrote `1504001`. So compare your own
+`scan --json` against them knowing you are looking at two data points, not a
+mapping: an `Adobe_DBVersion` you have not seen here is not "unsupported", it is
+a cache whose **layout** the tool still reports and reads.
 
 `Released` is for you, not for the code: no version decides whether a cache is
 read. The layout does, and it accounts for the two caches a release column cannot
@@ -88,7 +96,7 @@ is `unknown`:
 | `modern` | only loose payload files | reads each level file, certifying it against its `PyramidLevel` row |
 | `mixed` | both kinds, anywhere in the cache | resolves per pyramid: a level file wins, its container is never read |
 | `none` | an index and no payload files | every image is `no-cache-entry`, exit 3 |
-| `unknown` | payload-like files, none of a known shape | one hint naming what it saw, exit 3 |
+| `unknown` | payload-like files, none of a known shape | one hint naming how many matched no shape, exit 3 |
 
 What those rows mean in practice:
 

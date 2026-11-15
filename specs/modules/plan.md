@@ -108,7 +108,10 @@ nothing — not one byte, not one directory. Everything that ends up on disk is
   declares its size has named its long edge. What they are for is the
   verification report a stranger can hand over
   (`adr-0007-publish-a-verification-report`); `shapes` reads a payload only for
-  `suffix_matches_sof`, and nothing else in the plan depends on it.
+  `suffix_matches_sof`, and nothing else in the plan depends on it. That is the
+  one cost the histogram adds to a `scan`: every level file is read whole, because
+  a bounded prefix could cut an `APPn` segment in half and turn a frame that is
+  really there into a mismatch.
 - **A suspect payload is recovered, not discarded.** Width and height may be
   swapped before calling it a disagreement, because the stored render is
   unrotated; a real photograph at the wrong declared size is still worth having,

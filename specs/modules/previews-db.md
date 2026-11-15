@@ -67,7 +67,10 @@ which are stale, and what to do about either is `plan`'s decision.
   `deleted` and its note quote Lightroom's own record of the deletion. A tombstone
   never subtracts from a count, never suppresses an orphan and never changes a
   status (`adr-0005-discover-payloads-by-index`,
-  `adr-0006-degrade-without-guessing`).
+  `adr-0006-degrade-without-guessing`). A store without the table reports no
+  tombstones rather than refusing the cache: losing a narration is not a reason
+  to stop reading payloads that are all there, which is the same tolerance
+  `catalog` gives a table it can do without.
 - **`layout` is one of five words, and this module owns the vocabulary.**
   `Layout` is `legacy` (`.lrprev` containers only), `modern` (loose payload files
   only), `mixed` (both kinds, anywhere in the cache), `none` (an index and no
