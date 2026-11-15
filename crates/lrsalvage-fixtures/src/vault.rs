@@ -569,6 +569,14 @@ impl Vault {
         self.payload(level, representation)
     }
 
+    /// The pyramid's levels as one `.lrprev`, whatever the cache holds: the
+    /// legacy representation inside a cache that also has level files, which is
+    /// how a per-pyramid resolution is proved (row X2). No row is written.
+    #[must_use]
+    pub fn container(self, levels: &[Level]) -> Self {
+        self.payloads(levels, Representation::Container)
+    }
+
     /// A level file the widened glob must find: the file exists, the row does
     /// not. This is [`Vault::level_file`] named for the row it lacks.
     #[must_use]
