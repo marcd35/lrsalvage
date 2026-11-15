@@ -446,6 +446,11 @@ pub struct Vault {
     verbatim: Vec<(String, String, Vec<u8>)>,
     unrecognised: Vec<UnrecognisedFile>,
     preoccupied: Vec<(PathBuf, Vec<u8>)>,
+    /// What `write()` actually put on disk, recorded as it wrote: the shape
+    /// counts a row asserts are derived from these, not from a number copied out
+    /// of the composition.
+    level_files: Vec<PathBuf>,
+    containers: Vec<PathBuf>,
     written: bool,
 }
 
@@ -512,6 +517,8 @@ impl Vault {
             verbatim: Vec::new(),
             unrecognised: Vec::new(),
             preoccupied: Vec::new(),
+            level_files: Vec::new(),
+            containers: Vec::new(),
             written: false,
         }
     }
@@ -716,6 +723,17 @@ impl Vault {
         &self.out_path
     }
 
+    /// Every level file the composition wrote, in write order.
+    pub fn level_files(&self) -> &[PathBuf] {
+        &self.level_files
+    }
+
+    /// Every `.lrprev` the composition wrote — a container's address, including
+    /// the deliberately unreadable one a superseded pyramid leaves behind.
+    pub fn containers(&self) -> &[PathBuf] {
+        &self.containers
+    }
+
     /// The plan a v1 build makes for this vault: catalog plus index plus cache.
     ///
     /// # Panics
@@ -908,7 +926,7 @@ impl Vault {
         }
     }
 
-    fn write_payloads(&self) {
+    fn write_payloads(&mut self) {
         // Containers are one file per pyramid: group the levels back together.
         let mut containers: Vec<((String, String), Vec<&Payload>)> = Vec::new();
 
@@ -924,6 +942,7 @@ impl Vault {
                             payload.long_dimension.round().max(0.0) as u32,
                         ));
                     write_file(&path, &payload.payload());
+                    self.level_files.push(path);
                 }
                 Representation::Container => {
                     let key = (payload.uuid.clone(), payload.digest.clone());
@@ -954,10 +973,12 @@ impl Vault {
                 ));
             }
             write_file(&self.container_path(&uuid, &digest), &file);
+            self.containers.push(self.container_path(&uuid, &digest));
         }
 
         for (uuid, digest, bytes) in &self.verbatim {
             write_file(&self.container_path(uuid, digest), bytes);
+            self.containers.push(self.container_path(uuid, digest));
         }
     }
 
@@ -1187,6 +1208,16 @@ mod tests {
                 .join("AAAA")
                 .join(bytes::leaf(UUID, &digest_of(UUID), 1616));
         assert!(leaf.is_file(), "{}", leaf.display());
+        assert_eq!(
+            vault.level_files(),
+            &[leaf],
+            "the level file the composition wrote"
+        );
+        assert_eq!(
+            vault.containers(),
+            &[vault.container_path(UUID, &digest_of(UUID))],
+            "and the superseded container beside it"
+        );
 
         // The container beside it is not one, so reading it fails the row
         // rather than superseding the level file (ADR 0006 ¶6).

@@ -1,6 +1,8 @@
 //! Minimal JPEG inspection: framing, dimensions and completeness.
 
+use std::io::Read;
 use std::ops::Range;
+use std::path::Path;
 
 use crate::error::Result;
 
@@ -137,6 +139,25 @@ pub fn certify(bytes: &[u8]) -> Result<Certified> {
 /// Read `(width, height)` from the first start-of-frame marker.
 pub fn dimensions(bytes: &[u8]) -> Result<(u32, u32)> {
     certify(bytes).map(|certified| certified.dimensions)
+}
+
+/// `true` when the file opens with `FF D8` — ADR 0004's narrow test for a
+/// payload-like file.
+///
+/// At most two bytes are read and nothing is scanned: a file that merely
+/// *contains* a `FF D8` somewhere is not payload-like. That narrowness is the
+/// decision, not an oversight — widening the rule to a scan would let any file
+/// with an embedded thumbnail claim a shape it does not have
+/// (`adr-0004-detect-layout-not-version`).
+///
+/// An unreadable file is not payload-like: this is a classification of what was
+/// seen, never a claim about what could not be.
+pub fn is_payload_start(path: &Path) -> bool {
+    let mut start = [0u8; 2];
+    match std::fs::File::open(path) {
+        Ok(mut file) => file.read_exact(&mut start).is_ok() && start == [0xFF, 0xD8],
+        Err(_) => false,
+    }
 }
 
 /// Start-of-frame markers whose payload carries `height` then `width`.
@@ -384,6 +405,30 @@ mod tests {
             "the range starts at the marker's own FF"
         );
         assert_eq!(sof.payload(&bytes).len(), 15);
+    }
+
+    #[test]
+    fn the_payload_start_test_reads_two_bytes_and_never_scans() {
+        let dir = tempfile::tempdir().unwrap();
+        let write = |name: &str, bytes: &[u8]| {
+            let path = dir.path().join(name);
+            std::fs::write(&path, bytes).unwrap();
+            path
+        };
+
+        assert!(is_payload_start(&write("soi", &jpeg(1616, 1077))));
+        // Payload-like without being a whole JPEG: the test is the opening.
+        assert!(is_payload_start(&write("only-soi", &[0xFF, 0xD8])));
+        // A container, a truncated header and an unrelated file are not.
+        assert!(!is_payload_start(&write("text", b"not a jpeg at all")));
+        assert!(!is_payload_start(&write("short", &[0xFF])));
+        assert!(!is_payload_start(&write("empty", &[])));
+        // A `FF D8` behind the opening is not the opening: nothing is scanned.
+        let mut buried = vec![0u8; 64];
+        buried.extend_from_slice(&jpeg(1616, 1077));
+        assert!(!is_payload_start(&write("buried", &buried)));
+        // A file that is not there is not payload-like either.
+        assert!(!is_payload_start(&dir.path().join("absent")));
     }
 
     #[test]

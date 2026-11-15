@@ -98,11 +98,14 @@ Vault::unclaimed(levels)            a pyramid no image claims
 Vault::superseded(levels)           level files plus a deliberately unreadable .lrprev
 Vault::unrecognised_file(shape)     payload-like, wrong shard / no suffix / bad uuid
 Vault::preoccupied_destination(relative, bytes)  a file already in the output tree
-Vault::write() -> Vault             catalog(), previews(), out(), plan(&Options)
+Vault::write() -> Vault             catalog(), previews(), out(), plan(&Options),
+                                    level_files(), containers()
 ```
 
 Every scenario type carries a `raw(bytes)` override, so a byte-shaped row never
-needs a fourth ad-hoc writer.
+needs a fourth ad-hoc writer. `level_files()` and `containers()` report what
+`write()` actually put on disk, so a vault's `shapes` counts are derived from the
+composition rather than copied into a test.
 
 ### Absorbing the three copies
 
@@ -280,7 +283,7 @@ fails if a single path, uuid, digest, shard folder or leaf name reaches the file
 
 | # | Vault | Run | Exit | Asserts | Pins |
 |---|---|---|---|---|---|
-| R1 | `modern` | `scan --report <out>/scan.json` | 0 | count: the object's keys are exactly the frozen set (`schema`, `version`, `generated_unix`, `layout`, `db_version`, `crs_version`, `options`, `stats`, `shapes`); `layout modern`; `db_version 1504001`; `crs_version 18.0.0`; `options` echoes `640`, `false`, `false`; every `stats` member equals the vault's pinned totals; `shapes.level_file.count` equals the level files built, `suffix_matches_sof` the same, `container.count 0` with no template | the report describes the run, and its field set is a contract, not a snapshot of the plan |
+| R1 | `modern` | `scan --report <out>/scan.json` | 0 | count: the object's keys are exactly the frozen set (`schema`, `version`, `generated_unix`, `layout`, `db_version`, `crs_version`, `options`, `stats`, `shapes`); `layout modern`; `db_version 1504001`; `crs_version 18.0.0`; `options` echoes `640`, `false`, `false`; every `stats` member equals the vault's pinned totals; `shapes.level_file.count` equals the level files built, `suffix_matches_sof` exactly one lower — M5's `_1616` file measures 800×600 — and `container.count 0` with no template | the report describes the run, and its field set is a contract, not a snapshot of the plan |
 | R2 | `modern` | the bytes R1 wrote | 0 | bytes: the file contains none of the vault's absolute paths (catalog, cache, output root), none of its uuids, none of its digests, none of its shard folder names and none of its leaf names | the regression the decision exists for: one leaked string fails the row. Compared against names the **builder** produced, never a hard-coded sample |
 | R3 | `mixed` | `scan --report` | 0 | count: `shapes.level_file.count` and `shapes.container.count` are both non-zero and each carries its own template; `stats.superseded 1` | a mixed cache publishes two grammars, which is why the template belongs to the class rather than to the cache |
 | R4 | `unrecognised` | `scan --report` | 3 | count: `layout unknown`; `stats.unrecognised 3`; `shapes.level_file.count 0` and `shapes.container.count 0`, both templates absent; the file exists although the run wrote nothing else, and the one hint still prints on stderr | an exit-3 run still hands over its report; the histogram has no bucket for "no shape" (ADR 0005 ¶6) |

@@ -8,7 +8,7 @@ use indicatif::{ProgressBar, ProgressStyle};
 use lrsalvage_core::catalog::Catalog;
 use lrsalvage_core::extract::{self, ExtractOptions, OutcomeStatus};
 use lrsalvage_core::plan::{Options, Plan, Status, Tier};
-use lrsalvage_core::previews_db::PreviewIndex;
+use lrsalvage_core::previews_db::{Layout, PreviewIndex};
 use lrsalvage_core::{Error, Result, masks, report};
 
 const EXIT_OK: u8 = 0;
@@ -184,6 +184,7 @@ fn scan(args: ScanArgs) -> Result<u8> {
     } else {
         print!("{}", report::summary_with_floor(&plan, args.min_long_edge));
     }
+    layout_hint(&plan);
 
     if args.verbose {
         for line in report::item_lines(&plan) {
@@ -219,6 +220,26 @@ fn scan(args: ScanArgs) -> Result<u8> {
     Ok(EXIT_OK)
 }
 
+/// ADR 0004's one hint for a cache whose payloads are all of a shape this reader
+/// does not know: the layout word alone tells a user the cache is unreadable but
+/// not why, and there is no path to name because nothing was ever a payload as
+/// far as this tool is concerned.
+///
+/// Nothing here refuses the run: an `unknown` layout selects no image, so it
+/// exits 3 the same way an empty cache does.
+fn layout_hint(plan: &Plan) {
+    if plan.cache.layout != Layout::Unknown {
+        return;
+    }
+    eprintln!(
+        "hint: {} payload-like files in the cache match no layout this tool knows, so no preview could be named.",
+        plan.stats.unrecognised
+    );
+    eprintln!(
+        "      They are counted as unrecognised and never written; the cache's layout is unknown."
+    );
+}
+
 fn scan_json(plan: &Plan, catalog: &Path, previews: &Path) -> String {
     let stats = &plan.stats;
     let tiers: serde_json::Map<String, serde_json::Value> = stats
@@ -229,6 +250,11 @@ fn scan_json(plan: &Plan, catalog: &Path, previews: &Path) -> String {
     serde_json::json!({
         "catalog": catalog.to_string_lossy().replace('\\', "/"),
         "previews": previews.to_string_lossy().replace('\\', "/"),
+        // The cache's shape, observed rather than interpreted: one layout word
+        // and two version strings, never a gate (`adr-0004-detect-layout-not-version`).
+        "layout": plan.cache.layout.as_str(),
+        "db_version": plan.cache.db_version,
+        "crs_version": plan.cache.crs_version,
         "images": stats.images,
         "recovered": stats.recoverable,
         "bytes": stats.bytes,
@@ -239,7 +265,11 @@ fn scan_json(plan: &Plan, catalog: &Path, previews: &Path) -> String {
         "failed": stats.failed,
         "original_present": stats.original_present,
         "below_floor": stats.below_floor,
+        "superseded": stats.superseded,
+        "deleted": stats.deleted,
+        "unrecognised": stats.unrecognised,
         "tiers": tiers,
+        "shapes": report::shapes_json(&plan.cache.shapes),
     })
     .to_string()
 }
@@ -261,6 +291,7 @@ fn extract(args: ExtractArgs) -> Result<u8> {
 
     let (_snapshot, plan) = open_plan(&args.catalog, &args.previews, &options, &args.out)?;
     print!("{}", report::summary_with_floor(&plan, args.min_long_edge));
+    layout_hint(&plan);
 
     let selected = plan.selected().count();
     if plan.selected_images() == 0 {

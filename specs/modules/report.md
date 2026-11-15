@@ -68,11 +68,27 @@ struct a path.
 - **`deleted` and `unrecognised` are cache counts on the same surface as
   `superseded`.** `deleted` counts the `missing-payload` items whose pyramid
   carries a `DeletedPyramid` row — Lightroom's own record, never a cause — and
-  `unrecognised` counts the payload-like files no shape matched in an `unknown`
-  layout. Each is a summary line only when non-zero, a field in `--json`,
-  `manifest.json` and the verification report's `stats`, and never a column in
-  `report.csv`: neither belongs to an image, and neither moves an exit code
-  (`adr-0004-detect-layout-not-version`, `adr-0006-degrade-without-guessing`).
+  `unrecognised` counts the payload-like files no shape matched, whatever the
+  layout turned out to be. Each is a summary line only when non-zero, a field in
+  `--json`, `manifest.json` and the verification report's `stats`, and never a
+  column in `report.csv`: neither belongs to an image, and neither moves an exit
+  code (`adr-0004-detect-layout-not-version`, `adr-0006-degrade-without-guessing`).
+- **The summary opens with one line naming the layout, and nothing else.**
+  `cache layout: modern` is the whole of it: the layout is the one fact that
+  decides how everything below it was read, and it is a word, not a count. The
+  two version strings are deliberately absent from the text summary — they are
+  for a script and for a contributed verification report, and a number a reader
+  might mistake for a compatibility statement belongs in neither (`adr-0004`).
+- **The machine surfaces carry the cache's shape flat, and each names where.**
+  `--json` is one flat object, so the three cache counts are members of it;
+  `manifest.json` groups its image counts under `stats`, so they join them there.
+  That nesting is the contract, not an accident of who wrote which file. Both
+  carry `layout`, `db_version`, `crs_version` and `shapes` as three numbers —
+  `level_file`, `suffix_matches_sof`, `container` — and `shapes` is built by one
+  shared helper, the only part of the pair a single function can own because it
+  is the only part shaped identically. The nested-per-class form with a grammar
+  template in it is the verification report's and belongs there alone. An absent
+  version string is `null`, never `""` and never a stand-in.
 - **The summary counts images and names the floor actually applied.** The default
   summary assumes 640, so a caller that changed the floor calls
   `summary_with_floor`; a summary that reports a `below_floor` count for a floor

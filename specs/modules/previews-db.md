@@ -7,6 +7,7 @@ parent: architecture
 depends-on:
   - snapshot
   - model
+  - jpeg
 references:
   - adr-0002-map-via-previews-db
   - adr-0005-discover-payloads-by-index
@@ -20,17 +21,20 @@ references:
 ## Responsibility
 
 Load the cache's `previews.db` into an in-memory index — `imageId → CacheEntry`,
-`uuid → Pyramid`, `uuid → [PyramidLevel]` — derive the paths its rows name: the
-container file of a pyramid, each level file of one, and the best level of a
-pyramid; and enumerate the cache tree once into the pyramids present on disk.
+`uuid → Pyramid`, `uuid → [PyramidLevel]`, plus the `DeletedPyramid` tombstones —
+derive the paths its rows name: the container file of a pyramid, each level file
+of one, and the best level of a pyramid; and enumerate the cache tree once into
+the pyramids present on disk, the payload-like files that are no pyramid, and
+therefore the **layout** the cache holds.
 
 ## Boundary
 
 Knows the index schema and the cache's directory layout; knows nothing about
-catalog rows beyond the `imageId` it is given, reads directory entries and names
-and never a payload byte, and never writes. The database is opened through
-`snapshot`'s read-only opener. Which rows are live, which are stale, and what to
-do about either is `plan`'s decision.
+catalog rows beyond the `imageId` it is given, and never writes. It reads
+directory entries and names, and opens a payload only through `jpeg`'s two-byte
+sniff — never more than its first two bytes, and never to interpret them. The
+database is opened through `snapshot`'s read-only opener. Which rows are live,
+which are stale, and what to do about either is `plan`'s decision.
 
 ## Decisions
 
@@ -59,10 +63,23 @@ do about either is `plan`'s decision.
 - **Only pyramids, levels and cache entries are read; tombstones only ever
   narrate.** `MotionPreview` (a poster frame, not a clip) and `FacePreview` are
   not consulted. `DeletedPyramid` rows are read into a set of `(uuid, digest)` and
-  deletion times for one purpose: letting a `missing-payload` note quote
-  Lightroom's own record of the deletion. A tombstone never subtracts from a
-  count, never suppresses an orphan and never changes a status
-  (`adr-0005-discover-payloads-by-index`, `adr-0006-degrade-without-guessing`).
+  deletion times for one purpose: letting a `missing-payload` item be counted as
+  `deleted` and its note quote Lightroom's own record of the deletion. A tombstone
+  never subtracts from a count, never suppresses an orphan and never changes a
+  status (`adr-0005-discover-payloads-by-index`,
+  `adr-0006-degrade-without-guessing`). A store without the table reports no
+  tombstones rather than refusing the cache: losing a narration is not a reason
+  to stop reading payloads that are all there, which is the same tolerance
+  `catalog` gives a table it can do without.
+- **`layout` is one of five words, and this module owns the vocabulary.**
+  `Layout` is `legacy` (`.lrprev` containers only), `modern` (loose payload files
+  only), `mixed` (both kinds, anywhere in the cache), `none` (an index and no
+  payload files) or `unknown` (payload-like files that matched no shape).
+  `CacheSweep::layout()` decides it from the tree alone. Nothing here reads a
+  version, and nothing anywhere compares one to a layout: the catalog format and
+  the preview layout version independently
+  (`adr-0004-detect-layout-not-version`). `mixed` describes the cache, so
+  per-pyramid supersession is `plan`'s count and never a value of this enum.
 - **A missing or unreadable `previews.db` yields an empty index and a reason, not
   an error.** Absence is a mode — the caller reports every image as
   `no-cache-entry` and every payload pyramid as `unmapped` per
@@ -94,14 +111,19 @@ do about either is `plan`'s decision.
   folder is a pyramid with nothing on disk rather than an error. `payload_path`
   keeps resolving one row's container.
 - **The cache tree is enumerated once, and a pyramid is one `(uuid, digest)`.**
-  `pyramids_on_disk(cache_root)` walks the cache and returns one entry per
+  `sweep(cache_root)` walks the cache and returns a `CacheSweep`: one entry per
   `(uuid, digest)` present on disk, grouping that pyramid's level files and any
-  coexisting `<UUID>-<digest>.lrprev`. A file is a member only when its leaf
-  parses to a uuid, a 32-character lower-case hex digest and — for a level file —
-  a numeric suffix, **and** both shard folders agree with that uuid, because the
-  folder is an address and never an identity (§5.2). Everything else is ignored
-  without a sniff: `previews.db` and its `-wal`/`-shm` neighbours, a leaf in the
-  wrong shard, a leaf that does not parse. No byte is read, so `largest_level()`
-  ranks by the `_<n>` the name carries and can never certify a payload. Which of
-  these pyramids an image claims, and what an unclaimed one becomes, is `plan`'s
-  decision (`adr-0005-discover-payloads-by-index` ¶8).
+  coexisting `<UUID>-<digest>.lrprev`, **and** the payload-like files that are no
+  pyramid at all. A file is a member only when its leaf parses to a uuid, a
+  32-character lower-case hex digest and — for a level file — a numeric suffix,
+  **and** both shard folders agree with that uuid, because the folder is an
+  address and never an identity (§5.2). `previews.db` and its `-wal`/`-shm`
+  neighbours, a leaf in the wrong shard, and a leaf that does not parse are all
+  non-members, so each is offered `jpeg`'s two-byte sniff and nothing more: one
+  that opens `FF D8` comes back as **unrecognised** — reported, never ignored,
+  and never an orphan (`adr-0005-discover-payloads-by-index` ¶6). No member's
+  byte is read, so `largest_level()` ranks by the `_<n>` the name carries and
+  can never certify a payload. Which of these pyramids an image claims, whether
+  a claimed one is `superseded`, and what an unclaimed one becomes, is `plan`'s
+  decision (`adr-0005-discover-payloads-by-index` ¶8,
+  `adr-0006-degrade-without-guessing`).

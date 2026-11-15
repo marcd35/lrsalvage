@@ -4,8 +4,7 @@ type: module-design
 title: "jpeg: dimensions and completeness, no pixels"
 status: draft
 parent: architecture
-references:
-  - adr-0001-parse-dont-carve
+references: [adr-0001-parse-dont-carve, adr-0004-detect-layout-not-version]
 ---
 
 # jpeg
@@ -16,13 +15,16 @@ Answer two questions about a byte slice without decoding it: what dimensions doe
 its start-of-frame marker declare, and is it a complete JPEG within the bounds
 given. Certify a payload in one pass — the answer `adr-0005-discover-payloads-by-index`
 requires before a file is believed — and hand back the top-level segment list so
-`exif` can name what the payload carries.
+`exif` can name what the payload carries. Answer one question about a *file* with
+its first two bytes: is this payload-like at all.
 
 ## Boundary
 
-A walking segment parser over a `&[u8]` and an `error::Error`. No pixel access,
-no metadata interpretation, no file I/O. Callers decide what a disagreement or an
-incompleteness means.
+A walking segment parser over a `&[u8]` and an `error::Error`, plus one two-byte
+read of a file. No pixel access, no metadata interpretation. The only file it
+ever opens is the payload-like sniff, which reads at most two bytes and scans
+nothing; everything else takes bytes, so no caller has to teach this module about
+files. Callers decide what a disagreement or an incompleteness means.
 
 ## Decisions
 
@@ -46,6 +48,13 @@ incompleteness means.
   each one starts and ends, is this module's business; whether an `APP1` is
   `Exif`, an XMP packet or neither belongs to `exif`, which consumes the same
   list. One walk per file, two readers of its result.
+- **The payload-like test is two bytes, and it is not a scan.**
+  `is_payload_start(path)` reads at most the file's first two bytes and answers
+  whether they are `FF D8`. That is ADR 0004's rule for what counts as
+  payload-like, and its narrowness is the decision: a file that merely *contains*
+  a `FF D8` is not payload-like, so nothing is searched for and an embedded
+  thumbnail can never make a file claim a shape it does not have. An unreadable
+  or absent file is not payload-like — a classification of what was seen.
 - **Certification takes bytes, never a path.** `plan` certifies the level it
   chose and `extract` re-certifies the bytes it is about to write; neither has to
   teach this module about files, and a bounded read could never be allowed to

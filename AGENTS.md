@@ -26,13 +26,15 @@ segments.
   checkpointed. The only module that copies a catalog file.
 - `catalog` — read-only catalog queries: image rows, original paths, and the XMP
   metadata blob.
-- `previews_db` — `previews.db` reads and the path rule for payloads.
+- `previews_db` — `previews.db` reads, the path rule for payloads, the five-word
+  `Layout` and the one cache-tree walk.
 - `lrprev` — the `AgHg` container: chunks, declared lengths, final-padding
   tolerance.
 - `header` — parses the untrusted Lua-like pyramid header text (dimensions, profile
   name). No production path calls it: `previews.db` is the authority for sizes,
   the profile name and the mapping, so its table is documented but unused.
-- `jpeg` — SOF dimensions and SOI/EOI completeness. No pixels are decoded.
+- `jpeg` — SOF dimensions, SOI/EOI completeness, and the two-byte payload-like
+  sniff. No pixels are decoded.
 - `model` — plain data, plus the sanitising of catalog text into output path
   components. No I/O.
 - `plan` — decisions only: statuses, tiers, selection, stats. It never writes.

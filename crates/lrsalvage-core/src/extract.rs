@@ -650,6 +650,7 @@ mod tests {
                     note: None,
                 }],
                 stats: Stats::default(),
+                ..Plan::default()
             };
             Fixture { dir, plan, output }
         }

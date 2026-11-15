@@ -9,7 +9,7 @@ use std::path::{Component, Path, PathBuf};
 use crate::catalog::Catalog;
 use crate::error::Result;
 use crate::model::{CatalogImage, Orientation, Pyramid, PyramidLevel};
-use crate::previews_db::{Candidate, PreviewIndex, PyramidOnDisk};
+use crate::previews_db::{CacheSweep, Candidate, Layout, LevelOnDisk, PreviewIndex, PyramidOnDisk};
 use crate::{jpeg, lrprev, previews_db};
 
 /// Where a payload lives, decided once so no reader has to sniff it.
@@ -185,13 +185,56 @@ pub struct Stats {
     pub selected_items: u64,
     /// Distinct images among those items.
     pub selected_images: u64,
+    /// Claimed pyramids holding **both** representations: at least one level
+    /// file and at least one legacy `.lrprev`, whose container is never read.
+    /// A cache stat, never a status, and it cannot move the exit code because
+    /// the level files it counts always coexist with it
+    /// (`adr-0006-degrade-without-guessing`).
+    pub superseded: u64,
+    /// `missing-payload` items whose pyramid carries a `DeletedPyramid` row
+    /// Lightroom wrote. Its own record, never a claimed cause.
+    pub deleted: u64,
+    /// Payload-like files no shape matched, whatever the layout. Counted but
+    /// never planned: an unrecognised file is not an orphan
+    /// (`adr-0005-discover-payloads-by-index` ¶6).
+    pub unrecognised: u64,
     pub tiers: HashMap<&'static str, u64>,
+}
+
+/// What the cache the plan read holds, as facts rather than decisions.
+///
+/// One struct, filled once, so every surface prints the same numbers: the
+/// layout and the two version strings are observations
+/// (`adr-0004-detect-layout-not-version`), and `shapes` describes files, never
+/// an image's status.
+#[derive(Debug, Clone, Default)]
+pub struct CacheFacts {
+    /// ADR 0004's five words, decided from the tree by `previews_db`.
+    pub layout: Layout,
+    /// `Adobe_DBVersion`, verbatim. Absent stays absent.
+    pub db_version: Option<String>,
+    /// `Adobe_CrsVersion`, verbatim. Absent stays absent.
+    pub crs_version: Option<String>,
+    pub shapes: Shapes,
+}
+
+/// The class each payload took, counted once over the cache's files.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Shapes {
+    /// Level files the cache holds, a row-derived leaf and a widened one alike.
+    pub level_file: u64,
+    /// How many of those leaves name the long edge their own `SOF` measured —
+    /// the one claim derived from the index that can rot.
+    pub suffix_matches_sof: u64,
+    /// `.lrprev` containers the cache holds.
+    pub container: u64,
 }
 
 #[derive(Debug, Clone, Default)]
 pub struct Plan {
     pub items: Vec<PlanItem>,
     pub stats: Stats,
+    pub cache: CacheFacts,
 }
 
 impl Plan {
@@ -205,9 +248,23 @@ impl Plan {
         options: &Options,
     ) -> Result<Self> {
         let images = catalog.images()?;
+        let versions = catalog.versions()?;
+        // One walk of the cache tree answers every cache-level question: the
+        // layout, the shape histogram, which pyramids are superseded and which
+        // nobody claims. A second pass would be a second answer.
+        let sweep = previews_db::sweep(cache_root);
+        let cache = CacheFacts {
+            layout: sweep.layout(),
+            db_version: versions.db_version,
+            crs_version: versions.crs_version,
+            shapes: summarize_shapes(&sweep),
+        };
         let mut items = Vec::new();
         let mut stats = Stats {
             images: images.len() as u64,
+            // An unrecognised file is never planned, so its count has no item
+            // to come from.
+            unrecognised: sweep.unrecognised.len() as u64,
             ..Stats::default()
         };
         let mut used: HashMap<String, u32> = HashMap::new();
@@ -304,6 +361,16 @@ impl Plan {
                 // level file is gone while another survives is a pruned level,
                 // not this: 14.0+ prunes in the background (§5.5).
                 stats.missing_payload += 1;
+                // A tombstone is Lightroom's own record that it deleted the
+                // *row*, quoted and counted, never a claimed cause for the file
+                // being gone (`adr-0006-degrade-without-guessing`).
+                let tombstone = index
+                    .deleted
+                    .get(&(entry.uuid.clone(), entry.digest.clone()))
+                    .copied();
+                if tombstone.is_some() {
+                    stats.deleted += 1;
+                }
                 items.push(PlanItem {
                     status: Status::MissingPayload,
                     image: Some(image),
@@ -321,7 +388,13 @@ impl Plan {
                     declared: None,
                     smallest_level: None,
                     selected: false,
-                    note: Some("no payload file for this pyramid is on disk".into()),
+                    note: Some(match tombstone {
+                        Some(timestamp) => format!(
+                            "no payload file for this pyramid is on disk; previews.db records its \
+                             deletion at {timestamp}"
+                        ),
+                        None => "no payload file for this pyramid is on disk".to_string(),
+                    }),
                 });
                 continue;
             };
@@ -353,42 +426,54 @@ impl Plan {
         // photograph, whatever its level set looks like
         // (`adr-0005-discover-payloads-by-index` ¶8). The enumeration is
         // `previews_db`'s; which of these pyramids an image claims is decided
-        // by the claim set above.
-        for pyramid in previews_db::pyramids_on_disk(cache_root) {
-            if claimed.contains(&format!("{}-{}", pyramid.uuid, pyramid.digest)) {
+        // by the claim set above, and a claimed pyramid holding both
+        // representations is the `superseded` cache stat rather than an item.
+        for pyramid in &sweep.pyramids {
+            if !claimed.contains(&format!("{}-{}", pyramid.uuid, pyramid.digest)) {
+                let Some(payload) = unclaimed_payload(pyramid) else {
+                    continue;
+                };
+                let named = payload.path().to_string_lossy().replace('\\', "/");
+                items.push(PlanItem {
+                    status: Status::Unmapped,
+                    image: None,
+                    payload: Some(payload),
+                    // Nothing is extracted, so there is no output path to
+                    // report; the payload's own path is the useful fact.
+                    output: None,
+                    width: None,
+                    height: None,
+                    color_profile: None,
+                    quality: None,
+                    orientation: Orientation::Unknown,
+                    tier: None,
+                    declared: None,
+                    smallest_level: None,
+                    selected: false,
+                    note: Some(format!(
+                        "payload exists but previews.db has no entry for it: {named}"
+                    )),
+                });
+                stats.unmapped += 1;
                 continue;
             }
-            let Some(payload) = unclaimed_payload(&pyramid) else {
-                continue;
-            };
-            let named = payload.path().to_string_lossy().replace('\\', "/");
-            items.push(PlanItem {
-                status: Status::Unmapped,
-                image: None,
-                payload: Some(payload),
-                // Nothing is extracted, so there is no output path to report;
-                // the payload's own path is the useful fact.
-                output: None,
-                width: None,
-                height: None,
-                color_profile: None,
-                quality: None,
-                orientation: Orientation::Unknown,
-                tier: None,
-                declared: None,
-                smallest_level: None,
-                selected: false,
-                note: Some(format!(
-                    "payload exists but previews.db has no entry for it: {named}"
-                )),
-            });
-            stats.unmapped += 1;
+
+            // Claimed and holding both representations: the level files are the
+            // pyramid and the legacy container is never read, so this is a
+            // count of what was set aside, never a loss.
+            if pyramid.container.is_some() && !pyramid.levels.is_empty() {
+                stats.superseded += 1;
+            }
         }
 
         stats.selected_items = items.iter().filter(|item| item.selected).count() as u64;
         stats.selected_images = distinct_selected_images(&items) as u64;
 
-        Ok(Plan { items, stats })
+        Ok(Plan {
+            items,
+            stats,
+            cache,
+        })
     }
 
     /// Every item the extractor evaluates: an item the floor did not exclude,
@@ -432,6 +517,47 @@ fn unclaimed_payload(pyramid: &PyramidOnDisk) -> Option<Payload> {
         // level was ever certified in it.
         level: None,
     })
+}
+
+/// The class each payload took, counted over the one tree walk.
+///
+/// `level_file` and `container` need nothing but names. `suffix_matches_sof` is
+/// the one count that reads a payload: it compares the `_<n>` a leaf names with
+/// the long edge that leaf's own `SOF` measured, which is why it is the count
+/// that can catch an index that rotted. Incompleteness does not disqualify a
+/// readable frame, and a file with no readable `SOF` simply does not match
+/// (`adr-0007-publish-a-verification-report`).
+///
+/// Each level file is read whole, and that is the cost this histogram adds to a
+/// scan: a bounded prefix could cut an `APPn` segment in half and lose a frame
+/// that is really there, and a frame that cannot be read counts as no match.
+fn summarize_shapes(sweep: &CacheSweep) -> Shapes {
+    let mut shapes = Shapes::default();
+    for pyramid in &sweep.pyramids {
+        shapes.level_file += pyramid.levels.len() as u64;
+        shapes.container += u64::from(pyramid.container.is_some());
+        shapes.suffix_matches_sof += pyramid
+            .levels
+            .iter()
+            .filter(|level| names_its_measured_sof(level))
+            .count() as u64;
+    }
+    shapes
+}
+
+/// `true` when the `_<n>` this leaf names is the long edge its own bytes
+/// declared.
+fn names_its_measured_sof(level: &LevelOnDisk) -> bool {
+    let Ok(bytes) = std::fs::read(&level.path) else {
+        return false;
+    };
+    match jpeg::certify(&bytes) {
+        Ok(certified) => {
+            let (width, height) = certified.dimensions;
+            width.max(height) == level.long_edge
+        }
+        Err(_) => false,
+    }
 }
 
 /// One level of one pyramid, as the plan found it.

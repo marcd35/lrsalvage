@@ -58,6 +58,13 @@ it needs to know about an image comes from a `Plan`.
   error: <reason>)` in place of `is missing` and `fix or move the file to name
   them` in place of the last clause. Counts come from the plan; no hint ever says
   the cache holds no previews.
+
+  An `unknown` layout has no file to name, so its hint names the count instead:
+  how many payload-like files matched no shape, that they are counted and never
+  written, and that the layout is therefore unknown. It goes to stderr under
+  `--json` and moves no exit code: an `unknown` layout selects nothing, so the
+  run is already exit `3`. The hint states a fact about this cache and never
+  suggests a workaround (`adr-0004-detect-layout-not-version`).
 - **A clap parse failure never escapes as `2`**, because `2` already means
   "partial" to a script. Only `--help` / `--version` are successes there, decided
   by whether the error goes to stderr.
@@ -85,6 +92,13 @@ it needs to know about an image comes from a `Plan`.
   path and stdout keeps exactly one object; `--verbose` already moves its lines to
   stderr under `--json`, so a caller combining all three still parses stdout with
   one `serde_json::from_str`.
+- **`--json` grows by promise, and it keeps its paths.** The one object carries
+  the identifiers (`catalog`, `previews`), every image count, the cache's
+  `layout`, `db_version`, `crs_version`, its three cache counts and its flat
+  `shapes` — each because ADR 0004, ADR 0006 or ADR 0007 promised it a field, and
+  no field is added for convenience. It stays the surface with paths, which is
+  why the path-free object is `--report` and not a flag on this one. The
+  numbers are the plan's: this module formats them and computes none of them.
 - **Report files are claimed, never assumed.** `report.csv`, `manifest.json` and
   `extract.csv` each take the next free numbered name (`report (2).csv`) and say
   so, because a name on disk may belong to somebody else. A dry run writes none
