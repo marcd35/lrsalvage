@@ -9,8 +9,12 @@ use std::path::{Component, Path, PathBuf};
 use crate::catalog::Catalog;
 use crate::error::Result;
 use crate::model::{CatalogImage, Orientation, Pyramid, PyramidLevel};
-use crate::previews_db::{Candidate, CacheSweep, Layout, LevelOnDisk, PreviewIndex, PyramidOnDisk};
+use crate::previews_db::{Candidate, CacheSweep, LevelOnDisk, PreviewIndex, PyramidOnDisk};
 use crate::{jpeg, lrprev, previews_db};
+
+/// Re-exported because a plan's cache facts name it: `CacheFacts::layout` is one
+/// of ADR 0004's five words, decided by `previews_db` from the tree alone.
+pub use crate::previews_db::Layout;
 
 /// Where a payload lives, decided once so no reader has to sniff it.
 #[derive(Debug, Clone, PartialEq, Eq)]

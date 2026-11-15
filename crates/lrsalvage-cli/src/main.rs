@@ -229,6 +229,11 @@ fn scan_json(plan: &Plan, catalog: &Path, previews: &Path) -> String {
     serde_json::json!({
         "catalog": catalog.to_string_lossy().replace('\\', "/"),
         "previews": previews.to_string_lossy().replace('\\', "/"),
+        // The cache's shape, observed rather than interpreted: one layout word
+        // and two version strings, never a gate (`adr-0004-detect-layout-not-version`).
+        "layout": plan.cache.layout.as_str(),
+        "db_version": plan.cache.db_version,
+        "crs_version": plan.cache.crs_version,
         "images": stats.images,
         "recovered": stats.recoverable,
         "bytes": stats.bytes,
@@ -239,7 +244,11 @@ fn scan_json(plan: &Plan, catalog: &Path, previews: &Path) -> String {
         "failed": stats.failed,
         "original_present": stats.original_present,
         "below_floor": stats.below_floor,
+        "superseded": stats.superseded,
+        "deleted": stats.deleted,
+        "unrecognised": stats.unrecognised,
         "tiers": tiers,
+        "shapes": report::shapes_json(&plan.cache.shapes),
     })
     .to_string()
 }

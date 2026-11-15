@@ -11,7 +11,7 @@ use serde_json::{Map, Value, json};
 
 use crate::error::{IoContext, Result};
 use crate::model::Orientation;
-use crate::plan::{Payload, Plan, PlanItem, Tier};
+use crate::plan::{Payload, Plan, PlanItem, Shapes, Tier};
 use crate::{jpeg, lrprev};
 
 /// One-line-per-status summary for the terminal, using the default 640 px floor.
@@ -20,11 +20,14 @@ pub fn summary(plan: &Plan) -> String {
 }
 
 /// The same summary, naming the floor the caller actually applied.
+///
+/// One leading line names the cache's layout and nothing else; the cache's own
+/// counts follow the image counts, each only when it is non-zero.
 pub fn summary_with_floor(plan: &Plan, floor: u32) -> String {
     let stats = &plan.stats;
 
     // label, count, optional trailing note
-    let mut rows: Vec<(String, u64, Option<String>)> = Vec::with_capacity(12);
+    let mut rows: Vec<(String, u64, Option<String>)> = Vec::with_capacity(16);
     rows.push(("catalog images".to_string(), stats.images, None));
     rows.push((
         "recovered".to_string(),
@@ -70,10 +73,35 @@ pub fn summary_with_floor(plan: &Plan, floor: u32) -> String {
         }
     }
 
+    // The cache's own counts, never an image's: none of them moves an exit code
+    // and none is a status (`adr-0004-detect-layout-not-version`,
+    // `adr-0006-degrade-without-guessing`).
+    for (label, count, detail) in [
+        (
+            "superseded",
+            stats.superseded,
+            "legacy .lrprev ignored; level files used",
+        ),
+        (
+            "deleted",
+            stats.deleted,
+            "previews.db recorded these pyramids as deleted",
+        ),
+        (
+            "unrecognised",
+            stats.unrecognised,
+            "payload-like files of no known shape",
+        ),
+    ] {
+        if count > 0 {
+            rows.push((label.to_string(), count, Some(detail.to_string())));
+        }
+    }
+
     let numbers: Vec<String> = rows.iter().map(|(_, n, _)| with_thousands(*n)).collect();
     let width = numbers.iter().map(String::len).max().unwrap_or(1);
 
-    let mut out = String::with_capacity(rows.len() * 48);
+    let mut out = format!("cache layout: {}\n", plan.cache.layout.as_str());
     for ((label, _, detail), number) in rows.iter().zip(&numbers) {
         out.push_str(&format!("{label:<22}{number:>width$}"));
         if let Some(detail) = detail {
@@ -139,11 +167,16 @@ fn item_line(item: &PlanItem) -> String {
     )
 }
 
-/// The output path as it reads under the output root.
+/// The output path as it reads under the output root, or — when there is no
+/// image to name — the payload's own path.
 ///
 /// The plan stores absolute outputs but not the root they hang from, so the
 /// mapped case is rebuilt from the image's own relative path plus the file name
 /// the planner actually chose (which carries `- WxH` and ` (2)` suffixes).
+///
+/// An unclaimed payload has no output by construction, and its path is a field
+/// rather than something to dig out of a note, so the column that would print
+/// `-` shows the payload instead (`adr-0006-degrade-without-guessing`).
 fn relative_output(item: &PlanItem) -> String {
     match (&item.image, &item.output) {
         (Some(image), Some(output)) => {
@@ -163,12 +196,20 @@ fn relative_output(item: &PlanItem) -> String {
             Some(name) => slashed(Path::new(name)),
             None => "-".to_string(),
         },
-        (None, None) => "-".to_string(),
+        (None, None) => payload_path(item).unwrap_or_else(|| "-".to_string()),
     }
 }
 
+/// The payload file an item names, with forward slashes.
+fn payload_path(item: &PlanItem) -> Option<String> {
+    item.payload.as_ref().map(|payload| slashed(payload.path()))
+}
+
 /// Fixed column order; downstream tools rely on it.
-const CSV_HEADER: &str = "status,tier,width,height,long_edge,color_profile,quality,orientation,selected,output,original_path,capture_time,rating,note";
+///
+/// `payload` trails `note` and `payload_metadata` will follow `payload`, so
+/// neither trailing fact ever moves a column that already exists.
+const CSV_HEADER: &str = "status,tier,width,height,long_edge,color_profile,quality,orientation,selected,output,original_path,capture_time,rating,note,payload";
 
 /// `report.csv`, one row per plan item.
 pub fn write_csv(plan: &Plan, path: &Path) -> Result<()> {
@@ -228,6 +269,8 @@ pub fn write_csv(plan: &Plan, path: &Path) -> Result<()> {
         );
         line.push(',');
         push_csv_field(&mut line, item.note.as_deref().unwrap_or(""));
+        line.push(',');
+        push_csv_field(&mut line, payload_path(item).as_deref().unwrap_or(""));
         line.push_str("\r\n");
 
         writer.write_all(line.as_bytes()).at(path)?;
@@ -318,12 +361,19 @@ pub fn write_json(plan: &Plan, path: &Path, version: &str) -> Result<()> {
         "schema": "lrsalvage.manifest",
         "version": version,
         "generated_unix": unix_now(),
+        "layout": plan.cache.layout.as_str(),
+        "db_version": plan.cache.db_version,
+        "crs_version": plan.cache.crs_version,
         "stats": {
             "images": plan.stats.images,
             "recovered": plan.stats.recoverable,
             "bytes": plan.stats.bytes,
             "tiers": Value::Object(tiers),
+            "superseded": plan.stats.superseded,
+            "deleted": plan.stats.deleted,
+            "unrecognised": plan.stats.unrecognised,
         },
+        "shapes": shapes_json(&plan.cache.shapes),
         "items": items,
     });
 
@@ -342,8 +392,7 @@ fn item_json(item: &PlanItem) -> Value {
     object.insert("status".to_string(), json!(item.status.as_str()));
     if let Some(tier) = item.tier {
         object.insert("tier".to_string(), json!(tier.as_str()));
-    }
-    if let Some(width) = item.width {
+    }    if let Some(width) = item.width {
         object.insert("width".to_string(), json!(width));
     }
     if let Some(height) = item.height {
@@ -375,6 +424,11 @@ fn item_json(item: &PlanItem) -> Value {
     if let Some(rating) = rating(item) {
         object.insert("rating".to_string(), json!(rating));
     }
+    // Every item names the payload it came from, so a script triaging an
+    // unclaimed payload never parses a note (`adr-0006-degrade-without-guessing`).
+    if let Some(payload) = payload_path(item) {
+        object.insert("payload".to_string(), json!(payload));
+    }
     // Absent stays absent, except `note`: it is part of the schema and is
     // explicitly null when there is nothing to say.
     object.insert(
@@ -392,6 +446,19 @@ fn unix_now() -> u64 {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|since| since.as_secs())
         .unwrap_or(0)
+}
+
+/// The three shape counts, flat.
+///
+/// A class's grammar template joins them in the verification report; here they
+/// are the three numbers and nothing else, so a consumer reads a count rather
+/// than a template it did not ask for (`adr-0007-publish-a-verification-report`).
+pub fn shapes_json(shapes: &Shapes) -> Value {
+    json!({
+        "level_file": shapes.level_file,
+        "suffix_matches_sof": shapes.suffix_matches_sof,
+        "container": shapes.container,
+    })
 }
 
 /// Self-contained HTML contact sheet with inlined thumbnails.
@@ -599,7 +666,7 @@ mod tests {
     use std::path::PathBuf;
 
     use crate::model::CatalogImage;
-    use crate::plan::{PlanItem, Stats, Status};
+    use crate::plan::{CacheFacts, Layout, PlanItem, Shapes, Stats, Status};
 
     fn plan_with(stats: Stats) -> Plan {
         Plan {
@@ -748,6 +815,51 @@ mod tests {
     }
 
     #[test]
+    fn the_summary_leads_with_the_layout_and_counts_the_cache_apart_from_images() {
+        let plan = Plan {
+            stats: Stats {
+                images: 3,
+                recoverable: 3,
+                superseded: 2,
+                deleted: 1,
+                unrecognised: 4,
+                ..Stats::default()
+            },
+            cache: CacheFacts {
+                layout: Layout::Mixed,
+                ..CacheFacts::default()
+            },
+            ..Plan::default()
+        };
+        let text = summary(&plan);
+
+        assert!(
+            text.starts_with("cache layout: mixed
+"),
+            "one leading line names the layout and nothing else:
+{text}"
+        );
+        // The three cache counts are summary lines while they are non-zero, and
+        // a cache count is never mistaken for an image count.
+        for label in ["superseded", "deleted", "unrecognised"] {
+            assert!(text.contains(label), "{label} is missing from:
+{text}");
+        }
+        assert!(text.contains("legacy .lrprev ignored; level files used"), "{text}");
+        assert!(text.contains("
+recovered"), "{text}");
+
+        // A zero cache count is omitted, exactly like a zero image count.
+        let quiet = summary(&Plan::default());
+        for label in ["superseded", "deleted", "unrecognised"] {
+            assert!(!quiet.contains(label), "{label} is zero here:
+{quiet}");
+        }
+        assert!(quiet.starts_with("cache layout: none
+"), "{quiet}");
+    }
+
+    #[test]
     fn empty_plan_still_reports_a_recovered_row() {
         let text = summary(&plan_with(Stats::default()));
         assert!(text.contains("recovered"), "{text}");
@@ -769,7 +881,7 @@ mod tests {
         write_csv(&plan_with_items(vec![item]), &path).unwrap();
         let text = std::fs::read_to_string(&path).unwrap();
 
-        let header = "status,tier,width,height,long_edge,color_profile,quality,orientation,selected,output,original_path,capture_time,rating,note";
+        let header = "status,tier,width,height,long_edge,color_profile,quality,orientation,selected,output,original_path,capture_time,rating,note,payload";
         assert!(text.starts_with(&format!("{header}\r\n")), "{text}");
         assert!(
             text.contains("\"a,b\"\"c\nd\""),
@@ -821,11 +933,11 @@ mod tests {
         );
         assert_eq!(
             rows[0],
-            "status,tier,width,height,long_edge,color_profile,quality,orientation,selected,output,original_path,capture_time,rating,note"
+            "status,tier,width,height,long_edge,color_profile,quality,orientation,selected,output,original_path,capture_time,rating,note,payload"
         );
 
         let first: Vec<&str> = rows[1].split(',').collect();
-        assert_eq!(first.len(), 14, "{:?}", rows[1]);
+        assert_eq!(first.len(), 15, "{:?}", rows[1]);
         assert_eq!(first[0], "recovered");
         assert_eq!(first[1], "standard");
         assert_eq!(first[2], "1600");
@@ -842,7 +954,7 @@ mod tests {
         assert_eq!(first[13], "");
 
         let second: Vec<&str> = rows[2].split(',').collect();
-        assert_eq!(second.len(), 14, "{:?}", rows[2]);
+        assert_eq!(second.len(), 15, "{:?}", rows[2]);
         assert_eq!(second[0], "unmapped");
         assert_eq!(second[1], "");
         assert_eq!(second[2], "");
@@ -855,6 +967,10 @@ mod tests {
         assert_eq!(second[9], "out/_unmapped/orphan.jpg");
         assert_eq!(second[10], "");
         assert_eq!(second[13], "");
+        assert_eq!(
+            second[14], "cache/orphan.lrprev",
+            "an unclaimed payload's path is the column, never the note"
+        );
     }
 
     #[test]
@@ -898,8 +1014,21 @@ mod tests {
                     images: 2,
                     recoverable: 1,
                     bytes: 1234,
+                    superseded: 1,
+                    deleted: 2,
+                    unrecognised: 3,
                     tiers,
                     ..Stats::default()
+                },
+                cache: CacheFacts {
+                    layout: Layout::Mixed,
+                    db_version: Some("1504001".to_string()),
+                    crs_version: Some("18.0.0".to_string()),
+                    shapes: Shapes {
+                        level_file: 5,
+                        suffix_matches_sof: 4,
+                        container: 2,
+                    },
                 },
                 ..Plan::default()
             },
@@ -920,6 +1049,17 @@ mod tests {
         assert_eq!(manifest["stats"]["recovered"], 1);
         assert_eq!(manifest["stats"]["bytes"], 1234);
         assert_eq!(manifest["stats"]["tiers"]["standard"], 1);
+        // The cache's shape, observed: one layout word, two verbatim strings,
+        // three cache counts and three flat shape counts.
+        assert_eq!(manifest["layout"], "mixed");
+        assert_eq!(manifest["db_version"], "1504001");
+        assert_eq!(manifest["crs_version"], "18.0.0");
+        assert_eq!(manifest["stats"]["superseded"], 1);
+        assert_eq!(manifest["stats"]["deleted"], 2);
+        assert_eq!(manifest["stats"]["unrecognised"], 3);
+        assert_eq!(manifest["shapes"]["level_file"], 5);
+        assert_eq!(manifest["shapes"]["suffix_matches_sof"], 4);
+        assert_eq!(manifest["shapes"]["container"], 2);
 
         let items = manifest["items"].as_array().unwrap();
         assert_eq!(items.len(), 2);
@@ -934,6 +1074,23 @@ mod tests {
         assert!(items[1].get("width").is_none());
         assert!(items[1].get("tier").is_none());
         assert_eq!(items[1]["status"], "unmapped");
+        // Every item names its payload, so an orphan's path is a member.
+        assert_eq!(items[0]["payload"], "cache/payload.lrprev");
+        assert_eq!(items[1]["payload"], "cache/orphan.lrprev");
+    }
+
+    #[test]
+    fn a_manifest_without_version_strings_reports_null_rather_than_a_guess() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("manifest.json");
+        write_json(&Plan::default(), &path, "1").unwrap();
+
+        let manifest: Value =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(manifest["layout"], "none");
+        assert_eq!(manifest["db_version"], Value::Null);
+        assert_eq!(manifest["crs_version"], Value::Null);
+        assert_eq!(manifest["shapes"]["suffix_matches_sof"], 0);
     }
 
     #[test]
@@ -1077,9 +1234,10 @@ mod tests {
             lines[0],
             "recovered  standard  1600x1200  AdobeRGB  3.16 107 york street/107 York St-1.jpg"
         );
-        // Nothing is written for an unmapped payload, so the last column is
-        // the same placeholder as every other unknown fact.
-        assert_eq!(lines[1], "unmapped  -  -  -  -");
+        // An unclaimed payload has no output to name, so the last column
+        // carries its own path rather than a placeholder: a script must not
+        // have to parse the note (`adr-0006-degrade-without-guessing`).
+        assert_eq!(lines[1], "unmapped  -  -  -  cache/orphan.lrprev");
     }
 
     #[test]
