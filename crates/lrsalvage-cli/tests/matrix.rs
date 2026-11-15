@@ -7,12 +7,19 @@
 //!
 //! **No total and no file count is asserted.** A run's `images`/`recovered`
 //! counts are the vault's pinned totals, which this slice cannot produce: the
-//! `modern` vault's include `unmapped 2`, which needs the orphan sweep, and
+//! `modern` vault's include `deleted 1`, which needs the tombstone count, and
 //! `mixed`'s include `superseded 1`, a stat that does not exist yet. Each vault
 //! here is built from the rows these runs need (M1 for `modern`; D1 and D4 for
 //! `damaged`) rather than whole, so that a count asserted by accident would read
 //! as a fixture bug rather than a promise. The rows' full shapes and their
 //! structured fields are asserted in `lrsalvage-core`'s matrix.
+//!
+//! **No exit-code row was added for the widening or the orphan sweep, because no
+//! run's code moved.** An unclaimed payload is listed and never selected, so it
+//! can neither make a run partial nor turn "nothing to extract" into work; a
+//! row-less level file is simply the level the image is written from. The codes
+//! asserted below are the same before and after, which is the claim — not an
+//! omission to be filled in later.
 
 use std::fs;
 use std::path::{Path, PathBuf};
