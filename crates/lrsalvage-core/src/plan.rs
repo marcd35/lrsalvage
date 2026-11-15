@@ -181,7 +181,7 @@ pub struct Stats {
     /// Every level item in the plan, including the extra ones `--all_levels`
     /// emits for one image.
     pub levels: u64,
-    /// Plan items the extractor will write.
+    /// Plan items the extractor evaluates: everything the floor did not exclude.
     pub selected_items: u64,
     /// Distinct images among those items.
     pub selected_images: u64,
@@ -390,7 +390,8 @@ impl Plan {
         Ok(Plan { items, stats })
     }
 
-    /// Every item the extractor should write.
+    /// Every item the extractor evaluates: an item the floor did not exclude,
+    /// whatever its status. A `failed` one is reported and writes nothing.
     pub fn selected(&self) -> impl Iterator<Item = &PlanItem> {
         self.items.iter().filter(|i| i.selected)
     }
@@ -612,17 +613,16 @@ fn decide_levels(
 ) -> (Vec<PlanItem>, Option<Status>) {
     let mut levels = levels;
     let winner = levels.len() - 1;
-    let chosen: Vec<(usize, FoundLevel)> = if tally.options.all_levels {
-        levels.into_iter().enumerate().collect()
+    let chosen: Vec<FoundLevel> = if tally.options.all_levels {
+        levels
     } else {
-        let best = levels.swap_remove(winner);
-        vec![(winner, best)]
+        vec![levels.swap_remove(winner)]
     };
 
     let mut image_status = None;
     let mut items = Vec::with_capacity(chosen.len());
 
-    for (_, level) in chosen {
+    for level in chosen {
         let tier = level
             .dimensions
             .map(|(width, height)| Tier::from_long_edge(width.max(height)));

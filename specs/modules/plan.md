@@ -45,8 +45,9 @@ nothing — not one byte, not one directory. Everything that ends up on disk is
 - **A payload is one level, and the item names where it lives.** The item carries
   `Payload::Container { path, level }` — a legacy `.lrprev` and the `level_N`
   chunk that was certified — or `Payload::LevelFile { path }`, where the file *is*
-  the level. `level` is `None` only for an unclaimed pyramid, whose payload is
-  listed and never written. The kind is decided here, from the index and the
+  the level. `level` is `None` whenever no level was certified — a file that is
+  gone, one that failed to parse, or a pyramid no image claims — and such an item
+  is never written. The kind is decided here, from the index and the
   files; neither `extract` nor `report` sniffs a payload to find out what it is,
   and neither ever re-picks a level: the item's choice is the choice.
 - **`missing-payload` means no file of that pyramid exists at all.** A row whose
@@ -120,8 +121,12 @@ nothing — not one byte, not one directory. Everything that ends up on disk is
   certified (`adr-0005-discover-payloads-by-index` ¶5). Either way the dimensions
   the item reports are measured from the winner's own `SOF`, never from the
   name.
-- **The floor excludes, it does not fail.** Items below `--min-long-edge` (640 by
-  default, `0` disables) are counted as `below_floor` and left unselected.
+- **The floor excludes, it does not fail, and nothing else excludes.** Items below
+  `--min-long-edge` (640 by default, `0` disables) are counted as `below_floor`
+  and left unselected. A level judged `failed` is still an item the run
+  evaluates: it is reported with its reason and writes nothing, so a cache with a
+  broken payload exits partial instead of claiming a clean success
+  (`goal-and-requirements` ¶5).
 - **`original-present` short-circuits everything else**, and the `stat` behind it
   is skipped when `--include-present` is set, so the opt-in run costs nothing per
   image.
