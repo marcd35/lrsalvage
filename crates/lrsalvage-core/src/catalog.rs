@@ -841,8 +841,24 @@ mod tests {
                 .entries
                 .get(&image.id_local)
                 .unwrap_or_else(|| panic!("no cache entry for image {}", image.id_local));
+            // Either representation satisfies "this pyramid has a payload on
+            // disk": an upgraded cache has level files where the container used
+            // to be, and a legacy one has the container. This row is about the
+            // catalog joining the cache, not about the layout.
             let payload = index.payload_path(&cache_root, entry);
-            assert!(payload.is_file(), "missing payload {}", payload.display());
+            let level_files: Vec<PathBuf> = index
+                .candidates(&cache_root, &entry.uuid, &entry.digest)
+                .into_iter()
+                .map(|candidate| candidate.path)
+                .filter(|path| path.is_file())
+                .collect();
+            assert!(
+                payload.is_file() || !level_files.is_empty(),
+                "no payload for pyramid {}-{}: {} is absent and no level file of it is on disk",
+                entry.uuid,
+                entry.digest,
+                payload.display()
+            );
 
             let pyramid = index
                 .pyramids

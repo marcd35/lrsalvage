@@ -1,0 +1,3 @@
+# A shell script with CRLF line endings cannot run: the interpreter sees `\r` as
+# part of the command. `scripts/check.sh` is executed by CI on all three OSes.
+*.sh text eol=lf

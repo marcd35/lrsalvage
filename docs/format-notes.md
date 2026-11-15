@@ -762,6 +762,15 @@ All 390 payloads of the upgraded cache were read (every file, not a sample) on
   declared payload, so a walk of the top-level chain never reaches its `SOF`.
   This is a property of the layout, not something observed in situ: no payload in
   this cache carries an `APP1` segment at all.
+- **The reader reproduces every fact above — verified, 2026-11-15.** A `scan` of
+  this same cache with the current build reports `layout modern`,
+  `db_version 1504001`, `crs_version 18.0.0`, `images 78`, `recovered 78`,
+  `failed 0`, `unmapped 0`, `unrecognised 0`, and `shapes` of
+  `level_file 390`, `suffix_matches_sof 390`, `container 0`. The last pair is
+  §5.7's 390-of-390 measurement read back through the tool: each leaf's `_<n>`
+  matched the long edge its own `SOF` declared, on every file in the cache, so
+  the histogram is a measurement and not a second reading of the name. `extract`
+  was not run against it; `scan` writes nothing.
 - **TODO**: `MotionPreview` and `FacePreview` (with their `Deleted*` and
   `CacheEntry` siblings) exist in this store and hold 0 rows. No video or
   face-preview cache has been inspected, so their modern payload shape is
