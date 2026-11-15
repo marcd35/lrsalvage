@@ -2,13 +2,16 @@
 //!
 //! Reads the cache's index into memory and derives the paths its rows name: one
 //! container per pyramid, one level file per `PyramidLevel` row, widened by the
-//! names in that pyramid's own shard folder. Whether a derived file exists is
-//! the caller's question — this module reads no payload byte.
+//! names in that pyramid's own shard folder. It also enumerates the cache tree
+//! once, into one entry per `(uuid, digest)` present on disk, which is what the
+//! caller's orphan sweep counts. Whether a derived file exists is the caller's
+//! question — this module reads no payload byte.
 
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 use rusqlite::types::ValueRef;
+use walkdir::WalkDir;
 
 use crate::error::Result;
 use crate::model::{CacheEntry, Pyramid, PyramidLevel};
@@ -209,6 +212,158 @@ impl PreviewIndex {
             )
         })
     }
+}
+
+/// One pyramid the cache tree holds, identified by the `(uuid, digest)` its own
+/// leaves name — the key legacy and modern layouts share.
+///
+/// It merges both representations of one pyramid: every level file and, when the
+/// cache holds one, the coexisting `.lrprev`. No byte was read to build it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PyramidOnDisk {
+    pub uuid: String,
+    pub digest: String,
+    /// Every level file of this pyramid, in path order.
+    pub levels: Vec<LevelOnDisk>,
+    /// The coexisting `<UUID>-<digest>.lrprev`, when there is one.
+    pub container: Option<PathBuf>,
+}
+
+impl PyramidOnDisk {
+    /// The largest level file this pyramid holds, by the `_<n>` its leaf names.
+    ///
+    /// No byte is read: the name is the only ranking a sweep has, which is why
+    /// it can never certify a payload — `plan` does that for a claimed one.
+    pub fn largest_level(&self) -> Option<&Path> {
+        self.levels
+            .iter()
+            .max_by_key(|level| level.long_edge)
+            .map(|level| level.path.as_path())
+    }
+}
+
+/// One level file a tree walk found, with the long edge its leaf names.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LevelOnDisk {
+    pub path: PathBuf,
+    pub long_edge: u32,
+}
+
+/// Every pyramid the cache tree holds: one entry per `(uuid, digest)`, in uuid
+/// then digest order.
+///
+/// This is the enumeration the orphan sweep counts, so it is one entry per
+/// pyramid and never one per file — one orphan is one lost photograph, whatever
+/// its level set looks like (`adr-0005-discover-payloads-by-index` ¶8). A file
+/// is a member only when its leaf parses to a uuid and a 32-character lower-case
+/// hex digest (plus a numeric suffix for a level file) **and** both shard folders
+/// agree with that uuid, because the folder is an address and never an identity
+/// (§5.2). Everything else is ignored: nothing is sniffed, no payload is read,
+/// and `previews.db` with its `-wal`/`-shm` neighbours is not a payload.
+///
+/// Which of these pyramids an image claims is `plan`'s decision, not this
+/// module's.
+pub fn pyramids_on_disk(cache_root: &Path) -> Vec<PyramidOnDisk> {
+    let mut found: HashMap<(String, String), PyramidOnDisk> = HashMap::new();
+
+    for entry in WalkDir::new(cache_root)
+        .into_iter()
+        .filter_map(std::result::Result::ok)
+    {
+        if !entry.file_type().is_file() {
+            continue;
+        }
+        let Some((uuid, digest, level)) = leaf_identity(cache_root, entry.path()) else {
+            continue;
+        };
+        let pyramid = found
+            .entry((uuid.clone(), digest.clone()))
+            .or_insert_with(|| PyramidOnDisk {
+                uuid,
+                digest,
+                levels: Vec::new(),
+                container: None,
+            });
+        match level {
+            Some(long_edge) => pyramid.levels.push(LevelOnDisk {
+                path: entry.into_path(),
+                long_edge,
+            }),
+            None => pyramid.container = Some(entry.into_path()),
+        }
+    }
+
+    let mut pyramids: Vec<PyramidOnDisk> = found.into_values().collect();
+    for pyramid in &mut pyramids {
+        pyramid.levels.sort_by(|a, b| a.path.cmp(&b.path));
+    }
+    pyramids.sort_by(|a, b| (&a.uuid, &a.digest).cmp(&(&b.uuid, &b.digest)));
+    pyramids
+}
+
+/// The `(uuid, digest)` a file's leaf names and, for a level file, its long
+/// edge — when the leaf is at a payload address and both shard folders agree
+/// with the uuid it names.
+fn leaf_identity(cache_root: &Path, path: &Path) -> Option<(String, String, Option<u32>)> {
+    let relative = path.strip_prefix(cache_root).ok()?;
+    let parts: Vec<&str> = relative
+        .components()
+        .map(|component| match component {
+            Component::Normal(part) => part.to_str(),
+            _ => None,
+        })
+        .collect::<Option<_>>()?;
+    let [first, first_four, leaf] = parts.as_slice() else {
+        return None;
+    };
+    let (uuid, digest, level) = parse_leaf(leaf)?;
+    // `<uuid[0]>/<uuid[0..4]>`: the folders are an address, never an identity.
+    if *first != uuid.get(..1)? || *first_four != uuid.get(..4)? {
+        return None;
+    }
+    Some((uuid.to_string(), digest.to_string(), level))
+}
+
+/// A leaf name split into `(uuid, digest)` and, for a level file, its long edge.
+///
+/// A leaf is `<UUID>-<digest>.lrprev` or `<UUID>-<digest>_<digits>`. The uuid is
+/// five hex groups of 8-4-4-4-12 characters and the digest 32 lower-case hex
+/// characters (§5.2); anything else is not a payload this reader knows.
+fn parse_leaf(name: &str) -> Option<(&str, &str, Option<u32>)> {
+    let (stem, level) = match name.strip_suffix(".lrprev") {
+        Some(stem) => (stem, None),
+        None => {
+            let (stem, suffix) = name.rsplit_once('_')?;
+            if suffix.is_empty() || !suffix.bytes().all(|byte| byte.is_ascii_digit()) {
+                return None;
+            }
+            (stem, Some(suffix.parse().ok()?))
+        }
+    };
+    // The digest has no hyphens, so the last group of the stem is the digest.
+    let (uuid, digest) = stem.rsplit_once('-')?;
+    if !is_uuid(uuid) || !is_digest(digest) {
+        return None;
+    }
+    Some((uuid, digest, level))
+}
+
+/// Five hex groups of 8-4-4-4-12 characters, either case (§5.2).
+fn is_uuid(value: &str) -> bool {
+    let groups: Vec<&str> = value.split('-').collect();
+    groups.len() == 5
+        && groups.iter().zip([8, 4, 4, 4, 12]).all(|(group, length)| {
+            group.len() == length && group.bytes().all(|byte| byte.is_ascii_hexdigit())
+        })
+}
+
+/// 32 lower-case hex characters: the digest is written verbatim, and its case
+/// matters on a case-sensitive filesystem.
+fn is_digest(value: &str) -> bool {
+    value.len() == 32
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
 
 /// `<cache>/<uuid[0]>/<uuid[0..4]>`: the shard folders, which are an address
@@ -636,6 +791,78 @@ mod tests {
             slashed(&dir.path().join(fill(LEVEL_FILE_GRAMMAR, "1616"))),
             "LEVEL_FILE_GRAMMAR must describe the path candidates derives"
         );
+    }
+
+    #[test]
+    fn the_tree_walk_counts_one_entry_per_pyramid() {
+        let uuid = "1A2B3C4D-5E6F-4A5B-8C9D-000000000001";
+        let digest = "deadbeefdeadbeefdeadbeefdeadbeef";
+        let other = "9F8E7D6C-0000-4000-8000-000000000002";
+        let other_digest = "00000000000000000000000000000000";
+        let dir = tempfile::tempdir().unwrap();
+        let cache = dir.path();
+        let write = |path: PathBuf| {
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, b"not read").unwrap();
+        };
+
+        // Two level files and a coexisting container are one pyramid.
+        let shard = shard_dir(cache, uuid);
+        write(shard.join(format!("{uuid}-{digest}_640")));
+        write(shard.join(format!("{uuid}-{digest}_1616")));
+        write(shard.join(format!("{uuid}-{digest}.lrprev")));
+        // A second pyramid, container only.
+        let other_shard = shard_dir(cache, other);
+        write(other_shard.join(format!("{other}-{other_digest}.lrprev")));
+
+        // None of these is a payload: the index and its sidecars sit in the
+        // cache root, one leaf is in the wrong shard, and the rest do not parse.
+        write(cache.join("previews.db"));
+        write(cache.join("previews.db-wal"));
+        write(cache.join("previews.db-shm"));
+        write(
+            cache
+                .join("0")
+                .join("0000")
+                .join(format!("{uuid}-{digest}_640")),
+        );
+        write(shard.join(format!("{uuid}-{digest}")));
+        write(shard.join("not-a-uuid-0123456789abcdef_1616"));
+        write(shard.join(format!("{uuid}-{digest}_wide")));
+
+        let pyramids = pyramids_on_disk(cache);
+        assert_eq!(pyramids.len(), 2, "one entry per pyramid: {pyramids:#?}");
+
+        let level_files = &pyramids[0];
+        assert_eq!(level_files.uuid, uuid);
+        assert_eq!(level_files.digest, digest);
+        assert_eq!(
+            level_files
+                .levels
+                .iter()
+                .map(|level| level.long_edge)
+                .collect::<Vec<_>>(),
+            vec![1616, 640],
+            "path order, each carrying the long edge its leaf names"
+        );
+        assert!(level_files.container.is_some(), "the .lrprev is merged in");
+        assert_eq!(
+            level_files.largest_level(),
+            Some(shard.join(format!("{uuid}-{digest}_1616")).as_path()),
+            "the payload is the largest level, chosen from the name alone"
+        );
+
+        let container_only = &pyramids[1];
+        assert_eq!(container_only.uuid, other);
+        assert!(container_only.levels.is_empty());
+        assert_eq!(container_only.largest_level(), None);
+        assert!(container_only.container.is_some());
+    }
+
+    #[test]
+    fn a_missing_cache_root_holds_no_pyramids() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(pyramids_on_disk(&dir.path().join("absent")).is_empty());
     }
 
     #[test]
