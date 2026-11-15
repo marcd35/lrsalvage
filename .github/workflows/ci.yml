@@ -32,7 +32,7 @@ jobs:
       # README.md cannot drift apart: they drifted once, and the documented
       # clippy lost its --all-targets and stopped linting test code.
       - name: Check
-        run: sh scripts/check.sh fmt clippy test build
+        run: sh scripts/check.sh fmt clippy test doc build
 
   typos:
     name: typos

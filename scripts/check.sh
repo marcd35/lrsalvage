@@ -49,6 +49,14 @@ gate_test() {
     cargo test --workspace
 }
 
+# A doc comment is prose that compiles, so no other gate sees it: this catches a
+# link to an item that is private, renamed or gone, and malformed markup. It is
+# the only thing that inspects `///` outside a reader's eye.
+gate_doc() {
+    printf '%s\n' '== doc'
+    RUSTDOCFLAGS='-D warnings' cargo doc --no-deps --workspace
+}
+
 gate_build() {
     printf '%s\n' '== build --release'
     cargo build --release --locked
@@ -85,7 +93,7 @@ gate_real() {
     cargo test --workspace -- --ignored
 }
 
-all_gates='fmt clippy test build typos deny'
+all_gates='fmt clippy test doc build typos deny'
 
 if [ "$#" -eq 0 ]; then
     set -- $all_gates
@@ -93,7 +101,7 @@ fi
 
 for gate in "$@"; do
     case "$gate" in
-        fmt | clippy | test | build | typos | deny | real) "gate_$gate" ;;
+        fmt | clippy | test | doc | build | typos | deny | real) "gate_$gate" ;;
         *)
             printf 'unknown gate: %s (one of: %s real)\n' "$gate" "$all_gates" >&2
             exit 1
