@@ -169,12 +169,12 @@ fn inject_segments(jpeg: &[u8], meta: &MetadataInput, include_xmp: bool) -> Resu
         replace_exif = true;
     }
 
+    // What the payload already states, classified once for every choice below.
+    let present = header_inventory(jpeg, &segments);
+
     if include_xmp {
         if let Some(packet) = build_xmp(meta) {
-            let present = segments.iter().any(|segment| {
-                segment.marker == 0xE1 && segment.payload(jpeg).starts_with(XMP_PREFIX)
-            });
-            if present {
+            if present.carries(Kind::Xmp) {
                 notes.push(
                     "an XMP packet is already present; the star rating was left in EXIF only"
                         .to_string(),
@@ -189,10 +189,7 @@ fn inject_segments(jpeg: &[u8], meta: &MetadataInput, include_xmp: bool) -> Resu
         // A real profile describes *these* pixels; ours is rebuilt from a name
         // the catalog recorded for the original, so a reconstruction never
         // displaces one (`adr-0003-preserve-preview-bytes` §1).
-        if segments
-            .iter()
-            .any(|segment| segment.marker == 0xE2 && segment.payload(jpeg).starts_with(ICC_PREFIX))
-        {
+        if present.carries(Kind::Icc) {
             notes.push(
                 "the payload carries its own ICC profile; it was kept and none was embedded"
                     .to_string(),
@@ -210,11 +207,7 @@ fn inject_segments(jpeg: &[u8], meta: &MetadataInput, include_xmp: bool) -> Resu
         }
     }
 
-    if replace_exif
-        && segments
-            .iter()
-            .any(|segment| segment.marker == 0xE1 && segment.payload(jpeg).starts_with(EXIF_PREFIX))
-    {
+    if replace_exif && present.carries(Kind::Exif) {
         notes.push(
             "the payload's own EXIF segment was replaced; maker notes and other \
              render-time tags are not carried over"
@@ -226,12 +219,9 @@ fn inject_segments(jpeg: &[u8], meta: &MetadataInput, include_xmp: bool) -> Resu
     out.extend_from_slice(&jpeg[..2]);
     out.extend_from_slice(&inserted);
     for segment in &segments {
-        let replaced = (replace_exif
-            && segment.marker == 0xE1
-            && segment.payload(jpeg).starts_with(EXIF_PREFIX))
-            || (replace_icc
-                && segment.marker == 0xE2
-                && segment.payload(jpeg).starts_with(ICC_PREFIX));
+        let kind = Kind::of(segment.marker, segment.payload(jpeg));
+        let replaced =
+            (replace_exif && kind == Some(Kind::Exif)) || (replace_icc && kind == Some(Kind::Icc));
         if !replaced {
             out.extend_from_slice(&jpeg[segment.range.clone()]);
         }
@@ -302,21 +292,72 @@ pub struct PayloadMetadata {
 impl PayloadMetadata {
     /// True when the payload carries none of the three.
     pub fn is_empty(&self) -> bool {
-        !self.exif && !self.xmp && !self.icc
+        Kind::ORDER.iter().all(|kind| !self.carries(*kind))
+    }
+
+    /// True when the payload carries `kind`.
+    fn carries(&self, kind: Kind) -> bool {
+        match kind {
+            Kind::Exif => self.exif,
+            Kind::Xmp => self.xmp,
+            Kind::Icc => self.icc,
+        }
+    }
+
+    fn mark(&mut self, kind: Kind) {
+        match kind {
+            Kind::Exif => self.exif = true,
+            Kind::Xmp => self.xmp = true,
+            Kind::Icc => self.icc = true,
+        }
+    }
+}
+
+/// The three metadata segments this module names, in the one order it names
+/// them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Kind {
+    Exif,
+    Xmp,
+    Icc,
+}
+
+impl Kind {
+    /// The order every surface names them in.
+    const ORDER: [Kind; 3] = [Kind::Exif, Kind::Xmp, Kind::Icc];
+
+    fn name(self) -> &'static str {
+        match self {
+            Kind::Exif => "exif",
+            Kind::Xmp => "xmp",
+            Kind::Icc => "icc",
+        }
+    }
+
+    /// What a segment carries. The signature decides, not the marker: an `Exif`
+    /// block and an XMP packet are both APP1, and only their opening bytes tell
+    /// them apart.
+    fn of(marker: u8, payload: &[u8]) -> Option<Kind> {
+        match marker {
+            0xE1 if payload.starts_with(EXIF_PREFIX) => Some(Kind::Exif),
+            0xE1 if payload.starts_with(XMP_PREFIX) => Some(Kind::Xmp),
+            0xE2 if payload.starts_with(ICC_PREFIX) => Some(Kind::Icc),
+            _ => None,
+        }
     }
 }
 
 impl fmt::Display for PayloadMetadata {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut first = true;
-        for (present, name) in [(self.exif, "exif"), (self.xmp, "xmp"), (self.icc, "icc")] {
-            if !present {
+        for kind in Kind::ORDER {
+            if !self.carries(kind) {
                 continue;
             }
             if !first {
                 formatter.write_str(",")?;
             }
-            formatter.write_str(name)?;
+            formatter.write_str(kind.name())?;
             first = false;
         }
         Ok(())
@@ -324,18 +365,23 @@ impl fmt::Display for PayloadMetadata {
 }
 
 /// Name the metadata segments a payload already carries.
-///
-/// The signature decides, not the marker: an `Exif` block and an XMP packet are
-/// both APP1, and only their opening bytes tell them apart.
 pub fn inventory(jpeg: &[u8], segments: &[jpeg::Segment]) -> PayloadMetadata {
     let mut metadata = PayloadMetadata::default();
     for segment in segments {
-        let payload = segment.payload(jpeg);
-        match segment.marker {
-            0xE1 if payload.starts_with(EXIF_PREFIX) => metadata.exif = true,
-            0xE1 if payload.starts_with(XMP_PREFIX) => metadata.xmp = true,
-            0xE2 if payload.starts_with(ICC_PREFIX) => metadata.icc = true,
-            _ => {}
+        if let Some(kind) = Kind::of(segment.marker, segment.payload(jpeg)) {
+            metadata.mark(kind);
+        }
+    }
+    metadata
+}
+
+/// The same inventory over this module's own header walk, the segment list
+/// `inject_segments` already holds.
+fn header_inventory(jpeg: &[u8], segments: &[HeaderSegment]) -> PayloadMetadata {
+    let mut metadata = PayloadMetadata::default();
+    for segment in segments {
+        if let Some(kind) = Kind::of(segment.marker, segment.payload(jpeg)) {
+            metadata.mark(kind);
         }
     }
     metadata
@@ -362,7 +408,8 @@ pub fn orientation(jpeg: &[u8], segments: &[jpeg::Segment]) -> Option<Orientatio
 ///
 /// This is how a resume asks a destination whether this tool wrote it
 /// (`adr-0003-preserve-preview-bytes` ¶5). `None` when the file has no `Exif`
-/// APP1, no such tag, or a value that is not NUL-terminated ASCII.
+/// APP1, no such tag, or a value that is not UTF-8; the NUL terminator EXIF asks
+/// for is tolerated whether or not a writer emitted it.
 pub fn software(jpeg: &[u8], segments: &[jpeg::Segment]) -> Option<String> {
     let entry = ifd0_entry(jpeg, segments, TAG_SOFTWARE)?;
     if entry.field_type != TYPE_ASCII {

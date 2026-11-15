@@ -916,14 +916,15 @@ fn decide_levels(
             }
         }
 
-        // What a payload carried that we do not is reported rather than buried:
-        // our EXIF supersedes its segment, and the loss is the note
-        // (`adr-0003-preserve-preview-bytes` §2).
+        // What a payload carried, and what writing metadata does with it, is
+        // reported rather than buried (`adr-0003-preserve-preview-bytes` §2).
+        // The plan holds no metadata flag — `extract` owns that choice — so the
+        // note states the trade and `extract`'s own note states the act.
         if matches!(status, Status::Recoverable | Status::Suspect) {
             if level.metadata.exif {
                 notes.push(
-                    "the payload carried its own EXIF; it is replaced by the catalog's, so \
-                     render-time tags are reported rather than kept"
+                    "the payload carries its own EXIF; with metadata written, ours replaces \
+                     its segment and render-time tags are not carried over"
                         .to_string(),
                 );
             }

@@ -398,17 +398,17 @@ fn extract_one(item: &PlanItem, options: &ExtractOptions) -> Outcome {
             Orientation::Normal
         };
         // The workspace version: the same string `manifest.json` records, so a
-        // file's marker and the run that wrote it agree.
+        // file's marker and the run that wrote it agree. The marker is what makes
+        // this input never empty, so metadata is written whenever it is asked
+        // for — a segment always exists, if only to say who wrote the file.
         let meta = exif::from_catalog_with_profile(&xmp, orientation, item.color_profile.clone())
             .with_marker(env!("CARGO_PKG_VERSION"));
-        if !meta.is_empty() {
-            match exif::inject_full(&bytes, &meta) {
-                Ok(injection) => {
-                    bytes = injection.jpeg;
-                    notes.extend(injection.notes);
-                }
-                Err(e) => return failed(output.clone(), format!("exif injection failed: {e}")),
+        match exif::inject_full(&bytes, &meta) {
+            Ok(injection) => {
+                bytes = injection.jpeg;
+                notes.extend(injection.notes);
             }
+            Err(e) => return failed(output.clone(), format!("exif injection failed: {e}")),
         }
     }
 

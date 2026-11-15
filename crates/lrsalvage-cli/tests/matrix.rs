@@ -43,6 +43,26 @@ fn uuid(row: u32) -> String {
     format!("AAAA{row:04}-1111-4111-8111-{row:012}")
 }
 
+/// The XMP packet M13's payload carries: a foreign one, never ours.
+const PAYLOAD_XMP: &str = r#"<x:xmpmeta xmlns:x="adobe:ns:meta/">
+ <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+  <rdf:Description rdf:about="" xmlns:xmp="http://ns.adobe.com/xap/1.0/" xmp:Rating="2"/>
+ </rdf:RDF>
+</x:xmpmeta>"#;
+
+/// M13's payload: its own EXIF, XMP and ICC profile in front of a bare frame.
+fn m13_payload() -> Vec<u8> {
+    bytes::jpeg_with(
+        1616,
+        1077,
+        &[
+            bytes::exif_app1(6),
+            bytes::xmp_app1(PAYLOAD_XMP),
+            bytes::icc_app2(b"a profile this repository did not build"),
+        ],
+    )
+}
+
 fn lrsalvage() -> Command {
     Command::cargo_bin("lrsalvage").expect("the integration-test binary path")
 }
@@ -51,16 +71,21 @@ fn lrsalvage() -> Command {
 ///
 /// | id | row |
 /// |----|-----|
-/// | M1 | recovered, one level file: the one item an exit-0 run writes |
+/// | M1 | recovered, one level file: a bare payload |
+/// | M13 | recovered, and its payload already carries EXIF, XMP and ICC |
 /// | M6 | a tombstone over a pyramid with no file: the `deleted` count |
 /// | M10 | one unclaimed pyramid: the orphan the reports must name |
 fn modern() -> Vault {
     let (m1, m6) = (uuid(1), uuid(6));
+    let m13 = uuid(13);
     let m10 = uuid(20);
     Vault::modern()
         .image(ImageRow::new(1, "IMG_0001").cache(&m1))
         .pyramid(PyramidRow::new(&m1).level(1616, 1077))
         .level_file(Level::sized(&m1, 1616, 1077))
+        .image(ImageRow::new(13, "IMG_0013").cache(&m13))
+        .pyramid(PyramidRow::new(&m13).profile("AdobeRGB").level(1616, 1077))
+        .level_file(Level::sized(&m13, 1616, 1077).raw(&m13_payload()))
         .image(ImageRow::new(6, "IMG_0006").cache(&m6))
         .pyramid(PyramidRow::new(&m6).level(1616, 1077))
         .tombstone(&m6, 700_000_000.0)
@@ -153,6 +178,36 @@ fn jpeg_names(root: &Path) -> Vec<String> {
     }
     found.sort();
     found
+}
+
+/// Every `.jpg` below `root`, by name, with the bytes on disk.
+fn outputs(root: &Path) -> std::collections::BTreeMap<String, Vec<u8>> {
+    jpeg_names(root)
+        .into_iter()
+        .map(|name| {
+            let bytes = fs::read(jpeg_named(root, &name)).expect("read a written file");
+            (name, bytes)
+        })
+        .collect()
+}
+
+/// The payloads of every `Exif` APP1 segment in `bytes`.
+fn exif_payloads(bytes: &[u8]) -> Vec<&[u8]> {
+    let certified = jpeg::certify(bytes).expect("a written file is a JPEG");
+    certified
+        .segments
+        .iter()
+        .filter(|segment| segment.marker == 0xE1)
+        .map(|segment| segment.payload(bytes))
+        .filter(|payload| payload.starts_with(b"Exif\0\0"))
+        .collect()
+}
+
+/// `true` when `haystack` contains `needle`.
+fn contains(haystack: &[u8], needle: &[u8]) -> bool {
+    haystack
+        .windows(needle.len())
+        .any(|window| window == needle)
 }
 
 /// The one `.jpg` below `root` with this name.
@@ -253,13 +308,15 @@ fn extract_names_each_payload_in_the_csv_and_the_manifest() {
     // `note`, and an unclaimed payload carries its own path where an output
     // would be.
     let csv = fs::read_to_string(vault.out().join("report.csv")).expect("report.csv");
-    let mut rows = csv.lines();
-    let header = rows.next().expect("a header");
+    let mut lines = csv.lines();
+    let header = lines.next().expect("a header");
+    let rows: Vec<&str> = lines.collect();
     assert!(
         header.ends_with(",note,payload,payload_metadata"),
         "the trailing columns are the payload and its own metadata:\n{header}"
     );
     let orphan = rows
+        .iter()
         .find(|row| row.starts_with("unmapped"))
         .expect("the unclaimed pyramid");
     let fields: Vec<&str> = orphan.split(',').collect();
@@ -274,6 +331,24 @@ fn extract_names_each_payload_in_the_csv_and_the_manifest() {
     assert_eq!(
         fields[15], "",
         "a cache payload of this shape carries no metadata of its own"
+    );
+
+    // M13's payload carries all three, so the row names them as one quoted
+    // field and its orientation column is the value actually written — the
+    // payload's own, not the catalog's `AB`. Its note carries commas too, so the
+    // trailing field is read from the end rather than by counting a split.
+    let carried = rows
+        .iter()
+        .find(|row| row.contains("IMG_0013.jpg"))
+        .expect("M13's row");
+    assert_eq!(
+        carried.split(',').nth(7),
+        Some("BC"),
+        "the effective orientation is printed: {carried}"
+    );
+    assert!(
+        carried.ends_with(",\"exif,xmp,icc\""),
+        "one token list, one quoted field: {carried}"
     );
 
     // The manifest carries the cache's shape too, and one `payload` member per
@@ -305,23 +380,105 @@ fn extract_names_each_payload_in_the_csv_and_the_manifest() {
         "the orphan's payload is a member, not prose: {}",
         orphans[0]
     );
+    assert!(
+        orphans[0].get("payload_metadata").is_none(),
+        "absent stays absent: a bare payload adds no member"
+    );
+
+    // The item whose payload carries metadata says so, and its orientation is
+    // the effective one, exactly as the CSV's column is.
+    let carried = manifest["items"]
+        .as_array()
+        .expect("items")
+        .iter()
+        .find(|item| {
+            item["output"]
+                .as_str()
+                .is_some_and(|output| output.ends_with("IMG_0013.jpg"))
+        })
+        .expect("M13's manifest item");
+    assert_eq!(carried["payload_metadata"], "exif,xmp,icc");
+    assert_eq!(carried["orientation"], "BC");
 }
 
 #[test]
-fn extract_on_a_modern_cache_exits_zero_and_writes_the_level_file() {
+fn extract_on_a_modern_cache_exits_zero_and_writes_every_selected_level() {
     let vault = modern();
 
     extract(&vault).assert().code(0);
 
-    let output = jpeg_named(vault.out(), "IMG_0001.jpg");
-    let written = fs::read(&output).expect("read the recovered file");
-    let certified = jpeg::certify(&written).expect("a complete JPEG");
-    assert!(certified.complete, "{} must end with EOI", output.display());
-    assert_eq!(certified.dimensions, (1616, 1077));
     assert_eq!(
         jpeg_names(vault.out()),
-        vec!["IMG_0001.jpg"],
-        "one item, one file, and no `.partial` left behind"
+        vec!["IMG_0001.jpg", "IMG_0013.jpg"],
+        "one file per selected item, and no `.partial` left behind"
+    );
+    for name in jpeg_names(vault.out()) {
+        let written = fs::read(jpeg_named(vault.out(), &name)).expect("read the recovered file");
+        let certified = jpeg::certify(&written).expect("a complete JPEG");
+        assert!(certified.complete, "{name} must end with EOI");
+        assert_eq!(certified.dimensions, (1616, 1077), "{name}");
+        let exif = exif_payloads(&written);
+        assert_eq!(
+            exif.len(),
+            1,
+            "{name} carries exactly one Exif APP1, ours: M13's is replaced"
+        );
+        assert!(
+            contains(exif[0], b"lrsalvage "),
+            "{name} names the tool that wrote it"
+        );
+    }
+}
+
+#[test]
+fn extract_skips_every_output_its_own_earlier_run_wrote() {
+    let vault = modern();
+    extract(&vault).assert().code(0);
+    let before = outputs(vault.out());
+    assert_eq!(before.len(), 2, "two selected items: {before:#?}");
+
+    extract(&vault)
+        .assert()
+        .code(0)
+        .stderr(predicate::str::contains("0 written"))
+        .stderr(predicate::str::contains("2 skipped"));
+
+    assert_eq!(
+        outputs(vault.out()),
+        before,
+        "the marker, completeness and the frame are what a rerun trusts"
+    );
+}
+
+#[test]
+fn a_metadata_free_run_never_verifies_anything() {
+    let vault = modern();
+
+    extract(&vault).arg("--no-metadata").assert().code(0);
+    let payloads: Vec<Vec<u8>> = vault
+        .level_files()
+        .iter()
+        .map(|path| fs::read(path).expect("read a payload"))
+        .collect();
+    let before = outputs(vault.out());
+    assert_eq!(before.len(), 2);
+    for (name, bytes) in &before {
+        assert!(
+            payloads.contains(bytes),
+            "{name} is the payload's own bytes, verbatim"
+        );
+    }
+
+    // A metadata run must not silently keep what a metadata-free run wrote:
+    // there is no marker to prove authorship.
+    extract(&vault)
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("not a verified extraction"));
+    assert_eq!(
+        outputs(vault.out()),
+        before,
+        "every output is left byte-identical"
     );
 }
 
