@@ -8,12 +8,34 @@ use std::path::{Component, Path, PathBuf};
 
 use crate::catalog::Catalog;
 use crate::error::Result;
-use crate::model::{CatalogImage, Orientation};
-use crate::previews_db::PreviewIndex;
+use crate::model::{CatalogImage, Orientation, Pyramid, PyramidLevel};
+use crate::previews_db::{Candidate, PreviewIndex};
 use crate::{jpeg, lrprev};
 
-/// One measured level: the chunk plus its decoded `(width, height)`.
-type MeasuredLevel<'a> = (&'a lrprev::Chunk<'a>, (u32, u32));
+/// Where a payload lives, decided once so no reader has to sniff it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Payload {
+    /// A legacy `.lrprev` and the `level_N` chunk that was certified. `level`
+    /// is `None` when nothing was certified — a file that is gone, one that
+    /// failed to parse, or a pyramid no image claims — and such an item is
+    /// never written.
+    Container {
+        path: PathBuf,
+        level: Option<String>,
+    },
+    /// A modern cache's level file: the file *is* the level.
+    LevelFile { path: PathBuf },
+}
+
+impl Payload {
+    /// The payload file itself — a level file, or the container a level lives
+    /// in. `report` and the item lines print this and nothing else.
+    pub fn path(&self) -> &Path {
+        match self {
+            Payload::Container { path, .. } | Payload::LevelFile { path } => path,
+        }
+    }
+}
 
 /// Outcome of inspecting one catalog image.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -90,7 +112,7 @@ impl Tier {
 pub struct PlanItem {
     pub status: Status,
     pub image: Option<CatalogImage>,
-    pub payload: Option<PathBuf>,
+    pub payload: Option<Payload>,
     pub output: Option<PathBuf>,
     pub width: Option<u32>,
     pub height: Option<u32>,
@@ -98,9 +120,12 @@ pub struct PlanItem {
     pub quality: Option<String>,
     pub orientation: Orientation,
     pub tier: Option<Tier>,
-    /// Dimensions the cache *declared* for this pyramid, if it declared any.
-    /// Used to decide whether the stored pixels are already rotated.
+    /// The size `previews.db` declares for this level: the chosen level's own
+    /// row for a level file, the pyramid's cropped size for a container.
     pub declared: Option<(u32, u32)>,
+    /// The smallest level of a level-file pyramid, for the contact sheet. `None`
+    /// for a container item, whose sheet walks its own chunks.
+    pub smallest_level: Option<PathBuf>,
     /// False when the level falls below the configured floor.
     pub selected: bool,
     pub note: Option<String>,
@@ -224,6 +249,7 @@ impl Plan {
                     orientation,
                     tier: None,
                     declared: None,
+                    smallest_level: None,
                     selected: false,
                     note: Some("original still on disk".into()),
                 });
@@ -244,6 +270,7 @@ impl Plan {
                     orientation: Orientation::Unknown,
                     tier: None,
                     declared: None,
+                    smallest_level: None,
                     selected: false,
                     note: Some("no previews.db row for this image".into()),
                 });
@@ -251,16 +278,39 @@ impl Plan {
             };
 
             claimed.insert(format!("{}-{}", entry.uuid, entry.digest));
-            let payload = index.payload_path(cache_root, entry);
             let pyramid = index.pyramids.get(&entry.uuid);
             let orientation = image.orientation;
+            let container = index.payload_path(cache_root, entry);
 
-            if !payload.exists() {
+            // What the cache holds for this pyramid decides how it is read: a
+            // level file is the modern representation, and where one exists the
+            // container is never opened (`adr-0005-discover-payloads-by-index`
+            // ¶7). Existence is the decision, so the stat happens here.
+            let present: Vec<Candidate<'_>> = index
+                .candidates(cache_root, &entry.uuid, &entry.digest)
+                .into_iter()
+                .filter(|candidate| candidate.path.is_file())
+                .collect();
+
+            let (levels, smallest_level) = if !present.is_empty() {
+                level_file_levels(present, options)
+            } else if container.is_file() {
+                (
+                    container_levels(&container, pyramid, index.best_level(&entry.uuid), options),
+                    None,
+                )
+            } else {
+                // No file of this pyramid exists anywhere. A row whose own
+                // level file is gone while another survives is a pruned level,
+                // not this: 14.0+ prunes in the background (§5.5).
                 stats.missing_payload += 1;
                 items.push(PlanItem {
                     status: Status::MissingPayload,
                     image: Some(image),
-                    payload: Some(payload),
+                    payload: Some(Payload::Container {
+                        path: container,
+                        level: None,
+                    }),
                     output: None,
                     width: None,
                     height: None,
@@ -269,178 +319,26 @@ impl Plan {
                     orientation,
                     tier: None,
                     declared: None,
+                    smallest_level: None,
                     selected: false,
-                    note: Some("previews.db row points at a file that is gone".into()),
+                    note: Some("no payload file for this pyramid is on disk".into()),
                 });
                 continue;
-            }
-
-            let bytes = match std::fs::read(&payload) {
-                Ok(b) => b,
-                Err(e) => {
-                    stats.failed += 1;
-                    items.push(PlanItem {
-                        status: Status::Failed,
-                        image: Some(image),
-                        payload: Some(payload),
-                        output: None,
-                        width: None,
-                        height: None,
-                        color_profile: pyramid.map(|p| p.color_profile.clone()),
-                        quality: pyramid.map(|p| p.quality.clone()),
-                        orientation,
-                        tier: None,
-                        declared: None,
-                        selected: false,
-                        note: Some(format!("unreadable payload: {e}")),
-                    });
-                    continue;
-                }
             };
 
-            let parsed = match lrprev::Lrprev::parse(&bytes) {
-                Ok(p) => p,
-                Err(e) => {
-                    stats.failed += 1;
-                    items.push(PlanItem {
-                        status: Status::Failed,
-                        image: Some(image),
-                        payload: Some(payload),
-                        output: None,
-                        width: None,
-                        height: None,
-                        color_profile: pyramid.map(|p| p.color_profile.clone()),
-                        quality: pyramid.map(|p| p.quality.clone()),
-                        orientation,
-                        tier: None,
-                        declared: None,
-                        selected: false,
-                        note: Some(format!("not a usable .lrprev: {e}")),
-                    });
-                    continue;
-                }
-            };
-
-            // Measure every level once; the declared header sizes are hints
-            // only, the decoded SOF dimensions are the truth.
-            let mut levels: Vec<MeasuredLevel<'_>> = parsed
-                .levels()
-                .into_iter()
-                .filter_map(|c| jpeg::dimensions(c.data).ok().map(|d| (c, d)))
-                .collect();
-            levels.sort_by_key(|(_, (w, h))| (*w as u64) * (*h as u64));
-
-            if levels.is_empty() {
-                stats.failed += 1;
-                let note = match parsed.header().and_then(|h| std::str::from_utf8(h).ok()) {
-                    Some(_) => "no level contains a readable JPEG frame".to_string(),
-                    None => "no readable levels and no header".to_string(),
-                };
-                items.push(PlanItem {
-                    status: Status::Failed,
-                    image: Some(image),
-                    payload: Some(payload),
-                    output: None,
-                    width: None,
-                    height: None,
-                    color_profile: pyramid.map(|p| p.color_profile.clone()),
-                    quality: pyramid.map(|p| p.quality.clone()),
-                    orientation,
-                    tier: None,
-                    declared: None,
-                    selected: false,
-                    note: Some(note),
-                });
-                continue;
-            }
-
-            let best_index = levels.len() - 1;
-            let chosen: Vec<(usize, MeasuredLevel<'_>)> = if options.all_levels {
-                levels.into_iter().enumerate().collect()
-            } else {
-                let (chunk, dims) = levels.swap_remove(best_index);
-                vec![(best_index, (chunk, dims))]
-            };
-
-            // One status per image: the best level decides, so `--all-levels`
-            // cannot make one photo look like several recoveries.
-            let mut image_status: Option<Status> = None;
-
-            for (idx, (chunk, (w, h))) in chosen {
-                let long_edge = w.max(h);
-                let tier = Tier::from_long_edge(long_edge);
-                let selected = long_edge >= options.min_long_edge;
-                if !selected {
-                    stats.below_floor += 1;
-                }
-
-                let mut note: Option<String> = None;
-                let mut status = Status::Recoverable;
-
-                // Cross-check the decoded frame against the catalogue's own
-                // declaration. A mismatch means a stale or foreign payload.
-                if let Some(level) = index.best_level(&entry.uuid) {
-                    if idx == best_index
-                        && (level.width != w || level.height != h)
-                        && (level.width != h || level.height != w)
-                    {
-                        status = Status::Suspect;
-                        note = Some(format!(
-                            "decoded {w}x{h} but previews.db declares {}x{}; kept and flagged \
-                             because the payload is not the size the catalog expected",
-                            level.width, level.height
-                        ));
-                    }
-                }
-
-                if !jpeg::is_complete(chunk.data) {
-                    status = Status::Failed;
-                    note = Some("level does not end with an EOI marker".into());
-                }
-
-                // Only the extra levels `--all-levels` adds carry a size
-                // suffix; the best level keeps the plain `<stem>.jpg` name.
-                let relative = if options.all_levels && idx != best_index {
-                    image.relative_output_path_with_suffix(&format!(" - {w}x{h}"))
-                } else {
-                    image.relative_output_path()
-                };
-
-                let mut output = None;
-                match confined_output(output_root, &relative) {
-                    Ok(path) => output = Some(unique_path(&mut used, path)),
-                    Err(escape) => {
-                        status = Status::Failed;
-                        note = Some(escape);
-                    }
-                }
-
-                if idx == best_index {
-                    image_status = Some(status);
-                }
-                stats.levels += 1;
-
-                if selected && matches!(status, Status::Recoverable | Status::Suspect) {
-                    stats.bytes += chunk.data.len() as u64;
-                }
-                *stats.tiers.entry(tier.as_str()).or_insert(0) += 1;
-
-                items.push(PlanItem {
-                    status,
-                    image: Some(image.clone()),
-                    payload: Some(payload.clone()),
-                    output,
-                    width: Some(w),
-                    height: Some(h),
-                    color_profile: pyramid.map(|p| p.color_profile.clone()),
-                    quality: pyramid.map(|p| p.quality.clone()),
-                    orientation,
-                    tier: Some(tier),
-                    declared: pyramid.map(|p| (p.cropped_width, p.cropped_height)),
-                    selected: matches!(status, Status::Recoverable | Status::Suspect) && selected,
-                    note,
-                });
-            }
+            let (image_items, image_status) = decide_levels(
+                &image,
+                pyramid,
+                levels,
+                smallest_level,
+                &mut Tally {
+                    output_root,
+                    options,
+                    used: &mut used,
+                    stats: &mut stats,
+                },
+            );
+            items.extend(image_items);
 
             match image_status {
                 Some(Status::Recoverable) => stats.recoverable += 1,
@@ -460,7 +358,12 @@ impl Plan {
             items.push(PlanItem {
                 status: Status::Unmapped,
                 image: None,
-                payload: Some(payload.clone()),
+                // A container no image claims: listed and never written, so no
+                // level was ever certified in it.
+                payload: Some(Payload::Container {
+                    path: payload.clone(),
+                    level: None,
+                }),
                 // Nothing is extracted, so there is no output path to report;
                 // the payload's own path is the useful fact.
                 output: None,
@@ -471,6 +374,7 @@ impl Plan {
                 orientation: Orientation::Unknown,
                 tier: None,
                 declared: None,
+                smallest_level: None,
                 selected: false,
                 note: Some(format!(
                     "payload exists but previews.db has no entry for it: {}",
@@ -507,6 +411,306 @@ fn distinct_selected_images(items: &[PlanItem]) -> usize {
         .filter_map(|item| item.image.as_ref().map(|image| image.id_local))
         .collect::<HashSet<i64>>()
         .len()
+}
+
+/// One level of one pyramid, as the plan found it.
+struct FoundLevel {
+    /// `true` for the level that owns the image's plain output name; the extra
+    /// levels `--all-levels` adds carry a size suffix instead.
+    winner: bool,
+    payload: Payload,
+    /// The frame the bytes declare, when they could be read at all.
+    dimensions: Option<(u32, u32)>,
+    /// Why this level cannot be written. A failure is never papered over by a
+    /// smaller level: only a file that is *absent* falls back.
+    failure: Option<String>,
+    /// The size `previews.db` declares for this item.
+    declared: Option<(u32, u32)>,
+    /// The size this level is judged against. `None` when nothing is compared:
+    /// a container's smaller levels, and any level with no row behind it.
+    claim: Option<(u32, u32)>,
+    /// Payload bytes, for the run's total.
+    bytes: usize,
+}
+
+/// What every level decision needs but none of them owns.
+struct Tally<'a> {
+    output_root: &'a Path,
+    options: &'a Options,
+    used: &'a mut HashMap<String, u32>,
+    stats: &'a mut Stats,
+}
+
+/// A pyramid's level files, ranked by the claim and then certified.
+///
+/// Only the winner is read unless `--all-levels` asked for every one: the rank
+/// comes from each candidate's own row, so a five-level pyramid costs one file
+/// read, not five. Returns the smallest candidate the same enumeration found,
+/// which the contact sheet inlines.
+fn level_file_levels(
+    candidates: Vec<Candidate<'_>>,
+    options: &Options,
+) -> (Vec<FoundLevel>, Option<PathBuf>) {
+    let mut ranked = candidates;
+    // Pixel area as the row declares it, with the level number as tie-break. A
+    // file with no row — the widened glob's business — ranks below every claim,
+    // so a claim is never beaten by a guess.
+    ranked.sort_by_key(|candidate| {
+        candidate
+            .row
+            .map(|row| (u64::from(row.width) * u64::from(row.height), row.level))
+    });
+
+    let smallest_level = ranked.first().map(|candidate| candidate.path.clone());
+    let winner = ranked.len() - 1;
+    let chosen: Vec<usize> = if options.all_levels {
+        (0..ranked.len()).collect()
+    } else {
+        vec![winner]
+    };
+
+    let levels = chosen
+        .into_iter()
+        .map(|index| {
+            let candidate = &ranked[index];
+            let (dimensions, failure, bytes) = match std::fs::read(&candidate.path) {
+                Ok(bytes) => match jpeg::certify(&bytes) {
+                    Ok(certified) if certified.complete => {
+                        (Some(certified.dimensions), None, bytes.len())
+                    }
+                    Ok(certified) => (
+                        Some(certified.dimensions),
+                        Some("level does not end with an EOI marker".to_string()),
+                        bytes.len(),
+                    ),
+                    Err(e) => (None, Some(format!("not a JPEG preview: {e}")), bytes.len()),
+                },
+                Err(e) => (None, Some(format!("unreadable payload: {e}")), 0),
+            };
+            FoundLevel {
+                winner: index == winner,
+                payload: Payload::LevelFile {
+                    path: candidate.path.clone(),
+                },
+                dimensions,
+                failure,
+                // The row that derived this leaf is the claim, and its own row
+                // is all it is compared against, so a stale neighbour cannot
+                // make a surviving level look wrong.
+                declared: candidate.row.map(|row| (row.width, row.height)),
+                claim: candidate.row.map(|row| (row.width, row.height)),
+                bytes,
+            }
+        })
+        .collect();
+
+    (levels, smallest_level)
+}
+
+/// A `.lrprev`, read exactly as it always was: parsed, measured level by level,
+/// ranked by decoded area.
+///
+/// Only read when the container is the pyramid's only representation. The claim
+/// a level is judged against is the pyramid's own best row, and only on the
+/// level this container writes: its whole level set is in the file, or the file
+/// is truncated.
+fn container_levels(
+    container: &Path,
+    pyramid: Option<&Pyramid>,
+    best: Option<&PyramidLevel>,
+    options: &Options,
+) -> Vec<FoundLevel> {
+    let declared = pyramid.map(|p| (p.cropped_width, p.cropped_height));
+    let failed = |note: String| FoundLevel {
+        winner: true,
+        payload: Payload::Container {
+            path: container.to_path_buf(),
+            level: None,
+        },
+        dimensions: None,
+        failure: Some(note),
+        declared,
+        claim: None,
+        bytes: 0,
+    };
+
+    let bytes = match std::fs::read(container) {
+        Ok(bytes) => bytes,
+        Err(e) => return vec![failed(format!("unreadable payload: {e}"))],
+    };
+    let parsed = match lrprev::Lrprev::parse(&bytes) {
+        Ok(parsed) => parsed,
+        Err(e) => return vec![failed(format!("not a usable .lrprev: {e}"))],
+    };
+
+    // Measure every level once; the declared header sizes are hints only, the
+    // decoded SOF dimensions are the truth.
+    let mut measured: Vec<(&lrprev::Chunk<'_>, jpeg::Certified)> = parsed
+        .levels()
+        .into_iter()
+        .filter_map(|chunk| {
+            jpeg::certify(chunk.data)
+                .ok()
+                .map(|certified| (chunk, certified))
+        })
+        .collect();
+    measured.sort_by_key(|(_, certified)| {
+        let (width, height) = certified.dimensions;
+        u64::from(width) * u64::from(height)
+    });
+
+    if measured.is_empty() {
+        let note = match parsed.header().and_then(|h| std::str::from_utf8(h).ok()) {
+            Some(_) => "no level contains a readable JPEG frame".to_string(),
+            None => "no readable levels and no header".to_string(),
+        };
+        return vec![failed(note)];
+    }
+
+    let winner = measured.len() - 1;
+    let chosen: Vec<usize> = if options.all_levels {
+        (0..measured.len()).collect()
+    } else {
+        vec![winner]
+    };
+    chosen
+        .into_iter()
+        .map(|index| {
+            let (chunk, certified) = &measured[index];
+            let judged = index == winner;
+            FoundLevel {
+                winner: judged,
+                payload: Payload::Container {
+                    path: container.to_path_buf(),
+                    level: Some(chunk.name.clone()),
+                },
+                dimensions: Some(certified.dimensions),
+                failure: (!certified.complete)
+                    .then(|| "level does not end with an EOI marker".to_string()),
+                declared,
+                claim: if judged {
+                    best.map(|row| (row.width, row.height))
+                } else {
+                    None
+                },
+                bytes: chunk.data.len(),
+            }
+        })
+        .collect()
+}
+
+/// Turn one pyramid's levels into plan items, and report the image's status.
+///
+/// One status per image: the level the image is written from decides, so
+/// `--all-levels` cannot make one photo look like several recoveries.
+fn decide_levels(
+    image: &CatalogImage,
+    pyramid: Option<&Pyramid>,
+    levels: Vec<FoundLevel>,
+    smallest_level: Option<PathBuf>,
+    tally: &mut Tally<'_>,
+) -> (Vec<PlanItem>, Option<Status>) {
+    let mut levels = levels;
+    let winner = levels.len() - 1;
+    let chosen: Vec<(usize, FoundLevel)> = if tally.options.all_levels {
+        levels.into_iter().enumerate().collect()
+    } else {
+        let best = levels.swap_remove(winner);
+        vec![(winner, best)]
+    };
+
+    let mut image_status = None;
+    let mut items = Vec::with_capacity(chosen.len());
+
+    for (_, level) in chosen {
+        let tier = level
+            .dimensions
+            .map(|(width, height)| Tier::from_long_edge(width.max(height)));
+        let selected = level
+            .dimensions
+            .is_some_and(|(width, height)| width.max(height) >= tally.options.min_long_edge);
+
+        let mut status = Status::Recoverable;
+        let mut note = None;
+        if let Some(reason) = level.failure {
+            status = Status::Failed;
+            note = Some(reason);
+        } else if let Some((declared_width, declared_height)) = level.claim {
+            let (width, height) = level.dimensions.unwrap_or_default();
+            // Width and height may be swapped before calling it a disagreement:
+            // the stored render is unrotated, so the cache may record the
+            // upright shape. A real photograph at the wrong size is still worth
+            // having, and every report flags it.
+            if (declared_width != width || declared_height != height)
+                && (declared_width != height || declared_height != width)
+            {
+                status = Status::Suspect;
+                note = Some(format!(
+                    "decoded {width}x{height} but previews.db declares \
+                     {declared_width}x{declared_height}; kept and flagged because the payload is \
+                     not the size the catalog expected"
+                ));
+            }
+        }
+
+        let writable = matches!(status, Status::Recoverable | Status::Suspect);
+        if writable && !selected {
+            // The floor excludes; it does not fail.
+            tally.stats.below_floor += 1;
+        }
+
+        // Only the extra levels `--all-levels` adds carry a size suffix; the
+        // pyramid's largest level keeps the plain `<stem>.jpg` name.
+        let relative = if tally.options.all_levels && !level.winner {
+            let (width, height) = level.dimensions.unwrap_or_default();
+            image.relative_output_path_with_suffix(&format!(" - {width}x{height}"))
+        } else {
+            image.relative_output_path()
+        };
+
+        let mut output = None;
+        match confined_output(tally.output_root, &relative) {
+            Ok(path) => output = Some(unique_path(tally.used, path)),
+            Err(escape) => {
+                status = Status::Failed;
+                note = Some(escape);
+            }
+        }
+
+        // Every payload that is written still has to be a payload: a level
+        // whose bytes failed, or whose name could not be placed, is reported and
+        // left out of the selection.
+        let writable = writable && !matches!(status, Status::Failed);
+        if level.winner {
+            image_status = Some(status);
+        }
+        tally.stats.levels += 1;
+        if writable && selected {
+            tally.stats.bytes += level.bytes as u64;
+        }
+        if let Some(tier) = tier {
+            *tally.stats.tiers.entry(tier.as_str()).or_insert(0) += 1;
+        }
+
+        items.push(PlanItem {
+            status,
+            image: Some(image.clone()),
+            payload: Some(level.payload),
+            output,
+            width: level.dimensions.map(|(width, _)| width),
+            height: level.dimensions.map(|(_, height)| height),
+            color_profile: pyramid.map(|p| p.color_profile.clone()),
+            quality: pyramid.map(|p| p.quality.clone()),
+            orientation: image.orientation,
+            tier,
+            declared: level.declared,
+            smallest_level: smallest_level.clone(),
+            selected: writable && selected,
+            note,
+        });
+    }
+
+    (items, image_status)
 }
 
 /// Append ` (2)`, ` (3)` … when two images resolve to the same output path.
@@ -1031,7 +1235,7 @@ mod tests {
             unmapped[0]
                 .payload
                 .as_ref()
-                .is_some_and(|payload| payload.is_file()),
+                .is_some_and(|payload| payload.path().is_file()),
             "{:?}",
             unmapped[0].payload
         );
@@ -1245,11 +1449,11 @@ mod tests {
         assert!(missing.output.is_none());
         let payload = missing.payload.as_ref().expect("payload path");
         assert!(
-            payload.starts_with(fixture.path().join("cache")),
+            payload.path().starts_with(fixture.path().join("cache")),
             "{}",
-            payload.display()
+            payload.path().display()
         );
-        assert!(!payload.exists());
+        assert!(!payload.path().exists());
         assert_eq!(plan.stats.missing_payload, 1);
         assert_eq!(plan.stats.recoverable, 0);
     }

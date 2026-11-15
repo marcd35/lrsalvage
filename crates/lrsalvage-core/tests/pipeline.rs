@@ -282,27 +282,24 @@ fn plan_classifies_every_kind_of_image_and_still_selects_suspects() {
     // Premise: image 2's payload really is absent from the cache, not merely
     // reported as such.
     let missing = item_for(&plan, 2);
-    let missing_payload = missing.payload.as_ref().expect("payload path is known");
+    let missing_payload = missing
+        .payload
+        .as_ref()
+        .expect("the item names where the payload would be");
     assert!(
-        !missing_payload.exists(),
+        !missing_payload.path().exists(),
         "fixture must not write {}",
-        missing_payload.display()
+        missing_payload.path().display()
     );
     assert!(!missing.selected);
 
     // A suspect payload is a real photo: flagged, and still written.
     let suspect = item_for(&plan, 4);
     assert!(suspect.selected, "a suspect payload is still recovered");
+    // Note prose is never asserted (`specs/fixtures.md`): the sizes the note
+    // describes are the structured fields, measured and declared.
     assert_eq!((suspect.width, suspect.height), (Some(800), Some(600)));
     assert_eq!(suspect.declared, Some((1616, 1077)));
-    assert!(
-        suspect
-            .note
-            .as_deref()
-            .is_some_and(|note| note.contains("800x600") && note.contains("1616x1077")),
-        "note should name both sizes, got {:?}",
-        suspect.note
-    );
 
     // Floor: 320 px on the long edge is below the default 640, so the item is
     // planned but not selected, and counted exactly once.
@@ -324,7 +321,7 @@ fn plan_classifies_every_kind_of_image_and_still_selects_suspects() {
         unmapped[0]
             .payload
             .as_ref()
-            .is_some_and(|path| path.is_file()),
+            .is_some_and(|payload| payload.path().is_file()),
         "the unmapped payload exists, it just has no catalog image"
     );
 

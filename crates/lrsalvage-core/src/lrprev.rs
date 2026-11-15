@@ -193,6 +193,21 @@ impl<'a> Lrprev<'a> {
     }
 }
 
+/// The payload of the chunk named `name`, e.g. the `level_2` a plan certified.
+///
+/// A caller that already knows which level it wants should not have to walk the
+/// file itself: the `AgHg` grammar belongs to this module. `Ok(None)` means the
+/// file parsed but carries no such chunk — a payload that changed under a plan
+/// that had already certified one.
+pub fn chunk_data<'a>(bytes: &'a [u8], name: &str) -> Result<Option<&'a [u8]>> {
+    let parsed = Lrprev::parse(bytes)?;
+    Ok(parsed
+        .chunks
+        .iter()
+        .find(|chunk| chunk.name == name)
+        .map(|chunk| chunk.data))
+}
+
 /// Parse the level index out of a chunk name (`"level_3"` → `3`).
 pub fn level_index(name: &str) -> Option<u32> {
     name.strip_prefix("level_")?.parse().ok()
