@@ -70,10 +70,9 @@ struct a path.
   carries a `DeletedPyramid` row — Lightroom's own record, never a cause — and
   `unrecognised` counts the payload-like files no shape matched, whatever the
   layout turned out to be. Each is a summary line only when non-zero, a field in
-  `--json`,
-  `manifest.json` and the verification report's `stats`, and never a column in
-  `report.csv`: neither belongs to an image, and neither moves an exit code
-  (`adr-0004-detect-layout-not-version`, `adr-0006-degrade-without-guessing`).
+  `--json`, `manifest.json` and the verification report's `stats`, and never a
+  column in `report.csv`: neither belongs to an image, and neither moves an exit
+  code (`adr-0004-detect-layout-not-version`, `adr-0006-degrade-without-guessing`).
 - **The summary opens with one line naming the layout, and nothing else.**
   `cache layout: modern` is the whole of it: the layout is the one fact that
   decides how everything below it was read, and it is a word, not a count. The
