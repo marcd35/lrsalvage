@@ -21,9 +21,9 @@ use sha2::{Digest, Sha256};
 
 use crate::error::{Error, IoContext, Result};
 use crate::jpeg;
-use crate::lrprev::Lrprev;
+use crate::lrprev;
 use crate::model::Orientation;
-use crate::plan::{Plan, PlanItem, Status};
+use crate::plan::{Payload, Plan, PlanItem, Status};
 use crate::{exif, report};
 
 #[derive(Debug, Clone)]
@@ -285,7 +285,7 @@ fn verifies_as_ours(bytes: &[u8], expected: (u32, u32)) -> bool {
 }
 
 fn extract_one(item: &PlanItem, options: &ExtractOptions) -> Outcome {
-    let (Some(payload_path), Some(output)) = (item.payload.as_ref(), item.output.as_ref()) else {
+    let (Some(payload), Some(output)) = (item.payload.as_ref(), item.output.as_ref()) else {
         return failed(
             item.output.clone().unwrap_or_default(),
             "plan item has no payload or no output path",
@@ -313,39 +313,64 @@ fn extract_one(item: &PlanItem, options: &ExtractOptions) -> Outcome {
         }
     }
 
-    let payload = match fs::read(payload_path) {
+    let file = match fs::read(payload.path()) {
         Ok(bytes) => bytes,
         Err(e) => {
             return failed(output.clone(), format!("unreadable payload: {e}"));
         }
     };
 
-    let parsed = match Lrprev::parse(&payload) {
-        Ok(p) => p,
-        Err(e) => return failed(output.clone(), format!("not a usable .lrprev: {e}")),
+    // The plan's choice is the choice: a level file *is* the level, and a
+    // container contributes the one chunk that was certified — never "the chunk
+    // whose dimensions happen to match", and never the largest as a fallback.
+    let level = match payload {
+        Payload::LevelFile { .. } => file.as_slice(),
+        Payload::Container {
+            level: Some(name), ..
+        } => match lrprev::chunk_data(&file, name) {
+            Ok(Some(data)) => data,
+            Ok(None) => {
+                return failed(
+                    output.clone(),
+                    format!("the payload no longer carries the certified `{name}` chunk"),
+                );
+            }
+            Err(e) => return failed(output.clone(), format!("not a usable .lrprev: {e}")),
+        },
+        Payload::Container { level: None, .. } => {
+            return failed(
+                output.clone(),
+                "plan item names no certified level to write".to_string(),
+            );
+        }
     };
 
-    let level = parsed
-        .levels()
-        .into_iter()
-        .find(|chunk| jpeg::dimensions(chunk.data).is_ok_and(|dims| dims == expected))
-        .or_else(|| parsed.best_level());
-
-    let Some(level) = level else {
-        return failed(
-            output.clone(),
-            "no level contains a readable JPEG".to_string(),
-        );
-    };
-
-    if !jpeg::is_complete(level.data) {
-        return failed(
-            output.clone(),
-            "level does not end with an EOI marker".to_string(),
-        );
+    // Re-certify the bytes actually read against the item's dimensions, so a
+    // cache edited between `scan` and `extract` fails loudly instead of writing
+    // something no plan ever approved.
+    match jpeg::certify(level) {
+        Ok(certified) if certified.complete && certified.dimensions == expected => {}
+        Ok(certified) if !certified.complete => {
+            return failed(
+                output.clone(),
+                "level does not end with an EOI marker".to_string(),
+            );
+        }
+        Ok(certified) => {
+            let (width, height) = certified.dimensions;
+            let (expected_width, expected_height) = expected;
+            return failed(
+                output.clone(),
+                format!(
+                    "payload is {width}x{height} but the plan certified \
+                     {expected_width}x{expected_height}"
+                ),
+            );
+        }
+        Err(e) => return failed(output.clone(), format!("not a JPEG preview: {e}")),
     }
 
-    let mut bytes = level.data.to_vec();
+    let mut bytes = level.to_vec();
     let mut notes: Vec<String> = Vec::new();
     if options.write_metadata {
         let xmp = item
@@ -608,7 +633,10 @@ mod tests {
                 items: vec![PlanItem {
                     status: Status::Recoverable,
                     image: None,
-                    payload: Some(payload),
+                    payload: Some(Payload::Container {
+                        path: payload,
+                        level: Some("level_1".to_string()),
+                    }),
                     output: Some(output.clone()),
                     width: Some(1600),
                     height: Some(1200),
@@ -617,6 +645,7 @@ mod tests {
                     orientation: Orientation::Normal,
                     tier: None,
                     declared: None,
+                    smallest_level: None,
                     selected: true,
                     note: None,
                 }],

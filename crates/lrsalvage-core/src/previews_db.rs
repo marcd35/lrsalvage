@@ -1,4 +1,8 @@
 //! `previews.db` — the authoritative map from catalog image to payload file.
+//!
+//! Reads the cache's index into memory and derives the paths its rows name: one
+//! container per pyramid, one level file per `PyramidLevel` row. Whether a
+//! derived file exists is the caller's question — this module reads no payload.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -17,6 +21,19 @@ pub struct PreviewIndex {
     pub all_entries: Vec<CacheEntry>,
     pub pyramids: HashMap<String, Pyramid>,
     pub levels: HashMap<String, Vec<PyramidLevel>>,
+}
+
+/// One level file a pyramid's rows name.
+///
+/// The row travels with the path because it is the claim a level is judged
+/// against; nothing else has to match a file back to a row.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Candidate<'a> {
+    /// `<cache>/<uuid[0]>/<uuid[0..4]>/<UUID>-<digest>_<round(longDimension)>`
+    pub path: PathBuf,
+    /// The `PyramidLevel` row that derived the path, `None` for a file only
+    /// the bounded glob found (`adr-0005-discover-payloads-by-index` ¶3).
+    pub row: Option<&'a PyramidLevel>,
 }
 
 impl PreviewIndex {
@@ -94,12 +111,39 @@ impl PreviewIndex {
 
     /// `<cache>/<uuid[0]>/<uuid[0..4]>/<UUID>-<digest>.lrprev`
     pub fn payload_path(&self, cache_root: &Path, entry: &CacheEntry) -> PathBuf {
-        let first: String = entry.uuid.chars().take(1).collect();
-        let first_four: String = entry.uuid.chars().take(4).collect();
-        cache_root
-            .join(first)
-            .join(first_four)
-            .join(format!("{}-{}.lrprev", entry.uuid, entry.digest))
+        shard(cache_root, &entry.uuid).join(format!("{}-{}.lrprev", entry.uuid, entry.digest))
+    }
+
+    /// Every level file this pyramid's own rows name, in path order.
+    ///
+    /// The path is derived from the row, never globbed: the suffix is the
+    /// rounded `longDimension`, because the column comes back `REAL` (`101.0`)
+    /// and formatting the float would match nothing (§5.7). Two rows that round
+    /// to one leaf name one file, so the lower level number keeps it.
+    ///
+    /// Whether a candidate is on disk is the caller's question: this module
+    /// reads no payload and stats no file, so `plan` decides existence.
+    pub fn candidates(&self, cache_root: &Path, uuid: &str, digest: &str) -> Vec<Candidate<'_>> {
+        let Some(rows) = self.levels.get(uuid) else {
+            return Vec::new();
+        };
+        let mut named: Vec<Candidate<'_>> = rows
+            .iter()
+            .map(|row| Candidate {
+                path: shard(cache_root, uuid)
+                    .join(format!("{uuid}-{digest}_{}", row.long_dimension)),
+                row: Some(row),
+            })
+            .collect();
+        // Path first so the order never depends on the database's row order;
+        // the level number breaks a tie between two rows naming one leaf.
+        named.sort_by(|a, b| {
+            a.path
+                .cmp(&b.path)
+                .then_with(|| a.row.map(|row| row.level).cmp(&b.row.map(|row| row.level)))
+        });
+        named.dedup_by(|a, b| a.path == b.path);
+        named
     }
 
     /// Largest level for a pyramid by pixel area (`width * height`), keeping
@@ -114,6 +158,14 @@ impl PreviewIndex {
             )
         })
     }
+}
+
+/// `<cache>/<uuid[0]>/<uuid[0..4]>`: the shard folders, which are an address
+/// and never an identity (§5.2).
+fn shard(cache_root: &Path, uuid: &str) -> PathBuf {
+    let first: String = uuid.chars().take(1).collect();
+    let first_four: String = uuid.chars().take(4).collect();
+    cache_root.join(first).join(first_four)
 }
 
 /// Text column, tolerating odd storage classes.
@@ -155,6 +207,10 @@ mod tests {
     use rusqlite::Connection;
 
     use super::*;
+
+    fn slashed(path: &Path) -> String {
+        path.to_string_lossy().replace('\\', "/")
+    }
 
     const SCHEMA: &str = r#"
         CREATE TABLE Pyramid (uuid NOT NULL, digest NOT NULL, colorProfile NOT NULL,
@@ -288,6 +344,81 @@ mod tests {
     fn best_level_unknown_pyramid_is_none() {
         let index = index_with(|_| {});
         assert!(index.best_level("missing").is_none());
+    }
+
+    #[test]
+    fn candidates_name_each_rows_level_file() {
+        let index = index_with(|conn| {
+            base_pyramid(conn, "1A2B3C4D-5E6F");
+            conn.execute_batch(
+                "INSERT INTO PyramidLevel (uuid, digest, level, longDimension, lastAccess, width, height)
+                 VALUES ('1A2B3C4D-5E6F', 'd', 0, 1616.0, 0, 1616, 1077),
+                        ('1A2B3C4D-5E6F', 'd', 2, 101.0,  0, 101,  68);",
+            )
+            .unwrap();
+        });
+
+        let candidates = index.candidates(Path::new("C:/cache"), "1A2B3C4D-5E6F", "deadbeef");
+        let paths: Vec<String> = candidates.iter().map(|c| slashed(&c.path)).collect();
+        assert_eq!(
+            paths,
+            vec![
+                "C:/cache/1/1A2B/1A2B3C4D-5E6F-deadbeef_101",
+                "C:/cache/1/1A2B/1A2B3C4D-5E6F-deadbeef_1616",
+            ],
+            "one leaf per row, in path order, under the address the uuid derives"
+        );
+        assert_eq!(
+            candidates[0]
+                .row
+                .map(|row| (row.level, row.width, row.height)),
+            Some((2, 101, 68)),
+            "each candidate carries the row that derived its name"
+        );
+        assert_eq!(candidates[1].row.map(|row| row.long_dimension), Some(1616));
+    }
+
+    #[test]
+    fn a_real_long_dimension_rounds_and_two_rows_may_name_one_leaf() {
+        // §5.7: `longDimension` comes back REAL, so 100.6 and 101.0 both name
+        // `_101` — the suffix is the rounded integer, never the float.
+        let index = index_with(|conn| {
+            base_pyramid(conn, "ABCD");
+            conn.execute_batch(
+                "INSERT INTO PyramidLevel (uuid, digest, level, longDimension, lastAccess, width, height)
+                 VALUES ('ABCD', 'd', 1, 100.6, 0, 101, 68),
+                        ('ABCD', 'd', 2, 101.0, 0, 101, 68);",
+            )
+            .unwrap();
+        });
+
+        let candidates = index.candidates(Path::new("C:/cache"), "ABCD", "d");
+        assert_eq!(candidates.len(), 1, "one leaf is one file");
+        assert!(
+            candidates[0].path.ends_with("ABCD-d_101"),
+            "{:?}",
+            candidates[0].path
+        );
+        assert_eq!(
+            candidates[0].row.map(|row| row.level),
+            Some(1),
+            "the lower level number keeps a shared leaf, deterministically"
+        );
+    }
+
+    #[test]
+    fn a_pyramid_without_level_rows_has_no_candidates() {
+        let index = index_with(|conn| base_pyramid(conn, "ABCD"));
+        assert!(
+            index
+                .candidates(Path::new("C:/cache"), "ABCD", "d")
+                .is_empty()
+        );
+        assert!(
+            index
+                .candidates(Path::new("C:/cache"), "nope", "d")
+                .is_empty()
+        );
     }
 
     #[test]

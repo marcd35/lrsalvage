@@ -1,65 +1,142 @@
-//! Minimal JPEG inspection: dimensions and completeness.
+//! Minimal JPEG inspection: framing, dimensions and completeness.
+
+use std::ops::Range;
 
 use crate::error::Result;
 
-/// Read `(width, height)` from the first start-of-frame marker.
-pub fn dimensions(bytes: &[u8]) -> Result<(u32, u32)> {
+/// One marker in a JPEG header, before scan data begins.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Segment {
+    /// The marker byte that follows the `FF` (`0xD8` for `SOI`, `0xE1` for
+    /// `APP1`).
+    pub marker: u8,
+    /// Byte range of the whole segment: its `FF`, the marker byte, the length
+    /// field and the payload. A redundant `FF` fill run in front of the marker
+    /// is not part of it, so the length field always starts at
+    /// `range.start + 2`.
+    pub range: Range<usize>,
+}
+
+impl Segment {
+    /// The segment's payload: everything after its two-byte length field.
+    ///
+    /// Empty for a standalone marker, which declares no length.
+    pub fn payload<'a>(&self, jpeg: &'a [u8]) -> &'a [u8] {
+        jpeg.get(self.range.start + 4..self.range.end)
+            .unwrap_or(&[])
+    }
+}
+
+/// The verdict of one certification walk over a payload's own bytes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Certified {
+    /// `(width, height)` from the first top-level start-of-frame marker.
+    pub dimensions: (u32, u32),
+    /// `true` when `FF D9` ends the buffer, which is what makes a truncated
+    /// file distinguishable from a whole one.
+    pub complete: bool,
+    /// Every segment before `SOS`, `SOI` first. Framing only: naming what an
+    /// `APP1` or `APP2` carries is `exif`'s work.
+    pub segments: Vec<Segment>,
+}
+
+/// Certify a payload in one walk: `SOI` at 0, every segment's length declared,
+/// the first top-level `SOF` for the dimensions, `FF D9` at EOF.
+///
+/// APPn and COM payloads are skipped wholesale by their own length, so an
+/// embedded EXIF thumbnail is never on the chain and can never be mistaken for
+/// the frame.
+pub fn certify(bytes: &[u8]) -> Result<Certified> {
     // SOI is the only legal opening; anything else cannot hold a frame.
     if bytes.len() < 2 || bytes[0] != 0xFF || bytes[1] != 0xD8 {
         return Err(crate::error::Error::JpegMalformed);
     }
 
+    let mut segments = vec![Segment {
+        marker: 0xD8,
+        range: 0..2,
+    }];
+    let mut dimensions = None;
     let mut pos = 2;
-    while pos < bytes.len() {
+
+    // A header that ends without scan data is incomplete, not malformed: every
+    // prefix of a real payload is answered, not rejected.
+    while let Some(&lead) = bytes.get(pos) {
         // Segment markers start with one or more 0xFF fill bytes.
-        if bytes[pos] != 0xFF {
+        if lead != 0xFF {
             return Err(crate::error::Error::JpegMalformed);
         }
-        while pos < bytes.len() && bytes[pos] == 0xFF {
-            pos += 1;
+        let mut marker_at = pos;
+        while bytes.get(marker_at + 1) == Some(&0xFF) {
+            marker_at += 1;
         }
-        let Some(&marker) = bytes.get(pos) else {
-            // Input ends on a fill byte run: truncated.
-            return Err(crate::error::Error::JpegMalformed);
+        let Some(&marker) = bytes.get(marker_at + 1) else {
+            break;
         };
-        pos += 1;
+        // The length field, for every marker that declares one.
+        let length_at = marker_at + 2;
+        let mut next = length_at;
 
         match marker {
-            // Standalone markers carry no length field.
-            0x01 | 0xD0..=0xD7 | 0xD8 | 0xD9 => continue,
-            // Start of scan: entropy-coded data follows, no frame marker ahead.
-            0xDA => return Err(crate::error::Error::JpegMalformed),
             // A stuffed 0x00 is only legal inside entropy-coded data.
             0x00 => return Err(crate::error::Error::JpegMalformed),
+            // Start of scan: entropy-coded data follows, and the header is done.
+            0xDA => break,
+            // End of image before any scan: the header is over.
+            0xD9 => break,
+            // Standalone markers carry no length field.
+            0x01 | 0xD0..=0xD7 | 0xD8 => segments.push(Segment {
+                marker,
+                range: marker_at..length_at,
+            }),
             _ => {
                 let len_bytes = bytes
-                    .get(pos..pos + 2)
+                    .get(length_at..length_at + 2)
                     .ok_or(crate::error::Error::JpegMalformed)?;
                 let len = u16::from_be_bytes([len_bytes[0], len_bytes[1]]) as usize;
                 // The length includes its own two bytes.
                 if len < 2 {
                     return Err(crate::error::Error::JpegMalformed);
                 }
-                let end = pos
+                let end = length_at
                     .checked_add(len)
                     .filter(|&end| end <= bytes.len())
                     .ok_or(crate::error::Error::JpegMalformed)?;
 
-                if is_frame_marker(marker) {
+                if is_frame_marker(marker) && dimensions.is_none() {
                     // payload: [precision:1][height:2][width:2]...
                     if len < 7 {
                         return Err(crate::error::Error::JpegMalformed);
                     }
-                    let height = u16::from_be_bytes([bytes[pos + 3], bytes[pos + 4]]);
-                    let width = u16::from_be_bytes([bytes[pos + 5], bytes[pos + 6]]);
-                    return Ok((width as u32, height as u32));
+                    let height = u16::from_be_bytes([bytes[length_at + 3], bytes[length_at + 4]]);
+                    let width = u16::from_be_bytes([bytes[length_at + 5], bytes[length_at + 6]]);
+                    dimensions = Some((u32::from(width), u32::from(height)));
                 }
-                pos = end;
+                segments.push(Segment {
+                    marker,
+                    range: marker_at..end,
+                });
+                next = end;
             }
         }
+        pos = next;
     }
 
-    Err(crate::error::Error::JpegMalformed)
+    // No top-level frame before the scan data: nothing here declares a size.
+    let Some(dimensions) = dimensions else {
+        return Err(crate::error::Error::JpegMalformed);
+    };
+
+    Ok(Certified {
+        dimensions,
+        complete: bytes.ends_with(&[0xFF, 0xD9]),
+        segments,
+    })
+}
+
+/// Read `(width, height)` from the first start-of-frame marker.
+pub fn dimensions(bytes: &[u8]) -> Result<(u32, u32)> {
+    certify(bytes).map(|certified| certified.dimensions)
 }
 
 /// Start-of-frame markers whose payload carries `height` then `width`.
@@ -70,9 +147,10 @@ fn is_frame_marker(marker: u8) -> bool {
     )
 }
 
-/// `true` when the buffer starts with SOI and ends with EOI.
+/// `true` when the buffer is a complete JPEG within its own bounds: a legal
+/// header walk and `FF D9` at EOF.
 pub fn is_complete(bytes: &[u8]) -> bool {
-    bytes.len() >= 4 && bytes.starts_with(&[0xFF, 0xD8]) && bytes.ends_with(&[0xFF, 0xD9])
+    certify(bytes).is_ok_and(|certified| certified.complete)
 }
 
 #[cfg(test)]
@@ -213,5 +291,120 @@ mod tests {
         }
         // And the complete buffer still parses.
         assert_eq!(dimensions(&valid).unwrap(), (1616, 1077));
+    }
+
+    #[test]
+    fn certification_names_the_segments_before_the_scan() {
+        let bytes = jpeg(1616, 1077);
+        let certified = certify(&bytes).expect("a valid frame certifies");
+
+        assert_eq!(certified.dimensions, (1616, 1077));
+        assert!(certified.complete);
+        assert_eq!(
+            certified
+                .segments
+                .iter()
+                .map(|segment| segment.marker)
+                .collect::<Vec<_>>(),
+            vec![0xD8, 0xE0, 0xC0],
+            "SOI, APP0 and SOF0, and nothing from the scan onward"
+        );
+        assert_eq!(
+            certified.segments[0].range,
+            0..2,
+            "SOI is the first two bytes"
+        );
+        assert!(
+            certified.segments[1].payload(&bytes).starts_with(b"JFIF\0"),
+            "an APP0 payload is named by its declared range"
+        );
+        assert!(
+            certified.segments[0].payload(&bytes).is_empty(),
+            "a standalone marker declares no payload"
+        );
+        // The SOF's range covers its declared length, dimensions included.
+        let sof = &certified.segments[2];
+        assert_eq!(sof.payload(&bytes).len(), 15);
+        assert_eq!(sof.payload(&bytes)[1..3], 1077u16.to_be_bytes());
+        assert_eq!(sof.payload(&bytes)[3..5], 1616u16.to_be_bytes());
+    }
+
+    #[test]
+    fn certification_reports_a_missing_eoi_without_losing_the_frame() {
+        let complete = jpeg(1616, 1077);
+        let truncated = &complete[..complete.len() - 2];
+
+        let certified = certify(truncated).expect("the header still certifies");
+        assert!(!certified.complete, "FF D9 is what completes a payload");
+        assert_eq!(certified.dimensions, (1616, 1077));
+        assert!(!is_complete(truncated));
+        assert!(is_complete(&complete));
+    }
+
+    #[test]
+    fn an_embedded_exif_thumbnail_is_never_on_the_segment_chain() {
+        // An APP1 whose payload is itself a whole JPEG with a lying SOF.
+        let fake = jpeg(11, 22);
+        let mut bytes = vec![0xFF, 0xD8];
+        bytes.extend_from_slice(&segment(0xE1, &fake));
+        bytes.extend_from_slice(&jpeg(640, 480)[2..]);
+
+        let certified = certify(&bytes).expect("the real frame is found");
+        assert_eq!(certified.dimensions, (640, 480));
+        assert_eq!(
+            certified
+                .segments
+                .iter()
+                .map(|segment| segment.marker)
+                .collect::<Vec<_>>(),
+            vec![0xD8, 0xE1, 0xE0, 0xC0],
+            "the APP1 is one segment, whatever it contains"
+        );
+    }
+
+    #[test]
+    fn fill_bytes_before_a_marker_are_tolerated_and_not_part_of_the_segment() {
+        let mut bytes = jpeg(1616, 1077);
+        let sof_start = bytes
+            .windows(2)
+            .position(|window| window == [0xFF, 0xC0])
+            .expect("test jpeg has SOF0");
+        bytes.insert(sof_start, 0xFF);
+
+        let certified = certify(&bytes).expect("a fill run is legal framing");
+        assert_eq!(certified.dimensions, (1616, 1077));
+        let sof = certified
+            .segments
+            .iter()
+            .find(|segment| segment.marker == 0xC0)
+            .expect("the SOF is still one segment");
+        assert_eq!(
+            sof.range.start,
+            sof_start + 1,
+            "the range starts at the marker's own FF"
+        );
+        assert_eq!(sof.payload(&bytes).len(), 15);
+    }
+
+    #[test]
+    fn a_header_without_image_data_is_incomplete_not_malformed() {
+        // A frame and EOI with no scan: nothing to write, but the claim that a
+        // payload is truncated is `complete`, not a parse error.
+        let certified = certify(&[0xFF, 0xD8, 0xFF, 0xD9]).unwrap_err();
+        assert!(matches!(certified, Error::JpegMalformed));
+        let mut header_only = vec![0xFF, 0xD8];
+        header_only.extend_from_slice(&segment(
+            0xC0,
+            &[
+                0x08, 0x04, 0x35, 0x06, 0x50, 0x03, 1, 0x11, 0, 2, 0x11, 1, 3, 0x11, 1,
+            ],
+        ));
+        header_only.extend_from_slice(&[0xFF, 0xD9]);
+        let certified = certify(&header_only).expect("the frame is readable");
+        assert_eq!(certified.dimensions, (1616, 1077));
+        assert!(certified.complete, "it does end with FF D9");
+
+        assert!(certify(b"not a jpeg at all").is_err());
+        assert!(!is_complete(&[0xFF, 0xD8, 0xFF, 0xD9]));
     }
 }

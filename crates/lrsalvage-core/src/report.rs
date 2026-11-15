@@ -11,7 +11,7 @@ use serde_json::{Map, Value, json};
 
 use crate::error::{IoContext, Result};
 use crate::model::Orientation;
-use crate::plan::{Plan, PlanItem, Tier};
+use crate::plan::{Payload, Plan, PlanItem, Tier};
 use crate::{jpeg, lrprev};
 
 /// One-line-per-status summary for the terminal, using the default 640 px floor.
@@ -526,9 +526,24 @@ fn caption_stem(item: &PlanItem) -> String {
 /// resolution.
 fn thumbnail_data_url(item: &PlanItem, cache_root: &Path) -> Option<String> {
     let payload = item.payload.as_ref()?;
-    let bytes = std::fs::read(resolve_payload(payload, cache_root)).ok()?;
-    let parsed = lrprev::Lrprev::parse(&bytes).ok()?;
-    let smallest = smallest_level(&parsed)?;
+    let smallest = match payload {
+        // The plan already enumerated this pyramid's levels and named the
+        // smallest, so the sheet reads one small file instead of inlining the
+        // payload's hundreds of kilobytes.
+        Payload::LevelFile { .. } => {
+            let path = resolve_payload(item.smallest_level.as_deref()?, cache_root);
+            let bytes = std::fs::read(path).ok()?;
+            // A broken small level is not something to inline.
+            jpeg::certify(&bytes).ok().filter(|c| c.complete)?;
+            bytes
+        }
+        // A container is walked for its smallest chunk, as it always was.
+        Payload::Container { .. } => {
+            let bytes = std::fs::read(resolve_payload(payload.path(), cache_root)).ok()?;
+            let parsed = lrprev::Lrprev::parse(&bytes).ok()?;
+            smallest_level(&parsed)?.to_vec()
+        }
+    };
     Some(format!(
         "data:image/jpeg;base64,{}",
         STANDARD.encode(smallest)
@@ -649,7 +664,10 @@ mod tests {
         PlanItem {
             status: Status::Recoverable,
             image: Some(sample_image(base_name)),
-            payload: Some(payload),
+            payload: Some(Payload::Container {
+                path: payload,
+                level: Some("level_2".to_string()),
+            }),
             output: Some(output),
             width: Some(1600),
             height: Some(1200),
@@ -658,6 +676,7 @@ mod tests {
             orientation: Orientation::Rotate90,
             tier: Some(Tier::Standard),
             declared: None,
+            smallest_level: None,
             selected: true,
             note: None,
         }
@@ -774,7 +793,10 @@ mod tests {
         let unmapped = PlanItem {
             status: Status::Unmapped,
             image: None,
-            payload: Some(PathBuf::from("cache/orphan.lrprev")),
+            payload: Some(Payload::Container {
+                path: PathBuf::from("cache/orphan.lrprev"),
+                level: None,
+            }),
             output: Some(PathBuf::from("out").join("_unmapped").join("orphan.jpg")),
             width: None,
             height: None,
@@ -783,6 +805,7 @@ mod tests {
             orientation: Orientation::Unknown,
             tier: None,
             declared: None,
+            smallest_level: None,
             selected: false,
             note: None,
         };
@@ -848,7 +871,10 @@ mod tests {
         let orphan = PlanItem {
             status: Status::Unmapped,
             image: None,
-            payload: Some(PathBuf::from("cache/orphan.lrprev")),
+            payload: Some(Payload::Container {
+                path: PathBuf::from("cache/orphan.lrprev"),
+                level: None,
+            }),
             output: None,
             width: None,
             height: None,
@@ -857,6 +883,7 @@ mod tests {
             orientation: Orientation::Unknown,
             tier: None,
             declared: None,
+            smallest_level: None,
             selected: false,
             note: None,
         };
@@ -1017,7 +1044,10 @@ mod tests {
         let unmapped = PlanItem {
             status: Status::Unmapped,
             image: None,
-            payload: Some(PathBuf::from("cache/orphan.lrprev")),
+            payload: Some(Payload::Container {
+                path: PathBuf::from("cache/orphan.lrprev"),
+                level: None,
+            }),
             output: None,
             width: None,
             height: None,
@@ -1026,6 +1056,7 @@ mod tests {
             orientation: Orientation::Unknown,
             tier: None,
             declared: None,
+            smallest_level: None,
             selected: false,
             note: None,
         };

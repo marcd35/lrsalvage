@@ -20,8 +20,9 @@ references:
 ## Responsibility
 
 Load the cache's `previews.db` into an in-memory index — `imageId → CacheEntry`,
-`uuid → Pyramid`, `uuid → [PyramidLevel]` — and resolve the payload file a row
-names and the best level of a pyramid.
+`uuid → Pyramid`, `uuid → [PyramidLevel]` — and derive the paths its rows name:
+the container file of a pyramid, each level file of one, and the best level of a
+pyramid.
 
 ## Boundary
 
@@ -73,11 +74,13 @@ rows are live, which are stale, and what to do about either is `plan`'s decision
   substitutes a known `(uuid, digest)` and asserts each template agrees with the
   path the derivation returns, so a template cannot drift from the rule it stands
   for (`adr-0007-publish-a-verification-report`).
-- **"Derived, never globbed" is the v1 rule, not the final one.**
+- **The level set is enumerated here, and one widening is still to come.**
   `adr-0005-discover-payloads-by-index` keeps the identity here (`(uuid, digest)`
-  is this module's key) but widens the *level set* by a glob bounded to a row's
-  own identity and folder, and moves per-file certification into `jpeg`. The
-  enumeration is `candidates(cache_root, uuid, digest)` returning each candidate
-  file with its row; `payload_path` keeps resolving one row's container. This
-  spec describes the decided shape next to the running v1 code, and the code
-  catches up with the reader.
+  is this module's key) and moves per-file certification into `jpeg`, which owns
+  the one walk a payload is believed by. The enumeration is
+  `candidates(cache_root, uuid, digest)`: one leaf per `PyramidLevel` row, carrying
+  the row that derived it, while `payload_path` keeps resolving one row's
+  container. The glob that also accepts a file whose row was pruned is that ADR's
+  ¶3 and a separate change; until it lands, a pyramid whose rows are all stale has
+  no candidate and is `missing-payload`, which is the honest answer to "no file of
+  this pyramid exists at its own address".
