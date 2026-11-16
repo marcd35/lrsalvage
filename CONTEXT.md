@@ -150,3 +150,20 @@ _Avoid_: embedded profile, colour space
 An additional catalog image that shares one original but has its own edits and
 its own cached preview.
 _Avoid_: duplicate, version, copy
+
+## Promises
+
+**Compatibility contract**:
+What a script or a person may rely on from one version to the next: the status
+words, the exit codes, the machine-readable field sets and their schema names,
+the report columns, the output names, the flags, and the marker that identifies
+an output as ours. It does not include the version number written inside that
+marker.
+_Avoid_: public API, output format, interface
+
+**Verification report**:
+The object a run can write about the cache it read and the plan it built — the
+layout, the version strings, the options applied, the counts and the filename
+shapes — with every path replaced by a template, so a result can leave the
+machine without carrying one of the user's.
+_Avoid_: scan report, summary, log
