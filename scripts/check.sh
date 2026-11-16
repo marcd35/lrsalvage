@@ -10,11 +10,13 @@
 #   scripts/check.sh clippy fmt   only those, in the order given
 #   scripts/check.sh real         the #[ignore]d tests, against real catalogs
 #   scripts/check.sh real-render  the #[ignore]d tests, against a rendered cache
+#   scripts/check.sh real-1to1    the #[ignore]d tests, against a 1:1 cache
 #
-# `real` and `real-render` are two evidence families, not one: a machine can hold
-# a converted cache without a rendered one, and each gate fails rather than
-# skipping when its own pair is unset. Each runs only its own tests, so adding a
-# family cannot reach into another's and break it.
+# Those last three are three evidence families, not one: a machine can hold a
+# converted cache without a rendered one, or a rendered one without a 1:1 build,
+# and each gate fails rather than skipping when its own pair is unset. Each runs
+# only its own tests, so adding a family cannot reach into another's and break
+# it.
 #
 # A missing tool is a failure, never a skip: a green run must mean CI's green.
 #
@@ -27,9 +29,11 @@ set -eu
 cd "$(dirname "$0")/.."
 
 # A gitignored `.env` may name LRSALVAGE_TEST_CATALOG/LRSALVAGE_TEST_PREVIEWS
-# (a converted cache) and LRSALVAGE_RENDER_CATALOG/LRSALVAGE_RENDER_PREVIEWS (a
-# rendered one) so the real-cache tests can be run on the machine that holds
-# them. It is never committed: real catalog paths are not a repo artefact.
+# (a converted cache), LRSALVAGE_RENDER_CATALOG/LRSALVAGE_RENDER_PREVIEWS (a
+# rendered one) and LRSALVAGE_ONE_TO_ONE_CATALOG/LRSALVAGE_ONE_TO_ONE_PREVIEWS (a
+# cache Lightroom built 1:1 previews for) so the real-cache tests can be run on
+# the machine that holds them. It is never committed: real catalog paths are not
+# a repo artefact.
 #
 # A worktree's own `.env` wins, and the machine's one file is the fallback — the
 # only gate that verifies a byte-level claim must not be unreachable from a fresh
@@ -144,18 +148,33 @@ require() {
     fi
 }
 
+# A family whose own pair is unset fails and names it, rather than skipping or
+# borrowing another family's evidence. One guard for all three families, so a fix
+# to this message cannot leave one gate telling a user a different path.
+#
+#   require_pair <catalog name> <previews name> <what the cache is>
+require_pair() {
+    # POSIX sh has no `${!name}`, and `set -u` makes the read matter: the two
+    # names arrive as strings and are dereferenced indirectly.
+    eval "_catalog=\${$1:-}"
+    eval "_previews=\${$2:-}"
+    if [ -n "$_catalog" ] && [ -n "$_previews" ]; then
+        return 0
+    fi
+    printf '%s\n' \
+        "set $1 and $2" \
+        "to $3, in this worktree's .env or in" \
+        "${XDG_CONFIG_HOME:-$HOME/.config}/lrsalvage/real.env (see .env.example)." >&2
+    return 1
+}
+
 # The real-cache rows: `#[ignore]`d and reached only from this machine's own
 # catalogs. Evidence for `README.md`'s compatibility claims comes from here.
 gate_real() {
     printf '%s\n' '== real catalogs'
     load_env
-    if [ -z "${LRSALVAGE_TEST_CATALOG:-}" ] || [ -z "${LRSALVAGE_TEST_PREVIEWS:-}" ]; then
-        printf '%s\n' \
-            'set LRSALVAGE_TEST_CATALOG and LRSALVAGE_TEST_PREVIEWS, in this' \
-            "worktree's .env or in ${XDG_CONFIG_HOME:-$HOME/.config}/lrsalvage/real.env" \
-            '(see .env.example).' >&2
-        exit 1
-    fi
+    require_pair LRSALVAGE_TEST_CATALOG LRSALVAGE_TEST_PREVIEWS \
+        'a converted cache' || exit 1
     # This gate's own rows, not every ignored test in the workspace: `--ignored`
     # over the whole workspace would make each evidence family depend on the
     # other's names (and on its env pair being set on this machine).
@@ -168,15 +187,23 @@ gate_real() {
 gate_real_render() {
     printf '%s\n' '== rendered cache'
     load_env
-    if [ -z "${LRSALVAGE_RENDER_CATALOG:-}" ] || [ -z "${LRSALVAGE_RENDER_PREVIEWS:-}" ]; then
-        printf '%s\n' \
-            'set LRSALVAGE_RENDER_CATALOG and LRSALVAGE_RENDER_PREVIEWS to a cache' \
-            "Lightroom rendered, in this worktree's .env or in" \
-            "${XDG_CONFIG_HOME:-$HOME/.config}/lrsalvage/real.env (see .env.example)." >&2
-        exit 1
-    fi
+    require_pair LRSALVAGE_RENDER_CATALOG LRSALVAGE_RENDER_PREVIEWS \
+        'a cache Lightroom rendered from scratch' || exit 1
     # Scoped to the rendered-cache row, for the same reason `real` is scoped.
     cargo test -p lrsalvage-cli --test render -- --ignored
+}
+
+# A cache Lightroom built 1:1 previews for: one pyramid per image and no
+# companion, which is `format-notes` §5.10's catalog C, and the absence case the
+# companion rule (ADR 0008, ADR 0009) only ever decides about. Its own pair of
+# names, because it is its own evidence.
+gate_real_1to1() {
+    printf '%s\n' '== 1:1 cache'
+    load_env
+    require_pair LRSALVAGE_ONE_TO_ONE_CATALOG LRSALVAGE_ONE_TO_ONE_PREVIEWS \
+        'a cache Lightroom built 1:1 previews for' || exit 1
+    # Scoped to the 1:1 row, for the same reason the other two gates are scoped.
+    cargo test -p lrsalvage-cli --test one_to_one -- --ignored
 }
 
 all_gates='fmt shell clippy test doc build typos deny msrv'
@@ -188,9 +215,10 @@ fi
 for gate in "$@"; do
     case "$gate" in
         real-render) gate_real_render ;;
+        real-1to1) gate_real_1to1 ;;
         fmt | shell | clippy | test | doc | build | typos | deny | msrv | real) "gate_$gate" ;;
         *)
-            printf 'unknown gate: %s (one of: %s real real-render)\n' "$gate" "$all_gates" >&2
+            printf 'unknown gate: %s (one of: %s real real-render real-1to1)\n' "$gate" "$all_gates" >&2
             exit 1
             ;;
     esac

@@ -37,8 +37,10 @@ A **vault** is one temporary directory holding the three things a run reads and
 one it writes: `<dir>/catalog/<name>.lrcat`, `<dir>/<name> Previews.lrdata`, the
 originals a row needs to still exist, and `<dir>/out`. Nothing is committed: every
 vault is built at test time and dropped with its `TempDir`. Real catalogs are
-reached only from `#[ignore]`d tests via `LRSALVAGE_TEST_CATALOG` and
-`LRSALVAGE_TEST_PREVIEWS`; real catalog bytes are never committed.
+reached only from `#[ignore]`d tests, in the three evidence families
+`scripts/check.sh` gates by name — a converted cache, a cache Lightroom rendered
+from scratch, and a cache it built 1:1 previews for; real catalog bytes are never
+committed.
 
 `format-notes` remains the only source of byte facts, each with its evidence
 label. This matrix pins *decisions* against shapes it builds itself; it can never

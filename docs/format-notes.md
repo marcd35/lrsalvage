@@ -994,9 +994,8 @@ pyramid, the two told apart by `Pyramid.quality`:
 | `Pyramid.quality` | A | B | C | what it is |
 |---|---|---|---|---|
 | `standard` | 9 | 9 | 0 | the levels above 320; `colorProfile AdobeRGB` |
-| `final` | 1 | 1 | 0 | the 1200×800 image, whose largest level is its own size |
+| `final` | 1 | 1 | 10 | the 1200×800 image, whose largest level is its own size (A, B), and all ten of C's |
 | `thumbnail` | 10 | 10 | 0 | a single 320 (or 160) level; `colorProfile sRGB`, payload bare |
-| (1:1 build) | — | — | 10 | one pyramid per image, `AdobeRGB`, every level metadata-bearing |
 
 - **No `ImageCacheEntry` claims the thumbnail pyramid.** Every image maps to its
   preview pyramid, so all ten thumbnail pyramids are payloads no image names.
@@ -1008,9 +1007,9 @@ pyramid, the two told apart by `Pyramid.quality`:
   store** (§5.2, §5.7): A held four over twenty pyramids — nine preview pyramids
   shared one digest, nine thumbnail pyramids another, and two pyramids had their
   own. C held two over ten.
-- **A 1:1 build replaces the standard pyramid** rather than adding to it: C has no
-  `standard` or `thumbnail` row and no bare level file, so the standard-sized
-  levels are gone once a 1:1 exists.
+- **A 1:1 build replaces the standard pyramid** rather than adding to it: C's ten
+  rows are all `final` and `AdobeRGB`, with no `standard` or `thumbnail` row and
+  no bare level file, so the standard-sized levels are gone once a 1:1 exists.
 
 **The build from this tree, run against A** (`0.1.0`, read-only, every write under
 a scratch root, no path recorded here):
@@ -1038,7 +1037,10 @@ cache fact rather than orphans: the same runs print `unmapped 0` and
 ten pyramid files still count in `shapes.level_file 48`. This is the rule's
 consequence pinned by fixtures `M10c`–`M10e`, not a re-run of the three caches.
 The rendered-cache gate `scripts/check.sh real-render` asserts it against the
-`Auto (3840px)` cache itself when this machine holds it.
+`Auto (3840px)` cache itself when this machine holds it. `real-1to1` asserts C's
+column above against the 1:1 build — ten images with `recovered 10`,
+`thumbnail_pyramids 0` and `unmapped 0`, forty metadata-bearing level files, and
+no `standard` or `thumbnail` row (`crates/lrsalvage-cli/tests/one_to_one.rs`).
 
 **What this does not measure.** A render of an image the catalog already holds (a
 re-render, or a preview rebuilt after pruning), what `14.0+` does when it prunes
