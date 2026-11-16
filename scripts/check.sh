@@ -108,6 +108,35 @@ gate_deny() {
     cargo deny check --hide-inclusion-graph
 }
 
+# The MSRV the manifest publishes, proven rather than asserted. The number is
+# `rust-version` in `Cargo.toml` — every member inherits it — and this gate reads
+# it back through `cargo metadata` instead of repeating it, so raising the number
+# is the whole edit and this command follows. CI's `msrv` job runs this file, not
+# a private copy of the command.
+gate_msrv() {
+    printf '%s\n' '== msrv'
+    require rustup 'rustup.rs'
+    # The metadata read is toolchain-independent, so it runs on `stable` rather
+    # than on whatever `rust-toolchain.toml` pins: a checkout's pin would
+    # otherwise download the *build* toolchain just to answer a question about a
+    # manifest, on a gate whose whole point is a different compiler.
+    version=$(RUSTUP_TOOLCHAIN=stable cargo metadata --no-deps --format-version 1 \
+        | grep -o '"rust_version":"[0-9][0-9.]*"' \
+        | sed 's/[^0-9.]//g' \
+        | awk -F. '{ printf "%.0f %s\n", $1 * 1000000 + $2 * 1000 + $3, $0 }' \
+        | sort -n | tail -1 | cut -d' ' -f2)
+    if [ -z "$version" ]; then
+        printf '%s\n' 'Cargo.toml publishes no rust-version to prove' >&2
+        exit 1
+    fi
+    printf 'rust-version = %s\n' "$version"
+    rustup toolchain install "$version" --profile minimal
+    # Its own target directory: sharing `target/` with the pinned toolchain would
+    # make every alternating run rebuild the dependency tree from scratch, once
+    # here and once in the next gate.
+    CARGO_TARGET_DIR=target/msrv cargo "+$version" check --workspace --all-targets --locked
+}
+
 require() {
     if ! command -v "$1" >/dev/null 2>&1; then
         printf 'missing %s: %s\n' "$1" "$2" >&2
@@ -150,7 +179,7 @@ gate_real_render() {
     cargo test -p lrsalvage-cli --test render -- --ignored
 }
 
-all_gates='fmt shell clippy test doc build typos deny'
+all_gates='fmt shell clippy test doc build typos deny msrv'
 
 if [ "$#" -eq 0 ]; then
     set -- $all_gates
@@ -159,7 +188,7 @@ fi
 for gate in "$@"; do
     case "$gate" in
         real-render) gate_real_render ;;
-        fmt | shell | clippy | test | doc | build | typos | deny | real) "gate_$gate" ;;
+        fmt | shell | clippy | test | doc | build | typos | deny | msrv | real) "gate_$gate" ;;
         *)
             printf 'unknown gate: %s (one of: %s real real-render)\n' "$gate" "$all_gates" >&2
             exit 1
