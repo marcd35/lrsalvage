@@ -48,6 +48,7 @@ fact gets its label before it gets prose.
 | Catalog with AI masks | Catalog whose `<catalog>.lrcat-data` directory is populated | `.lrcat-data` mask decoding |
 | Upgraded 78-image cache | The small catalog above, upgraded in place by Lightroom Classic 16.0 on 2026-11-14 | 13.3+ layout, `previews.db` schema delta |
 | Freshly rendered 16.0 caches ×3 | Three catalogs built from scratch by the same Lightroom Classic 16.0 on 2026-11-15 — Standard Preview Size `Auto (3840px)`, `1024 pixels`, and 1:1 previews — 10 images each from one import folder | the render half of section 5: 5.5, 5.8, 5.10 |
+| A discarded copy of the `Auto (3840px)` render | That cache copied whole, with `Library > Previews > Discard Standard and 1:1 Previews` applied to all ten images by Lightroom Classic 16.0 on 2026-11-16; the cache it was copied from was left untouched, byte for byte | the discard half of section 5: 5.11 |
 
 Until 2026-11-15 no **freshly built** 13.3+ catalog had been inspected: the
 modern cache in the second row is a *conversion* of a legacy cache. Three were
@@ -628,10 +629,11 @@ picture upright without touching a pixel (ADR 0003).
 > Delivery: [issue #2](https://github.com/marcd35/lrsalvage/issues/2).
 
 Lightroom Classic 13.3 changed preview storage. Sections 5.1–5.4, 5.7 and 5.9 are
-**verified** on an upgraded catalog and 5.10 on three caches rendered from
-scratch; sections 5.5 and 5.8 say which of their claims the renders settled and
-which they did not, which is not the same as untested software. The tool must
-still detect the layout rather than assume either one.
+**verified** on an upgraded catalog, 5.10 on three caches rendered from scratch
+and 5.11 on a copy of one of them that Lightroom discarded; sections 5.5 and 5.8
+say which of their claims the renders settled and which they did not, which is
+not the same as untested software. The tool must still detect the layout rather
+than assume either one.
 
 ### 5.1 What was measured
 
@@ -740,19 +742,28 @@ the reader behaves in a state and never that Adobe produces it:
 
 | Unmeasured state | Row that pins the reader | What the row cannot show |
 |---|---|---|
-| Pruned level: the row's file is gone, a smaller level survives | `M3` | that a Lightroom upgrade prunes this way |
+| Pruned level: the row's file is gone, a smaller level survives | `M3` | that a Lightroom upgrade prunes this way — the discard measured in §5.11 leaves no stale row either |
 | Level file with no row (found by the bounded glob) | `M4` | that the index ever forgets a row |
 | Both representations for one pyramid (`superseded`) | `X1` | that this upgrade leaves a `.lrprev` behind |
 | Coexistence, resolved per pyramid rather than per cache | `X2` | that Adobe produces a mixed cache at all |
 | A freshly built render's payload metadata | `M13` (§5.8) | nothing: §5.10 measured it, and every rendered level carried `Exif`, XMP and an ICC profile |
 | An unclaimed pyramid beside a claimed one | `M10c`…`M10e` (§5.10) | nothing: every fresh render left one thumbnail pyramid that no cache entry claims, and #42/ADR 0008 decided what it is |
-| An image whose whole pyramid is gone while its companion survives | `M10f` (ADR 0009) | that a prune reaches the whole pyramid and leaves the companion behind — no cache on this machine has been caught in that state |
+| An image whose whole pyramid is gone while its companion survives | `M10f` (ADR 0009) | that a prune reaches the whole pyramid and leaves the companion behind — no cache on this machine has been caught in that state, and the one deletion that could be triggered here took the companion with it (§5.11) |
 
 So the software's behaviour in those states is tested; the claim that Lightroom
 produces them is not — except for the payload metadata and the unclaimed
 pyramid, which §5.10 measured in a render. One state has no row at all: a
 conversion from a catalog newer than `1200001`, which is a fact about Adobe's
 upgrader rather than about the reader.
+
+**Attempted 2026-11-16, and the state did not appear.** The whole-pyramid row was
+chased with the one deletion this build can trigger, `Library > Previews >
+Discard Standard and 1:1 Previews`, on a copy of the §5.10 cache (§5.11). It
+removes the standard-size level and the image's `thumbnail` pyramid, keeps the
+levels below the standard size, and leaves the index agreeing with the files. So
+no deletion measured here produces the rescue's state, and the background purge
+is reported to exempt thumbnails and sub-standard levels as well: `M10f` keeps
+`unmeasured`, and ADR 0009 records what that means for the rescue.
 
 ### 5.6 Consequences
 
@@ -1031,7 +1042,72 @@ The rendered-cache gate `scripts/check.sh real-render` asserts it against the
 
 **What this does not measure.** A render of an image the catalog already holds (a
 re-render, or a preview rebuilt after pruning), what `14.0+` does when it prunes
-in the background, and any catalog written by a release newer than this one.
+in the background, and any catalog written by a release newer than this one. The
+deletion a user *can* trigger is measured separately (§5.11), and it is a
+different mechanism from the background purge.
+
+### 5.11 A discard, measured — VERIFIED
+
+Measured 2026-11-16 on a copy of the §5.10 `Auto (3840px)` cache, so the gate's own
+evidence was never opened by Lightroom: the original pair's catalog and
+`previews.db` carry the same SHA-256 before and after the run, and
+`sh scripts/check.sh real-render` is green afterwards.
+
+The deletion is the one a user can trigger, `Library > Previews > Discard Standard
+and 1:1 Previews` (present in Lightroom Classic 16.0, and it asks "Discard
+Standard & full-sized previews for 10 photos?"), applied to all ten images, with
+Lightroom quit afterwards so the index settles. The cache was walked by declared
+segment lengths before and after:
+
+| | before | after |
+|---|---|---|
+| `Pyramid` rows | 20 — `standard` 9, `final` 1, `thumbnail` 10 | 10 — `bigThumbnail` 9, `final` 1 |
+| `PyramidLevel` rows | 48 | 29 |
+| level files | 48 | 29 |
+| series, long edge | 320 × 19, 960 × 9, 1920 × 9, 3840 × 9, 160 × 1, 1200 × 1 | 320 × 10, 960 × 9, 1920 × 9, 1200 × 1 |
+| rows without a file / files without a row | 0 / 0 | 0 / 0 |
+| `DeletedPyramid` rows | 11 | 1 |
+
+- **Nineteen files went and none was written**: the whole `thumbnail` pyramid of
+each image (nine 320 px files and one 160 px file) and the 3840 px level of each
+preview pyramid. No 1:1 level was involved — this cache held none.
+- **A pyramid shrinks rather than emptying.** Levels below the standard size
+survive, which is the exemption Adobe describes for the background purge (§5.5,
+**reported**), so a claimed pyramid never ends with no file at all. The
+whole-pyramid state `M10f` pins is therefore **not** produced by this deletion —
+nor, on Adobe's own description, by the purge, which exempts thumbnails and
+sub-standard levels too.
+- **The companion is not spared.** A render's second pyramid is deleted outright,
+and `thumbnail_pyramids` on this cache goes from 10 to 0, so ADR 0008's cache fact
+is also a *disposable* fact. Lightroom rebuilds it when the image is next shown,
+as its own dialog says: "when full-size data is needed again, it will be retrieved
+by reading from the file".
+- **`quality` is rewritten, not preserved.** The nine preview pyramids now carry
+`Pyramid.quality = bigThumbnail`, so the column describes the levels a pyramid
+currently holds rather than the build that wrote it. That is the value ADR 0009
+refuses to treat as a companion, and it is a value a **claimed** pyramid can now
+carry.
+- **No stale row is left behind.** The discard deletes `PyramidLevel` rows and
+their files together: 29 rows, 29 files, 0 disagreements. The pruned-level state
+(`M3`, a row whose file is gone) is not produced by this deletion either.
+- **Tombstones are consumed, not written.** The eleven rows before included one
+per deleted companion; the run removed those ten and wrote none for the levels it
+deleted. The one left names a pair that is *also* live in `Pyramid` — a state
+§5.10's cache already held before this run — so a tombstone is evidence of a
+deletion event, never of a payload's absence.
+
+What the reader then reports, on the same cache: `scan --json` gives `layout
+modern`, `images 10`, `recovered 10` (tier `large` 9, `standard` 1),
+`thumbnail_pyramids 0`, `unmapped 0`, `missing_payload 0`, `below_floor 0` and
+exit 0. `extract --min-long-edge 0 --include-present` writes ten JPEGs totalling
+2.6 MiB, exits 0, and its manifest reports the demoted `quality`. A discard is a
+cache-size event, not a loss: the largest surviving level in this cache was
+1920 px, and no image needed a rescue.
+
+The state this leaves has no fixture row yet: `M10c`–`M10e` pin an *unclaimed*
+pyramid and `M3` pins a row without a file, and neither describes a claimed
+pyramid demoted to `bigThumbnail` with its companion gone. [#70](https://github.com/marcd35/lrsalvage/issues/70)
+adds the row; until it lands, this section is the record.
 
 
 ---

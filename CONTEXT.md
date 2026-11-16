@@ -37,8 +37,11 @@ _Avoid_: main pyramid, primary pyramid
 **Thumbnail pyramid**:
 A second, smaller pyramid a render keeps beside the preview one — typically one
 small level, and claimed by no cache entry. It is part of the render, not an
-orphan: nothing was lost to produce it.
-_Avoid_: thumbnail cache, lose pyramid
+orphan: nothing was lost to produce it. The word *companion* names it in relation
+to the image's preview pyramid; it is not a second name for the object. It is
+disposable: a prune removes it and Lightroom rebuilds it when the image is next
+shown.
+_Avoid_: thumbnail cache, lose pyramid, companion pyramid
 
 **Render**:
 A pyramid Lightroom built from the original's own pixels at the catalog's preview settings.
@@ -84,6 +87,14 @@ _Avoid_: catalog version, Lightroom version, app version
 The catalog's claim that a particular image has a pyramid in the cache, and which
 pyramid that is.
 _Avoid_: row, mapping, index entry
+
+**Prune**:
+Lightroom removing the payload bytes of levels it no longer keeps, leaving the
+cache's index rows behind as the only claim that those levels existed. Three
+triggers do it, and each has its own scope: the background cache-limit purge
+(oldest first, thumbnails and levels below the standard size exempt), the timed
+1:1 discard, and the explicit discard command over a selection.
+_Avoid_: purge, discard, cleanup, trim — each names a trigger, never the act
 
 **Orphan payload**:
 A payload — or a whole pyramid of level files — that exists in the cache but is
