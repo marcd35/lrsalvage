@@ -34,6 +34,49 @@ jobs:
       - name: Check
         run: sh scripts/check.sh fmt shell clippy test doc build
 
+  # The MSRV the manifest publishes, proven instead of asserted. This job holds no
+  # version of its own: it imports `rust-version` from Cargo.toml, so raising that
+  # number is the whole edit and the job follows it. A second literal is what let
+  # the published floor drift three toolchains below the truth nobody ran.
+  msrv:
+    name: msrv
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Every workspace crate inherits `rust-version.workspace`, so the members'
+      # values are already resolved here; the max over them is what a reader is
+      # promised, and an empty answer fails rather than installing nothing.
+      # `RUSTUP_TOOLCHAIN` keeps this step off the checkout's rust-toolchain.toml,
+      # which would otherwise download the pinned build toolchain this job never
+      # uses.
+      - name: Read the rust-version the manifest publishes
+        id: msrv
+        env:
+          RUSTUP_TOOLCHAIN: stable
+        run: |
+          set -eu
+          version=$(cargo metadata --no-deps --format-version 1 \
+            | jq -r '[.packages[].rust_version | select(. != null)]
+                     | max_by(split(".") | map(tonumber)) // empty')
+          if [ -z "$version" ]; then
+            echo 'Cargo.toml publishes no rust-version to prove' >&2
+            exit 1
+          fi
+          echo "proving rust-version = $version"
+          echo "toolchain=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Install Rust ${{ steps.msrv.outputs.toolchain }}
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ steps.msrv.outputs.toolchain }}
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Check on the published MSRV
+        run: cargo check --workspace --all-targets --locked
+
   typos:
     name: typos
     runs-on: ubuntu-latest
