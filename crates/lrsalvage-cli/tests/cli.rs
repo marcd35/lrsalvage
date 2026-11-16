@@ -145,6 +145,22 @@ fn help_lists_every_subcommand() {
 }
 
 #[test]
+fn version_flag_reports_this_workspace_version() {
+    // Clap's `version` attribute is this crate's `Cargo.toml` version, which the
+    // workspace sets once for all three members. Holding it to
+    // `CARGO_PKG_VERSION` is what makes a bump that reaches one surface and not
+    // another fail `cargo test` instead of a release.
+    let expected = format!("lrsalvage {}\n", env!("CARGO_PKG_VERSION"));
+    for flag in ["--version", "-V"] {
+        lrsalvage()
+            .arg(flag)
+            .assert()
+            .code(0)
+            .stdout(predicate::str::diff(expected.clone()));
+    }
+}
+
+#[test]
 fn unknown_subcommand_and_unknown_flag_are_usage_errors() {
     // Clap's default is 2, but 2 already means "partial" here, so both must
     // be reported as a plain usage error instead.

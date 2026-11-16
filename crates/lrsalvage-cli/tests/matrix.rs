@@ -361,6 +361,11 @@ fn extract_names_each_payload_in_the_csv_and_the_manifest() {
         serde_json::from_str(&fs::read_to_string(vault.out().join("manifest.json")).unwrap())
             .unwrap();
     assert_eq!(manifest["layout"], "modern");
+    assert_eq!(
+        manifest["version"],
+        env!("CARGO_PKG_VERSION"),
+        "the manifest records the version the run was, so a bump that misses it fails"
+    );
     assert_eq!(manifest["db_version"], "1504001");
     assert_eq!(manifest["crs_version"], "18.0.0");
     assert_eq!(manifest["stats"]["superseded"], 0);
