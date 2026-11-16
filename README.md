@@ -253,7 +253,11 @@ real ones, so it carries no catalog or cache path, no folder, no uuid and no fil
 name. It is written whenever you ask for it and a plan exists — a run that
 recovered nothing included — and it never moves the exit code. There is no
 redaction flag on `--json`: two ways to produce one object would only be a flag
-to forget.
+to forget. To let a maintainer read a cache they cannot see, paste the file into
+the [verification report form](https://github.com/marcd35/lrsalvage/issues/new?template=verification-report.yml),
+which asks for the report and what the run was against, and for nothing else.
+Nothing there asks where your library lives, because the report has no path to
+give.
 
 `extract` takes the same two paths plus a destination. It shares
 `--min-long-edge`, `--all-levels`, and `--include-present` with `scan`; the table
@@ -323,7 +327,9 @@ The run ends with a line on stderr such as
 `78 evaluated, 78 written, 0 skipped, 0 failed, 25.3 MiB`. Sizes there are
 mebibytes (1 MiB = 1,048,576 bytes). The reports keep exact bytes:
 `manifest.json` as a total over the selected payloads, `extract.csv` per written
-file.
+file. `extract.csv` also carries a SHA-256 for every file it wrote — a whole-file
+digest no peer preview-recovery tool publishes, so an output stays checkable
+long after the catalog is gone.
 
 ## Safety
 
