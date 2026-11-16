@@ -59,8 +59,8 @@ Gates — what is enforced rather than written:
 - [ ] `sh scripts/check.sh real`, `real-render` and `real-1to1` green.
 - [ ] `spec_validate` clean.
 - [ ] `spec_graph.rs` and `readme.rs` green after the documentation edits.
-- [ ] The MSRV job green on the `rust-version` the manifests publish — the number
-      comes from a run, never from a table.
+- [x] The MSRV job green on the `rust-version` the manifests publish — the number
+      comes from a run, never from a table. (#56)
 
 Frozen surface — what ADR 0010 promises:
 
