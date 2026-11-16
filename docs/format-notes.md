@@ -305,11 +305,16 @@ duplicate `(uuid, digest)` or duplicate `imageId` rows are possible in principle
 Query accordingly; do not assume one row per key. `MotionPreviewCacheEntry` and
 `FacePreviewCacheEntry` are the only tables with a declared `PRIMARY KEY`.
 
+**Settled 2026-11-16 — the modern store is this schema plus `PyramidLevel.fileSize`,
+and `StoreInfo.version` did not follow the catalog's (§5.4, §5.10).** That is the
+whole shape difference the 13.3 change was expected to bring, on every store
+measured here; a 14 or 15 catalog was never inspected, and §5.5 keeps that gap.
+
 ### 2.2 Table of tables
 
 | Table | Holds | Notes |
 |---|---|---|
-| `StoreInfo` | schema version | one row; observed `version` value TODO |
+| `StoreInfo` | schema version | one row; `13.0` in the modern store (§5.4) — `scripts/probe-cache.sh` prints it, and no decision reads it |
 | `Pyramid` | one row per cached pyramid | the unit of a preview set |
 | `PyramidLevel` | one row per level of a pyramid | dimensions and long edge |
 | `ImageCacheEntry` | image → pyramid | the join that matters (`imageId`) |
@@ -391,7 +396,8 @@ no. Never infer rotation from width × height (section 4).
 ### 2.6 `root-pixels.db`
 
 A sibling database, `root-pixels.db`, holds one tiny JPEG per image. Observed
-shape (column list, not the literal DDL — that was not captured, TODO):
+shape, as a column list rather than the literal DDL — capturing the DDL for a
+file nothing reads would be a claim with no consumer:
 
 ```text
 RootPixels (
@@ -407,13 +413,34 @@ RootPixels (
 
 Measured on the 78-payload cache (**verified**): 78 rows, roughly 3.5 KB each,
 and **all 101 × 68** — one row per image, one fixed size, far too small to be a
-recovery. What Lightroom uses it for is **unverified**; 78 rows for 78 payloads
-is consistent with a grid thumbnail shown before a real preview loads. Either
-way it identifies a frame and never substitutes for the best level.
+recovery. 78 rows for 78 payloads is consistent with a grid thumbnail shown
+before a real preview loads; what Lightroom uses it for is still **unverified**,
+and that question is now retired rather than answered, because no answer changes
+a decision here. Either way it identifies a frame and never substitutes for the
+best level.
 
-Observation, **unverified**: 101 × 68 is exactly the smallest level of the
-example pyramid in section 1.2. Whether the root pixel is a copy of `level_1` or
-an independent render was not tested (TODO).
+Observation, and arithmetic on the two measurements above: 101 × 68 is exactly
+the smallest level of the example pyramid in section 1.2. Whether the root pixel
+is a copy of `level_1` or an independent render is **not needed** and will not be
+tested: both answers leave the same decision, and the difference would be
+recorded only to satisfy the question.
+
+**Settled 2026-11-16 — no second database is needed, and this one is closed
+rather than deferred.** Every level file of every cache read here answered to a
+`PyramidLevel` row, and no row was left without its file (§5.4, §5.9, §5.10,
+§5.11). `previews.db` alone has therefore named every level this tool needed, and
+`previews_db` opens one index file (`INDEX_FILE`) and no other database. And a
+101 px grid image is **not a level**: its row lives in `root-pixels.db` with the
+JPEG inline in `jpegData`, so it carries no `PyramidLevel` row in `previews.db`
+and no `_<longedge>` leaf in the cache tree — the 101 px levels that do carry
+them are the index's, counted in §5.2 and §5.9. It also sits far below the 640 px
+where `small` begins (`CONTEXT.md`), so a tier built on it would need its own
+naming, metadata and floor decision — a different product, not a gap in this one.
+If it is ever revisited it starts from that sentence, not from a `TODO`.
+
+**Unmeasured, and nothing depends on it:** whether a 13.3+ upgrade or a render
+rewrites `root-pixels.db`, and to what size. A slice that reads the file measures
+that first; until then it is a file this tool knows about and does not need.
 
 ### 2.7 Measured statistics
 
@@ -707,6 +734,11 @@ The catalog version is not the marketing major: a catalog written by Lightroom
   that file and concluded the column was unusable. The pairing was wrong, not
   the column. It is still a declaration rather than a measurement: a truncated or
   pruned file can disagree with it, and no such state was measured (§5.5).
+- **Settled 2026-11-16: that is the whole difference between the 13.2 and the
+  13.3+ store.** One added column and an unchanged `StoreInfo.version`, on the
+  upgrade and again on all three renders (§5.10), so §2.1's schema stands with
+  that column added and §2.2 points here instead of asking. A 14 or 15 catalog was
+  never inspected, and nothing is claimed about one (§5.5).
 
 ### 5.5 Reported elsewhere, and what remains unmeasured
 
@@ -1187,7 +1219,16 @@ attribute spellings that carry the fields are fixed by Adobe's schema:
 | rating | `xmp:Rating` |
 | GPS | `exif:GPSLatitude` + `exif:GPSLatitudeRef`, same for longitude |
 
-TODO: the table's remaining columns were not recorded; only `xmp` is read.
+**Settled 2026-11-16 — the columns beside `xmp` are not a gap: nothing reads
+them.** `catalog::xmp` is the one reader of this table, and its query names two
+columns, the row's `image` key and `xmp` itself
+(`SELECT xmp FROM Adobe_AdditionalMetadata WHERE image = ?1 LIMIT 1`, **verified**
+in `catalog.rs`). A list of the rest would be a claim a reader trusts and no code
+acts on, which is what the evidence standard exists to prevent. A query that
+needs one records it here, with its label, in the commit that reads it. The path
+itself is not a 13.2 result carried forward: all 78 images of the 16.0 in-place
+upgrade took a capture time and a rating out of this blob and into their output
+(§5.9), so the catalog's text reaches a modern catalog unchanged.
 
 `extract` writes the rating twice when it can: unconditionally as EXIF tag
 `0x4746` (`Rating`, a SHORT in IFD0), and as `xmp:Rating` in a small XMP APP1
