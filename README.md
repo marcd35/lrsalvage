@@ -477,7 +477,8 @@ PNG; it is a separate command precisely because they are not photographs. See
 
 ## Building
 
-Requires Rust 1.85 or newer.
+Requires Rust 1.89 or newer — `rust-version` in `Cargo.toml`, which
+`scripts/check.sh msrv` proves.
 
 ```console
 cargo build --release

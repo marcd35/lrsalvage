@@ -34,6 +34,23 @@ jobs:
       - name: Check
         run: sh scripts/check.sh fmt shell clippy test doc build
 
+  # The MSRV the manifest publishes, proven instead of asserted. This job holds no
+  # version and installs nothing of its own: the gate lives in scripts/check.sh
+  # with every other gate, so a local run and this job are one command. It follows
+  # `rust-version` in Cargo.toml, which is what raises the number and nothing else
+  # — a second literal here is what let the published floor drift below the truth.
+  msrv:
+    name: msrv
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Check on the published MSRV
+        run: sh scripts/check.sh msrv
+
   typos:
     name: typos
     runs-on: ubuntu-latest

@@ -1391,10 +1391,10 @@ mod tests {
                 output,
             };
             for row in &fixture.rows {
-                if let Some(cache) = &row.cache {
-                    if let Some(levels) = &cache.levels {
-                        fixture.write_payload(&cache.uuid, &cache.digest, levels);
-                    }
+                if let Some(cache) = &row.cache
+                    && let Some(levels) = &cache.levels
+                {
+                    fixture.write_payload(&cache.uuid, &cache.digest, levels);
                 }
             }
             fixture

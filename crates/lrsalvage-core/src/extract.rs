@@ -160,10 +160,10 @@ fn reject_if_inside(
     if is_inside(&resolved, &cache) {
         return Err(Error::UnsafeDestination(reported.to_path_buf()));
     }
-    if let Some(catalog_dir) = canonical(catalog_path).parent().map(Path::to_path_buf) {
-        if is_inside(&resolved, &catalog_dir) {
-            return Err(Error::UnsafeDestination(reported.to_path_buf()));
-        }
+    if let Some(catalog_dir) = canonical(catalog_path).parent().map(Path::to_path_buf)
+        && is_inside(&resolved, &catalog_dir)
+    {
+        return Err(Error::UnsafeDestination(reported.to_path_buf()));
     }
     Ok(())
 }
@@ -309,18 +309,17 @@ fn extract_one(item: &PlanItem, options: &ExtractOptions) -> Outcome {
     // record identity, and a metadata-bearing file must not be silently kept by
     // a run that promised the payload's bytes (`adr-0003` §6).
     if output.exists() {
-        if options.write_metadata {
-            if let Ok(existing) = fs::read(output) {
-                if verifies_as_ours(&existing, expected) {
-                    return Outcome {
-                        output: output.clone(),
-                        status: OutcomeStatus::Skipped,
-                        bytes: existing.len() as u64,
-                        sha256: None,
-                        note: Some("already recovered and verified".into()),
-                    };
-                }
-            }
+        if options.write_metadata
+            && let Ok(existing) = fs::read(output)
+            && verifies_as_ours(&existing, expected)
+        {
+            return Outcome {
+                output: output.clone(),
+                status: OutcomeStatus::Skipped,
+                bytes: existing.len() as u64,
+                sha256: None,
+                note: Some("already recovered and verified".into()),
+            };
         }
         if !options.force {
             return failed(output.clone(), DESTINATION_NOT_OURS);
@@ -426,12 +425,11 @@ fn extract_one(item: &PlanItem, options: &ExtractOptions) -> Outcome {
         };
     }
 
-    if let Some(parent) = output.parent() {
-        if !parent.as_os_str().is_empty() {
-            if let Err(e) = fs::create_dir_all(parent) {
-                return failed(output.clone(), format!("cannot create {parent:?}: {e}"));
-            }
-        }
+    if let Some(parent) = output.parent()
+        && !parent.as_os_str().is_empty()
+        && let Err(e) = fs::create_dir_all(parent)
+    {
+        return failed(output.clone(), format!("cannot create {parent:?}: {e}"));
     }
 
     // A unique temp name per write: two concurrent runs cannot rename each
