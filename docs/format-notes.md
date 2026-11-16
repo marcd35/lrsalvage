@@ -994,7 +994,7 @@ pyramid, the two told apart by `Pyramid.quality`:
 | `Pyramid.quality` | A | B | C | what it is |
 |---|---|---|---|---|
 | `standard` | 9 | 9 | 0 | the levels above 320; `colorProfile AdobeRGB` |
-| `final` | 1 | 1 | 10 | a pyramid whose largest level is the original's own size: A and B's 1200×800 image, and every one of C's |
+| `final` | 1 | 1 | 10 | the 1200×800 image, whose largest level is its own size (A, B), and all ten of C's |
 | `thumbnail` | 10 | 10 | 0 | a single 320 (or 160) level; `colorProfile sRGB`, payload bare |
 
 - **No `ImageCacheEntry` claims the thumbnail pyramid.** Every image maps to its
@@ -1037,10 +1037,10 @@ cache fact rather than orphans: the same runs print `unmapped 0` and
 ten pyramid files still count in `shapes.level_file 48`. This is the rule's
 consequence pinned by fixtures `M10c`–`M10e`, not a re-run of the three caches.
 The rendered-cache gate `scripts/check.sh real-render` asserts it against the
-`Auto (3840px)` cache itself when this machine holds it, and `real-1to1` asserts
-C's column above against the 1:1 build — ten pyramids, no companion, forty
-metadata-bearing level files, no `standard` or `thumbnail` row
-(`crates/lrsalvage-cli/tests/one_to_one.rs`).
+`Auto (3840px)` cache itself when this machine holds it. `real-1to1` asserts C's
+column above against the 1:1 build — ten images with `recovered 10`,
+`thumbnail_pyramids 0` and `unmapped 0`, forty metadata-bearing level files, and
+no `standard` or `thumbnail` row (`crates/lrsalvage-cli/tests/one_to_one.rs`).
 
 **What this does not measure.** A render of an image the catalog already holds (a
 re-render, or a preview rebuilt after pruning), what `14.0+` does when it prunes
