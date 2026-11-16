@@ -148,18 +148,33 @@ require() {
     fi
 }
 
+# A family whose own pair is unset fails and names it, rather than skipping or
+# borrowing another family's evidence. One guard for all three families, so a fix
+# to this message cannot leave one gate telling a user a different path.
+#
+#   require_pair <catalog name> <previews name> <what the cache is>
+require_pair() {
+    # POSIX sh has no `${!name}`, and `set -u` makes the read matter: the two
+    # names arrive as strings and are dereferenced indirectly.
+    eval "_catalog=\${$1:-}"
+    eval "_previews=\${$2:-}"
+    if [ -n "$_catalog" ] && [ -n "$_previews" ]; then
+        return 0
+    fi
+    printf '%s\n' \
+        "set $1 and $2" \
+        "to $3, in this worktree's .env or in" \
+        "${XDG_CONFIG_HOME:-$HOME/.config}/lrsalvage/real.env (see .env.example)." >&2
+    return 1
+}
+
 # The real-cache rows: `#[ignore]`d and reached only from this machine's own
 # catalogs. Evidence for `README.md`'s compatibility claims comes from here.
 gate_real() {
     printf '%s\n' '== real catalogs'
     load_env
-    if [ -z "${LRSALVAGE_TEST_CATALOG:-}" ] || [ -z "${LRSALVAGE_TEST_PREVIEWS:-}" ]; then
-        printf '%s\n' \
-            'set LRSALVAGE_TEST_CATALOG and LRSALVAGE_TEST_PREVIEWS, in this' \
-            "worktree's .env or in ${XDG_CONFIG_HOME:-$HOME/.config}/lrsalvage/real.env" \
-            '(see .env.example).' >&2
-        exit 1
-    fi
+    require_pair LRSALVAGE_TEST_CATALOG LRSALVAGE_TEST_PREVIEWS \
+        'a converted cache' || exit 1
     # This gate's own rows, not every ignored test in the workspace: `--ignored`
     # over the whole workspace would make each evidence family depend on the
     # other's names (and on its env pair being set on this machine).
@@ -172,13 +187,8 @@ gate_real() {
 gate_real_render() {
     printf '%s\n' '== rendered cache'
     load_env
-    if [ -z "${LRSALVAGE_RENDER_CATALOG:-}" ] || [ -z "${LRSALVAGE_RENDER_PREVIEWS:-}" ]; then
-        printf '%s\n' \
-            'set LRSALVAGE_RENDER_CATALOG and LRSALVAGE_RENDER_PREVIEWS to a cache' \
-            "Lightroom rendered, in this worktree's .env or in" \
-            "${XDG_CONFIG_HOME:-$HOME/.config}/lrsalvage/real.env (see .env.example)." >&2
-        exit 1
-    fi
+    require_pair LRSALVAGE_RENDER_CATALOG LRSALVAGE_RENDER_PREVIEWS \
+        'a cache Lightroom rendered from scratch' || exit 1
     # Scoped to the rendered-cache row, for the same reason `real` is scoped.
     cargo test -p lrsalvage-cli --test render -- --ignored
 }
@@ -190,13 +200,8 @@ gate_real_render() {
 gate_real_1to1() {
     printf '%s\n' '== 1:1 cache'
     load_env
-    if [ -z "${LRSALVAGE_ONE_TO_ONE_CATALOG:-}" ] || [ -z "${LRSALVAGE_ONE_TO_ONE_PREVIEWS:-}" ]; then
-        printf '%s\n' \
-            'set LRSALVAGE_ONE_TO_ONE_CATALOG and LRSALVAGE_ONE_TO_ONE_PREVIEWS to a' \
-            "cache Lightroom built 1:1 previews for, in this worktree's .env or in" \
-            "${XDG_CONFIG_HOME:-$HOME/.config}/lrsalvage/real.env (see .env.example)." >&2
-        exit 1
-    fi
+    require_pair LRSALVAGE_ONE_TO_ONE_CATALOG LRSALVAGE_ONE_TO_ONE_PREVIEWS \
+        'a cache Lightroom built 1:1 previews for' || exit 1
     # Scoped to the 1:1 row, for the same reason the other two gates are scoped.
     cargo test -p lrsalvage-cli --test one_to_one -- --ignored
 }
