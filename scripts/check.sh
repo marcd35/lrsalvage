@@ -13,7 +13,8 @@
 #
 # `real` and `real-render` are two evidence families, not one: a machine can hold
 # a converted cache without a rendered one, and each gate fails rather than
-# skipping when its own pair is unset.
+# skipping when its own pair is unset. Each runs only its own tests, so adding a
+# family cannot reach into another's and break it.
 #
 # A missing tool is a failure, never a skip: a green run must mean CI's green.
 #
@@ -126,10 +127,10 @@ gate_real() {
             '(see .env.example).' >&2
         exit 1
     fi
-    # The rendered-cache row needs its own pair of names and its own gate;
-    # `--ignored` would otherwise run it here and fail on a machine that holds a
-    # converted cache and no rendered one.
-    cargo test --workspace -- --ignored --skip a_fresh_render
+    # This gate's own rows, not every ignored test in the workspace: `--ignored`
+    # over the whole workspace would make each evidence family depend on the
+    # other's names (and on its env pair being set on this machine).
+    cargo test -p lrsalvage-core --lib -- --ignored
 }
 
 # A cache Lightroom rendered from scratch: two pyramids per image, which is the
@@ -145,6 +146,7 @@ gate_real_render() {
             "${XDG_CONFIG_HOME:-$HOME/.config}/lrsalvage/real.env (see .env.example)." >&2
         exit 1
     fi
+    # Scoped to the rendered-cache row, for the same reason `real` is scoped.
     cargo test -p lrsalvage-cli --test render -- --ignored
 }
 
