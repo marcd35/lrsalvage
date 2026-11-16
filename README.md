@@ -132,8 +132,12 @@ What those rows mean in practice:
   notes). A **freshly built** 16 cache was then measured too: three catalogs
   rendered from scratch report the same layout, every level file certifying
   against its own row and its own frame, and payloads that carry Adobe's own
-  `Exif`, XMP and ICC profile — which `extract` keeps (section 5.10). What neither
-  run covers: a re-render of an image the catalog already holds.
+  `Exif`, XMP and ICC profile — which `extract` keeps (section 5.10). A cache
+  Lightroom had **discarded** was measured as well (section 5.11): it removes the
+  standard-size and 1:1 levels and the image's thumbnail pyramid, keeps the levels
+  below the standard size, and every image still came back `recovered` — at
+  1920 px in that cache. What none of these runs covers: a re-render of an image
+  the catalog already holds.
 - **Same reader, untested**: 4 – 10, 12 and 13.0 – 13.2 use the `.lrprev`
   pyramid this tool parses. Nothing known stops them working; nobody has run it
   on one.
@@ -362,7 +366,7 @@ live catalog image claims is listed as `unmapped`.
 | **suspect** | The payload is a real, complete photo whose decoded size disagrees with the size `previews.db` recorded. It is still extracted, subject to the floor, and flagged in every report: a real photo at the wrong declared size is worth recovering. |
 | **original-present** | The original RAW/JPEG/TIFF is still on disk, so there is nothing to salvage. Skipped by default; `--include-present` turns these into ordinary recovery candidates. |
 | **no-cache-entry** | The catalog has the image, but `previews.db` has no row for it. Nothing was ever rendered, or the row is gone. |
-| **missing-payload** | `previews.db` has a row, but the payload file it names is not on disk — and no pyramid of the same image holds one either. A surviving render companion makes the image `recovered` at that size instead: below the floor, so counted but written only with `--min-long-edge 0`. |
+| **missing-payload** | `previews.db` has a row, but the payload file it names is not on disk — and no pyramid of the same image holds one either. A surviving render companion makes the image `recovered` at that size instead: below the floor, so counted but written only with `--min-long-edge 0`. That rescue is defensive rather than measured: Lightroom's own discard removes the companion too (section 5.11 of the notes). |
 | **failed** | A payload exists but is truncated, unreadable, not a `.lrprev`, contains no readable JPEG level, or the level does not end at an end-of-image marker. |
 | **unmapped** | A pyramid exists in the cache but no live catalog image claims it, and nothing in the index accounts for it. It is listed with its payload path — and its `quality` and `color_profile`, when its pair has a row — in `report.csv` and `manifest.json`, and never written: a payload with no catalog row has no file name to give it. A **freshly rendered** cache produces none of these: the second, thumbnail-sized pyramid Lightroom keeps beside the one each image claims is counted as `thumbnail_pyramids` instead, never as an orphan. |
 

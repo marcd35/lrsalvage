@@ -39,6 +39,16 @@ scratch. §5.5 records that a prune having *reached the whole pyramid* is
 unmeasured in the field — so this is a fixture state with an honest `unmeasured`
 label, not a claim that Lightroom leaves it often.
 
+**Measured 2026-11-16, and it narrows the case rather than widening it.** The
+deletion this build can trigger — `Library > Previews > Discard Standard and 1:1
+Previews` — was run on a copy of the §5.10 cache (§5.11). It removes the
+standard-size level *and* the image's `thumbnail` pyramid, keeps the levels below
+the standard size, and leaves the index agreeing with the files. No deletion
+measured here produces this ADR's state, and the background purge is reported to
+exempt thumbnails and sub-standard levels as well. The rescue therefore guards a
+cache that was partially deleted, a file the user removed, or a prune nobody has
+caught in the act — not an observed Lightroom behaviour.
+
 ## Decision
 
 **When the pyramid a cache entry names has no file anywhere, the plan reads the
@@ -90,6 +100,10 @@ here on the same grounds.
   pyramid, and the plan did read it.
 - No new exit code, no new status, no new output namespace, and the contact sheet
   needs nothing: it already asks the item for its smallest level.
+- `bigThumbnail` is a quality a **claimed** pyramid can carry: a discard rewrites
+  `standard` to it when the top level goes (§5.11). The sibling rule above keeps
+  comparing against `thumbnail` exactly, which is why that value still cannot
+  rescue an image.
 
 ## Considered options
 

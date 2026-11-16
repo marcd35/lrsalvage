@@ -27,9 +27,10 @@ compares the prefix.
 
 Evidence — what the release may claim:
 
-- [ ] #47's trigger state attempted once, with its stop rule: `format-notes` §5.5
-      `M10f` is either **verified** or **permanently unmeasured**, and the README's
-      rescue sentence matches whichever it is.
+- [x] #50's trigger state attempted once, with its stop rule: `format-notes` §5.5
+      `M10f` reads **unmeasured** with the dated attempt, §5.11 records the
+      deletion that can be triggered — which takes the companion too — and the
+      README's rescue sentence matches.
 - [ ] `sh scripts/check.sh real-1to1` green here, and failing rather than skipping
       when its pair is unset — the third evidence family beside `real` and
       `real-render`.
