@@ -20,97 +20,10 @@
 //! see.
 
 use std::collections::BTreeSet;
-use std::path::{Path, PathBuf};
 
-use assert_cmd::Command;
-use lrsalvage_core::jpeg;
 use serde_json::Value;
 
-/// The 1:1 cache's catalog and cache, as the gate's two names.
-fn one_to_one_pair() -> (PathBuf, PathBuf) {
-    let read = |name: &str| {
-        PathBuf::from(std::env::var(name).unwrap_or_else(|_| {
-            panic!("set {name} to the 1:1 cache's half; scripts/check.sh real-1to1 does")
-        }))
-    };
-    (
-        read("LRSALVAGE_ONE_TO_ONE_CATALOG"),
-        read("LRSALVAGE_ONE_TO_ONE_PREVIEWS"),
-    )
-}
-
-fn scan(catalog: &Path, previews: &Path, extra: &[&str]) -> (i32, Value) {
-    let output = Command::cargo_bin("lrsalvage")
-        .expect("the binary")
-        .arg("scan")
-        .arg("--catalog")
-        .arg(catalog)
-        .arg("--previews")
-        .arg(previews)
-        .arg("--json")
-        .args(extra)
-        .output()
-        .expect("run scan --json");
-    let json: Value = serde_json::from_slice(&output.stdout)
-        .unwrap_or_else(|why| panic!("scan --json printed no object ({why}): {output:?}"));
-    (output.status.code().unwrap_or(-1), json)
-}
-
-/// An `extract` whose output root is a fresh temp directory, read back through
-/// the `manifest.json` it writes: the manifest is the per-item record, so the
-/// metadata and quality of every level file are visible without parsing
-/// `report.csv`'s quoting by hand.
-fn extract(catalog: &Path, previews: &Path, extra: &[&str]) -> (tempfile::TempDir, Value) {
-    let out = tempfile::tempdir().expect("an output root");
-    let output = Command::cargo_bin("lrsalvage")
-        .expect("the binary")
-        .arg("extract")
-        .arg("--catalog")
-        .arg(catalog)
-        .arg("--previews")
-        .arg(previews)
-        // The ten originals are still on the disk this catalog was rendered
-        // from, so without `--include-present` there is nothing to write.
-        .arg("--include-present")
-        .args(extra)
-        .arg("--out")
-        .arg(out.path())
-        .output()
-        .expect("run extract");
-    assert!(
-        output.status.success(),
-        "extract failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let bytes = std::fs::read(out.path().join("manifest.json"))
-        .expect("extract writes manifest.json beside its output");
-    let manifest = serde_json::from_slice(&bytes).expect("manifest.json is an object");
-    (out, manifest)
-}
-
-/// Every `.jpg` under `root`, as its own measured long edge — read from the
-/// file's `SOF` rather than from the manifest, so a file the manifest does not
-/// name is still counted.
-fn jpeg_long_edges(root: &Path) -> Vec<u32> {
-    let mut edges = Vec::new();
-    // Output lands under capture-date folders, so the walk is recursive.
-    for entry in walkdir::WalkDir::new(root)
-        .into_iter()
-        .filter_map(std::result::Result::ok)
-    {
-        let path = entry.path();
-        if !entry.file_type().is_file()
-            || path.extension().is_none_or(|extension| extension != "jpg")
-        {
-            continue;
-        }
-        let bytes = std::fs::read(path).unwrap_or_else(|why| panic!("{}: {why}", path.display()));
-        let (width, height) =
-            jpeg::dimensions(&bytes).unwrap_or_else(|why| panic!("{}: {why:?}", path.display()));
-        edges.push(width.max(height));
-    }
-    edges
-}
+mod support;
 
 fn items(manifest: &Value) -> &Vec<Value> {
     manifest["items"]
@@ -123,8 +36,12 @@ fn items(manifest: &Value) -> &Vec<Value> {
 #[test]
 #[ignore = "needs LRSALVAGE_ONE_TO_ONE_CATALOG and LRSALVAGE_ONE_TO_ONE_PREVIEWS (scripts/check.sh real-1to1)"]
 fn a_one_to_one_build_reports_one_pyramid_per_image_and_writes_no_companion() {
-    let (catalog, previews) = one_to_one_pair();
-    let (code, report) = scan(&catalog, &previews, &["--include-present"]);
+    let (catalog, previews) = support::pair(
+        "LRSALVAGE_ONE_TO_ONE_CATALOG",
+        "LRSALVAGE_ONE_TO_ONE_PREVIEWS",
+        "real-1to1",
+    );
+    let (code, report) = support::scan(&catalog, &previews, &["--include-present"]);
     assert_eq!(code, 0, "{report:#?}");
 
     // §5.10's counts for C. If one of these moves, either a rule changed or the
@@ -155,10 +72,10 @@ fn a_one_to_one_build_reports_one_pyramid_per_image_and_writes_no_companion() {
 
     // The first half a scan cannot see: one file per image, never one per
     // pyramid, and none of them from a 320 companion.
-    let (out, manifest) = extract(&catalog, &previews, &[]);
+    let (out, manifest) = support::extract(&catalog, &previews, &[]);
     assert_eq!(manifest["stats"]["images"], 10, "ten images planned");
     assert_eq!(items(&manifest).len(), 10, "one item per image");
-    let mut written = jpeg_long_edges(out.path());
+    let mut written = support::jpeg_long_edges(out.path());
     assert_eq!(
         written.len(),
         10,
@@ -172,7 +89,7 @@ fn a_one_to_one_build_reports_one_pyramid_per_image_and_writes_no_companion() {
     );
 
     // The second half: all forty level files, each carrying its own segments.
-    let (_every, every) = extract(&catalog, &previews, &["--all-levels"]);
+    let (_every, every) = support::extract(&catalog, &previews, &["--all-levels"]);
     let levels = items(&every);
     assert_eq!(levels.len(), 40, "one item per level file (§5.10)");
     assert_eq!(
@@ -183,7 +100,7 @@ fn a_one_to_one_build_reports_one_pyramid_per_image_and_writes_no_companion() {
         40,
         "every level file of a 1:1 build is metadata-bearing: Exif, XMP and ICC (§5.10)"
     );
-    // §5.10's `Pyramid.quality` column: the four to five levels of one pyramid
+    // §5.10's `Pyramid.quality` column: the two to five levels of one pyramid
     // inherit its value, so the forty rows being all `final` is "ten pyramids,
     // none of them `standard` and none `thumbnail`" — C's two zeroes.
     let qualities: BTreeSet<&str> = levels
