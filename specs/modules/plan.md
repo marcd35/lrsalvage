@@ -18,6 +18,7 @@ references:
   - adr-0006-degrade-without-guessing
   - adr-0007-publish-a-verification-report
   - adr-0008-a-render-companion-is-not-an-orphan
+  - adr-0009-rescue-an-image-from-its-companion
   - glossary
 ---
 
@@ -57,12 +58,14 @@ from the run rather than from the plan.
   is never written. The kind is decided here, from the index and the
   files; neither `extract` nor `report` sniffs a payload to find out what it is,
   and neither ever re-picks a level: the item's choice is the choice.
-- **`missing-payload` means no file of that pyramid exists at all.** A row whose
-  level file is gone while another level survives is a **pruned level**: the item
-  recovers the largest level present and its note says the row is stale. 14.0+
-  prunes in the background, so a partial pyramid is ordinary, not a fault
-  (`adr-0005-discover-payloads-by-index`). Only a pyramid with no file anywhere is
-  `missing-payload`.
+- **`missing-payload` means no pyramid of that image holds a file at all.** A row
+  whose level file is gone while another level survives is a **pruned level**: the
+  item recovers the largest level present and its note says the row is stale.
+  14.0+ prunes in the background, so a partial pyramid is ordinary, not a fault
+  (`adr-0005-discover-payloads-by-index`). When the claimed pyramid has no file
+  anywhere, the plan falls back to the image's render companion before it calls
+  the payload gone (`adr-0009-rescue-an-image-from-its-companion`). Only when
+  neither holds a file is the image `missing-payload`.
 - **A stale row is a note, never a status or a claimed cause.** A pruned level and
   a level file the user deleted are indistinguishable — the row is the only claim
   and the file is absent either way — so the item reports what was seen. A
@@ -93,6 +96,16 @@ from the run rather than from the plan.
   `unmapped`, a `.lrprev`-only pyramid is never a companion, a row that lies
   about its size cannot hide a payload, and an unreadable level keeps its pyramid
   visible. The count never moves an exit code and is never a status.
+- **A companion the plan needs becomes the image's payload.** When the pyramid the
+  entry names has no file anywhere, the plan reads the classified companion's
+  largest level — ranked by its own rows, judged against its own row, reporting
+  its own `quality` and `color_profile` — and the item's note says where the
+  payload came from. A rescued 320 px level is `recovered`, `below_floor` and
+  unselected, exactly like a claimed level of that size (M12), and
+  `--min-long-edge 0` writes it under the image's own name
+  (`adr-0009-rescue-an-image-from-its-companion`). The cache count is unchanged:
+  `thumbnail_pyramids` describes the cache, not what the plan did with one
+  pyramid.
 - **`superseded` is a cache stat, not a status, and it cannot move the exit code.**
   It counts claimed pyramids with **both** representations — at least one level
   file and at least one legacy `.lrprev` — whose level files are the pyramid and

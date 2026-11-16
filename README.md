@@ -215,7 +215,7 @@ one machine-readable object; `--verbose` lines follow it.
 | `recovered` | Images whose parsed payload agrees with the size `previews.db` declares. |
 | `bytes` | Payload bytes of the items `extract` would write, before metadata is added. |
 | `suspect` | Recovered, but the decoded size disagrees with `previews.db`. |
-| `missing_payload` | `previews.db` has a row; the payload file is not on disk. |
+| `missing_payload` | `previews.db` has a row; neither the payload file it names nor any pyramid of the same image is on disk. |
 | `no_cache_entry` | The catalog has the image; `previews.db` has no row. |
 | `unmapped` | A pyramid that exists in the cache and that no catalogue image claims — and that the cache does not account for as a render's second pyramid. |
 | `failed` | A payload that is truncated, unreadable, or holds no complete JPEG level. |
@@ -362,7 +362,7 @@ live catalog image claims is listed as `unmapped`.
 | **suspect** | The payload is a real, complete photo whose decoded size disagrees with the size `previews.db` recorded. It is still extracted, subject to the floor, and flagged in every report: a real photo at the wrong declared size is worth recovering. |
 | **original-present** | The original RAW/JPEG/TIFF is still on disk, so there is nothing to salvage. Skipped by default; `--include-present` turns these into ordinary recovery candidates. |
 | **no-cache-entry** | The catalog has the image, but `previews.db` has no row for it. Nothing was ever rendered, or the row is gone. |
-| **missing-payload** | `previews.db` has a row, but the payload file it names is not on disk. |
+| **missing-payload** | `previews.db` has a row, but the payload file it names is not on disk — and no pyramid of the same image holds one either. A surviving render companion makes the image `recovered` at that size instead: below the floor, so counted but written only with `--min-long-edge 0`. |
 | **failed** | A payload exists but is truncated, unreadable, not a `.lrprev`, contains no readable JPEG level, or the level does not end at an end-of-image marker. |
 | **unmapped** | A pyramid exists in the cache but no live catalog image claims it, and nothing in the index accounts for it. It is listed with its payload path — and its `quality` and `color_profile`, when its pair has a row — in `report.csv` and `manifest.json`, and never written: a payload with no catalog row has no file name to give it. A **freshly rendered** cache produces none of these: the second, thumbnail-sized pyramid Lightroom keeps beside the one each image claims is counted as `thumbnail_pyramids` instead, never as an orphan. |
 

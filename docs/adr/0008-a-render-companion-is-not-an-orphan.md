@@ -79,6 +79,9 @@ filled in so a report can say *which kind* of pyramid nobody claims.
   moves an exit code, and **the verification report, `report.csv` and
   `manifest.json` are unchanged** — ADR 0007's curated set stays frozen, and
   `shapes.level_file` already counts a companion's files.
+  **Amended 2026-11-16 by ADR 0009:** the count describes the cache and not the
+  plan's use of one. A companion that rescued an image whose own pyramid is gone
+  is still counted, and the image's item is where the rescue shows up.
 - **ADR 0005 ¶8 and ADR 0006's no-index sentence are amended in place**, dated,
   as ADR 0006 amended ADR 0005 ¶7: the first said every unclaimed pyramid is an
   item, the second said every payload pyramid is `unmapped`.

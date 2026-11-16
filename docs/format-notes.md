@@ -745,7 +745,8 @@ the reader behaves in a state and never that Adobe produces it:
 | Both representations for one pyramid (`superseded`) | `X1` | that this upgrade leaves a `.lrprev` behind |
 | Coexistence, resolved per pyramid rather than per cache | `X2` | that Adobe produces a mixed cache at all |
 | A freshly built render's payload metadata | `M13` (§5.8) | nothing: §5.10 measured it, and every rendered level carried `Exif`, XMP and an ICC profile |
-| An unclaimed pyramid beside a claimed one | `M10` (§5.10) | nothing: every fresh render left one thumbnail pyramid that no cache entry claims |
+| An unclaimed pyramid beside a claimed one | `M10c`…`M10e` (§5.10) | nothing: every fresh render left one thumbnail pyramid that no cache entry claims, and #42/ADR 0008 decided what it is |
+| An image whose whole pyramid is gone while its companion survives | `M10f` (ADR 0009) | that a prune reaches the whole pyramid and leaves the companion behind — no cache on this machine has been caught in that state |
 
 So the software's behaviour in those states is tested; the claim that Lightroom
 produces them is not — except for the payload metadata and the unclaimed

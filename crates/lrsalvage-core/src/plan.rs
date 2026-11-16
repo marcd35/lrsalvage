@@ -365,6 +365,15 @@ impl Plan {
             let orientation = image.orientation;
             let container = index.payload_path(cache_root, &key);
 
+            // A render writes a second, thumbnail-sized pyramid beside the one
+            // this entry claims (§5.10). When the claimed pyramid has no file at
+            // all, that companion can be the last surviving payload of the
+            // image, so it becomes what is read and what the level is judged
+            // against (`adr-0009-rescue-an-image-from-its-companion`).
+            let companion_key =
+                rescue_companion(&sweep, &measured, index, &claimed, &claimed_uuids, &key)
+                    .map(|companion| PyramidKey::new(&companion.uuid, &companion.digest));
+
             // What the cache holds for this pyramid decides how it is read: a
             // level file is the modern representation, and where one exists the
             // container is never opened (`adr-0005-discover-payloads-by-index`
@@ -375,17 +384,42 @@ impl Plan {
                 .filter(|candidate| candidate.path.is_file())
                 .collect();
 
-            let (levels, smallest_level) = if !present.is_empty() {
-                level_file_levels(present, options)
+            let read = if !present.is_empty() {
+                let (levels, smallest_level) = level_file_levels(present, options);
+                Some((levels, smallest_level, pyramid, None))
             } else if container.is_file() {
-                (
+                Some((
                     container_levels(&container, pyramid, index.best_level(&key), options),
                     None,
-                )
+                    pyramid,
+                    None,
+                ))
             } else {
-                // No file of this pyramid exists anywhere. A row whose own
-                // level file is gone while another survives is a pruned level,
-                // not this: 14.0+ prunes in the background (§5.5).
+                companion_key.as_ref().and_then(|companion| {
+                    let available: Vec<Candidate<'_>> = index
+                        .candidates(cache_root, companion)
+                        .into_iter()
+                        .filter(|candidate| candidate.path.is_file())
+                        .collect();
+                    // A classified companion holds at least one level on disk by
+                    // construction; the guard keeps "no file, no rescue" true
+                    // even if that ever changes.
+                    (!available.is_empty()).then(|| {
+                        let (levels, smallest_level) = level_file_levels(available, options);
+                        (
+                            levels,
+                            smallest_level,
+                            index.pyramid(companion),
+                            Some(RESCUED_NOTE),
+                        )
+                    })
+                })
+            };
+
+            let Some((levels, smallest_level, claim, rescued_from)) = read else {
+                // No file of this pyramid, and no companion to fall back to. A
+                // row whose own level file is gone while another survives is a
+                // pruned level, not this: 14.0+ prunes in the background (§5.5).
                 stats.missing_payload += 1;
                 // A tombstone is Lightroom's own record that it deleted the
                 // *row*, quoted and counted, never a claimed cause for the file
@@ -426,9 +460,10 @@ impl Plan {
 
             let (image_items, image_status) = decide_levels(
                 &image,
-                pyramid,
+                claim,
                 levels,
                 smallest_level,
+                rescued_from,
                 &mut Tally {
                     output_root,
                     options,
@@ -542,6 +577,50 @@ fn distinct_selected_images(items: &[PlanItem]) -> usize {
 /// The `Pyramid.quality` value a render writes on its second pyramid (§5.10).
 const THUMBNAIL_QUALITY: &str = "thumbnail";
 
+/// The note an item carries when its payload came from the image's own render
+/// companion rather than from the pyramid the cache entry names.
+///
+/// No path and no digest: the useful fact is which pyramid it came from, and a
+/// note that quotes a machine's path is one a report cannot carry
+/// (`adr-0007-publish-a-verification-report`).
+const RESCUED_NOTE: &str = "the pyramid previews.db names has no file; recovered from this \
+                             image's render companion instead";
+
+/// The image's own render companion, when the pyramid its entry names has no
+/// file at all.
+///
+/// Only a **classified** companion may rescue — the same three clauses ADR 0008
+/// uses, so the payload is the pyramid §5.10 measured a render writing beside the
+/// preview one and no mapping is invented from a shared uuid
+/// (`adr-0002-map-via-previews-db`, `adr-0009-rescue-an-image-from-its-companion`).
+/// A sibling of another quality, an oversized one, or a uuid nothing maps stays
+/// out: each is a state no measurement covers.
+///
+/// A cache that somehow holds more than one candidate is ranked by the largest
+/// measured level, then by the digest, so the choice is never arbitrary.
+fn rescue_companion<'a>(
+    sweep: &'a CacheSweep,
+    measured: &Measurements,
+    index: &PreviewIndex,
+    claimed: &HashSet<PyramidKey>,
+    claimed_uuids: &HashSet<String>,
+    key: &PyramidKey,
+) -> Option<&'a PyramidOnDisk> {
+    sweep
+        .pyramids
+        .iter()
+        .filter(|pyramid| pyramid.uuid == key.uuid())
+        .filter(|pyramid| {
+            let candidate = PyramidKey::new(&pyramid.uuid, &pyramid.digest);
+            candidate != *key && !claimed.contains(&candidate)
+        })
+        .filter(|pyramid| {
+            let candidate = PyramidKey::new(&pyramid.uuid, &pyramid.digest);
+            is_thumbnail_pyramid(pyramid, index.pyramid(&candidate), claimed_uuids, measured)
+        })
+        .max_by_key(|pyramid| (measured.largest_area(pyramid), &pyramid.digest))
+}
+
 /// `true` when this unclaimed pyramid is the second pyramid a render writes
 /// beside a preview pyramid, rather than an orphan.
 ///
@@ -626,6 +705,17 @@ impl Measurements {
         self.frames
             .get(path)
             .map(|(width, height)| u64::from(*width) * u64::from(*height))
+    }
+
+    /// The area of this pyramid's largest measured level, `0` when none could be
+    /// read — what ranks one rescue candidate against another.
+    fn largest_area(&self, pyramid: &PyramidOnDisk) -> u64 {
+        pyramid
+            .levels
+            .iter()
+            .filter_map(|level| self.area(&level.path))
+            .max()
+            .unwrap_or(0)
     }
 
     /// The largest level file of this pyramid, by measured area, then by the
@@ -903,6 +993,8 @@ fn decide_levels(
     pyramid: Option<&Pyramid>,
     levels: Vec<FoundLevel>,
     smallest_level: Option<PathBuf>,
+    // Where the payload came from, when it is not the pyramid the entry names.
+    rescued_from: Option<&str>,
     tally: &mut Tally<'_>,
 ) -> (Vec<PlanItem>, Option<Status>) {
     let mut levels = levels;
@@ -956,7 +1048,11 @@ fn decide_levels(
         // nothing. Computed once, and a disagreement is a note, never a status
         // (`adr-0003-preserve-preview-bytes` §4).
         let effective_orientation = level.declared_orientation.unwrap_or(image.orientation);
-        let mut notes: Vec<String> = note.into_iter().collect();
+        let mut notes: Vec<String> = rescued_from
+            .map(str::to_string)
+            .into_iter()
+            .chain(note)
+            .collect();
 
         let writable = matches!(status, Status::Recoverable | Status::Suspect);
         if writable && below_floor {
