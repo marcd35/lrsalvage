@@ -503,10 +503,17 @@ compiler here and in CI. **`sh scripts/check.sh` is the one list of gates** — 
 the same file, so this page does not repeat them:
 
 ```console
-sh scripts/check.sh          # every gate
-sh scripts/check.sh clippy   # just one
-sh scripts/check.sh real     # the #[ignore]d tests, against real catalogs (.env)
+sh scripts/check.sh              # every gate
+sh scripts/check.sh clippy       # just one
+sh scripts/check.sh real         # the #[ignore]d tests, against a converted cache
+sh scripts/check.sh real-render  # them, against a cache Lightroom rendered from scratch
+sh scripts/check.sh real-1to1    # them, against a cache it built 1:1 previews for
 ```
+
+Those last three are three evidence families rather than one: a machine can hold a
+converted cache without a rendered one, or a rendered one without a 1:1 build.
+Each gate fails rather than skipping when its own pair of names is unset, and
+`.env.example` names all three pairs.
 
 It covers formatting, clippy with `--all-targets`, the workspace tests, the
 release build, spelling (config in `typos.toml`) and the licence/advisory policy

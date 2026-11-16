@@ -121,7 +121,7 @@ render looks like the conversion" retires a doubt just as well as "it does not".
 
 Once such a cache exists on the machine, the numbers stop being prose: put its two
 halves in `LRSALVAGE_RENDER_CATALOG` and `LRSALVAGE_RENDER_PREVIEWS` (same file as
-the real pair, `.env.example` names both) and run
+the real pair, `.env.example` names all three pairs) and run
 
 ```console
 sh scripts/check.sh real-render
@@ -129,9 +129,13 @@ sh scripts/check.sh real-render
 
 That gate holds `format-notes` §5.10 to the cache itself — `unmapped 0`, one
 `thumbnail_pyramids` per image, 48 level files, and an `extract` that writes one
-file per image and no companion (`crates/lrsalvage-cli/tests/render.rs`). It is
-separate from `check.sh real` because the two caches are different evidence and a
-machine may hold one without the other; each gate runs only its own tests.
+file per image and no companion (`crates/lrsalvage-cli/tests/render.rs`). A cache
+that was then built 1:1 is the third family, `LRSALVAGE_ONE_TO_ONE_CATALOG` and
+`LRSALVAGE_ONE_TO_ONE_PREVIEWS` with `sh scripts/check.sh real-1to1`, which holds
+§5.10 to a cache where the companion is absent entirely
+(`crates/lrsalvage-cli/tests/one_to_one.rs`). It is separate from `check.sh real`
+because the caches are different evidence and a machine may hold one without the
+other; each gate runs only its own tests.
 
 **Where the evidence caches live is not in this repo.** Catalog paths are not a
 repo artefact, so the machine's `real.env` is the index: read it before searching
