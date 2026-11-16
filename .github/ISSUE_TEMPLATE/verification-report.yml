@@ -1,0 +1,47 @@
+# The one door a verification report leaves by: a stranger pastes the file
+# `scan --report` wrote, and says what the run was against.
+#
+# No field asks for a path, a catalog name or anything else that identifies a
+# library, because the report is path-free by construction
+# (`adr-0007-publish-a-verification-report`). A field that invited one would undo
+# the only guarantee `--report` exists to make.
+name: Verification report
+description: Hand over a scan --report file, and what the run was against.
+title: "[verification] "
+body:
+  - type: textarea
+    id: report
+    attributes:
+      label: The report
+      description: |
+        The whole file `scan --report` wrote, from its first `{` to its last `}`,
+        unchanged. It is one JSON object with schema `lrsalvage.verification`; a
+        report from a newer tool may carry a field this form does not know, and
+        that is expected — paste it anyway rather than trimming it.
+
+        The report carries no path, no folder, no catalog name, no uuid and no
+        file name by construction: it is evidence of a layout and a cache's
+        shape, never of anyone's photographs. Do not add anything it does not
+        have.
+      placeholder: |
+        {
+          "schema": "lrsalvage.verification",
+          "version": "...",
+          "generated_unix": 0,
+          ...
+        }
+    validations:
+      required: true
+  - type: input
+    id: run-against
+    attributes:
+      label: What the run was against
+      description: |
+        The Lightroom Classic version that built or upgraded the cache, the OS you
+        ran the tool on, and whether the cache was upgraded from an older catalog,
+        rendered from scratch, or built 1:1. Say what was unusual about it too — a
+        pruned cache, a stale row, both layouts in one folder. No folder names and
+        no paths: say "a catalog upgraded from 13.x", not where it lives.
+      placeholder: Lightroom Classic 16.0 on macOS, a cache upgraded from a 13.x catalog
+    validations:
+      required: true
