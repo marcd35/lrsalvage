@@ -1140,9 +1140,10 @@ fn m13_a_payload_that_carries_metadata_keeps_the_stronger_evidence() {
         .collect();
     assert_eq!(ours.len(), 1, "exactly one EXIF segment: {ours:#?}");
     let software = ifd0_text(&output, exif::Tag::Software).expect("the marker");
-    assert!(
-        software.starts_with("lrsalvage "),
-        "the output names itself: {software}"
+    assert_eq!(
+        software,
+        lrsalvage_core::exif::marker(env!("CARGO_PKG_VERSION")),
+        "the marker names the version this crate is, not one a test typed"
     );
     assert_eq!(
         ifd0_uint(&output, exif::Tag::Orientation),
