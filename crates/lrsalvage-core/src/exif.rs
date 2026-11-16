@@ -172,16 +172,14 @@ fn inject_segments(jpeg: &[u8], meta: &MetadataInput, include_xmp: bool) -> Resu
     // What the payload already states, classified once for every choice below.
     let present = header_inventory(jpeg, &segments);
 
-    if include_xmp {
-        if let Some(packet) = build_xmp(meta) {
-            if present.carries(Kind::Xmp) {
-                notes.push(
-                    "an XMP packet is already present; the star rating was left in EXIF only"
-                        .to_string(),
-                );
-            } else {
-                inserted.extend_from_slice(&packet);
-            }
+    if include_xmp && let Some(packet) = build_xmp(meta) {
+        if present.carries(Kind::Xmp) {
+            notes.push(
+                "an XMP packet is already present; the star rating was left in EXIF only"
+                    .to_string(),
+            );
+        } else {
+            inserted.extend_from_slice(&packet);
         }
     }
 
@@ -854,10 +852,8 @@ fn build_tiff(
     if let Some(focal) = meta.focal_length.as_deref().and_then(parse_rational) {
         exif_ifd.push(rational_entry(0x920A, &[focal]));
     }
-    if include_lens {
-        if let Some(lens) = meta.lens.as_deref().filter(|s| !s.is_empty()) {
-            exif_ifd.push(ascii_entry(0xA434, lens, max_text));
-        }
+    if include_lens && let Some(lens) = meta.lens.as_deref().filter(|s| !s.is_empty()) {
+        exif_ifd.push(ascii_entry(0xA434, lens, max_text));
     }
 
     let gps_ifd = if include_gps {
@@ -1105,7 +1101,7 @@ fn build_icc_profile(
 
     let mut data: Vec<u8> = Vec::new();
     for (signature, bytes) in &tags {
-        while (ICC_HEADER_LEN + table_len + data.len()) % 4 != 0 {
+        while !(ICC_HEADER_LEN + table_len + data.len()).is_multiple_of(4) {
             data.push(0);
         }
         let offset = ICC_HEADER_LEN + table_len + data.len();
@@ -1114,7 +1110,7 @@ fn build_icc_profile(
         table.extend_from_slice(&(bytes.len() as u32).to_be_bytes());
         data.extend_from_slice(bytes);
     }
-    while (ICC_HEADER_LEN + table_len + data.len()) % 4 != 0 {
+    while !(ICC_HEADER_LEN + table_len + data.len()).is_multiple_of(4) {
         data.push(0);
     }
 
@@ -1610,8 +1606,10 @@ mod tests {
     /// `(signature, offset, size)` for every tag table entry.
     fn icc_tags(profile: &[u8]) -> Vec<([u8; 4], usize, usize)> {
         let count = be32(&profile[ICC_HEADER_LEN..ICC_HEADER_LEN + 4]) as usize;
-        profile[ICC_HEADER_LEN + 4..ICC_HEADER_LEN + 4 + count * 12]
-            .chunks_exact(12)
+        let (entries, _) =
+            profile[ICC_HEADER_LEN + 4..ICC_HEADER_LEN + 4 + count * 12].as_chunks::<12>();
+        entries
+            .iter()
             .map(|entry| {
                 (
                     entry[0..4].try_into().expect("four bytes"),

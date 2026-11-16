@@ -80,7 +80,12 @@ not allowed.
   the licence and advisory policy: a dependency that trips its allow-list is a
   decision, not a config edit.
 - The toolchain is pinned in `rust-toolchain.toml`; bump it deliberately and let
-  CI prove the bump.
+  CI prove the bump. That pin is the *build* toolchain, not the MSRV — the floor
+  a user needs is `rust-version` in `Cargo.toml`, and CI's `msrv` job reads that
+  key and checks the workspace on it, so the published number is a value a run
+  proves rather than a table someone typed. A dependency that raises the floor
+  fails that job; raise `rust-version` deliberately with the reason in the bump,
+  and never pin the dependency back to keep a lower number.
 - **`.githooks/pre-commit` runs the cheap gates on every commit** — `fmt`,
   `shell` and `typos` through `scripts/check.sh`, which is the only place they
   are written. A fresh clone installs it with

@@ -477,7 +477,9 @@ PNG; it is a separate command precisely because they are not photographs. See
 
 ## Building
 
-Requires Rust 1.85 or newer.
+Requires Rust 1.89 or newer. That number is `rust-version` in `Cargo.toml`, and
+CI's `msrv` job imports it from there and checks the workspace on it, so the
+floor is a compiler a run passed rather than a table someone typed.
 
 ```console
 cargo build --release

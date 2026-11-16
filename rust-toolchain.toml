@@ -1,6 +1,10 @@
 [toolchain]
 # Pin the toolchain so local runs and CI compile with the same compiler.
 # Bump deliberately; `cargo update` never touches this file.
+#
+# This is the build toolchain, not the MSRV. What a user needs is `rust-version`
+# in `Cargo.toml`, which CI's `msrv` job proves by reading it and running
+# `cargo check --workspace --all-targets --locked` on that toolchain.
 channel = "1.100.0"
 components = ["rustfmt", "clippy"]
 profile = "minimal"
