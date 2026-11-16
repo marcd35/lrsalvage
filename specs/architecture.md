@@ -111,11 +111,15 @@ everything else is always compiled. `report` reads its two name templates from
 
 ## Where the reasoning lives
 
-The seven load-bearing decisions are recorded as adopted ADRs and are not
-restated here: `adr-0001-parse-dont-carve`, `adr-0002-map-via-previews-db`,
+The load-bearing decisions are recorded as adopted ADRs and are not restated
+here: `adr-0001-parse-dont-carve`, `adr-0002-map-via-previews-db`,
 `adr-0003-preserve-preview-bytes`, `adr-0004-detect-layout-not-version`,
 `adr-0005-discover-payloads-by-index`, `adr-0006-degrade-without-guessing`,
-`adr-0007-publish-a-verification-report`.
+`adr-0007-publish-a-verification-report`,
+`adr-0008-a-render-companion-is-not-an-orphan`,
+`adr-0009-rescue-an-image-from-its-companion`, and
+`adr-0010-what-0-2-promises` (which declares the compatibility contract every
+other decision is a promise about).
 Byte-level facts about the formats, with an evidence label per claim, live in
 `format-notes`; the product vocabulary lives in `glossary`. A module spec links
 to those and carries only what is specific to its own boundary.
