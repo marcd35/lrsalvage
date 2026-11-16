@@ -191,8 +191,22 @@ fn parse_spec(path: &Path, text: &str) -> Spec {
             id = value.trim().to_string();
             continue;
         }
-        if line.starts_with("depends-on:") {
+        if let Some(value) = line.strip_prefix("depends-on:") {
             reading = true;
+            // The spec editor writes a flow list (`depends-on: [a, b]`) while a
+            // hand edit writes the block form below; one meaning, two shapes, and
+            // this reader knows both. Reading only the block form made a
+            // doc-only edit fail this gate with an empty dependency list.
+            if let Some(flow) = value.trim().strip_prefix('[') {
+                depends_on.extend(
+                    flow.trim_end_matches(']')
+                        .split(',')
+                        .map(str::trim)
+                        .filter(|entry| !entry.is_empty())
+                        .map(|entry| entry.replace('-', "_")),
+                );
+                reading = false;
+            }
             continue;
         }
         match line.strip_prefix("  - ") {
@@ -206,6 +220,28 @@ fn parse_spec(path: &Path, text: &str) -> Spec {
         path: path.to_path_buf(),
         depends_on,
     }
+}
+
+#[test]
+fn a_flow_style_depends_on_reads_like_a_block_one() {
+    let block =
+        "---\nid: plan\ndepends-on:\n  - previews-db\n  - model\nreferences:\n  - adr-0001\n---\n";
+    let flow = "---\nid: plan\ndepends-on: [previews-db, model]\nreferences: [adr-0001]\n---\n";
+
+    let read = |text: &str| parse_spec(Path::new("plan.md"), text);
+    assert_eq!(read(block).depends_on, vec!["previews_db", "model"]);
+    assert_eq!(
+        read(flow).depends_on,
+        read(block).depends_on,
+        "the spec editor's flow list and a hand-edited block list mean one thing"
+    );
+    assert_eq!(read(flow).id, "plan");
+    assert!(
+        read("---\nid: plan\ndepends-on: []\n---\n")
+            .depends_on
+            .is_empty(),
+        "an empty flow list is still an empty list"
+    );
 }
 
 #[test]

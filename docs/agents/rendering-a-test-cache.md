@@ -131,7 +131,13 @@ That gate holds `format-notes` §5.10 to the cache itself — `unmapped 0`, one
 `thumbnail_pyramids` per image, 48 level files, and an `extract` that writes one
 file per image and no companion (`crates/lrsalvage-cli/tests/render.rs`). It is
 separate from `check.sh real` because the two caches are different evidence and a
-machine may hold one without the other.
+machine may hold one without the other; each gate runs only its own tests.
+
+**Where the evidence caches live is not in this repo.** Catalog paths are not a
+repo artefact, so the machine's `real.env` is the index: read it before searching
+the disk, and let either gate's failure message name the file to edit. A rendered
+cache that exists but is missing from `real.env` is the one case worth a minute of
+`find` — and then a line in that file, so the next run starts from it.
 
 ## What not to do
 
