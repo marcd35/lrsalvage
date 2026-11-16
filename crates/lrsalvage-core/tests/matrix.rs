@@ -873,6 +873,123 @@ fn m10e_a_thumbnail_row_with_a_large_level_stays_unmapped() {
     assert_eq!(plan.cache.thumbnail_pyramids, 0);
 }
 
+/// M10f — the image's own pyramid has no file, and its companion is the last
+/// payload left.
+///
+/// The state a 14.0+ background prune leaves (unmeasured in the field, §5.5): the
+/// rows survive, the pyramid's files do not, and the render's second pyramid is
+/// all that is left of the photograph. It is `recovered`, not `missing-payload`.
+#[test]
+fn m10f_an_image_whose_pyramid_is_gone_is_rescued_from_its_companion() {
+    let pyramid = uuid(24);
+    let companion_digest = "c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2";
+    let vault = Vault::modern()
+        .image(ImageRow::new(24, "IMG_0024").cache(&pyramid))
+        // The pyramid the entry names: rows, and no file anywhere.
+        .pyramid(
+            PyramidRow::new(&pyramid)
+                .profile("AdobeRGB")
+                .quality("standard")
+                .level(3840, 2560),
+        )
+        .row_without_file(Level::sized(&pyramid, 3840, 2560))
+        // Its companion, the only payload the image has left.
+        .pyramid(
+            PyramidRow::new(&pyramid)
+                .digest(companion_digest)
+                .profile("sRGB")
+                .quality("thumbnail")
+                .level(320, 213),
+        )
+        .level_file(Level::sized(&pyramid, 320, 213).digest(companion_digest))
+        .write();
+
+    let plan = vault.plan(&Options::default());
+    let item = item_for(&plan, 24);
+    assert_eq!(
+        item.status,
+        Status::Recoverable,
+        "a surviving payload is not `missing-payload`"
+    );
+    assert_eq!((item.width, item.height), (Some(320), Some(213)));
+    assert_eq!(item.tier, Some(Tier::Thumbnail));
+    assert_eq!(
+        item.quality.as_deref(),
+        Some("thumbnail"),
+        "the row the payload actually came from"
+    );
+    assert_eq!(item.color_profile.as_deref(), Some("sRGB"));
+    assert!(!item.selected, "below the floor: counted, not written");
+    assert_eq!(plan.stats.missing_payload, 0);
+    assert_eq!(plan.stats.below_floor, 1);
+    assert_eq!(
+        plan.cache.thumbnail_pyramids, 1,
+        "the companion is still a cache fact, whatever the plan did with it"
+    );
+    assert!(
+        item.note
+            .as_deref()
+            .is_some_and(|note| note.contains("render companion")),
+        "the item says where it came from: {:?}",
+        item.note
+    );
+
+    // Respecting the floor is not refusing it: `--min-long-edge 0` writes the
+    // rescued payload under the image's own name.
+    let plan = vault.plan(&Options {
+        min_long_edge: 0,
+        ..Options::default()
+    });
+    assert!(item_for(&plan, 24).selected);
+    let outcomes = run_extract(&vault, &plan);
+    assert_eq!(outcomes.len(), 1);
+    assert_eq!(outcomes[0].status, extract::OutcomeStatus::Written);
+    let bytes = fs::read(&outcomes[0].output).expect("the rescued file");
+    assert_eq!(
+        jpeg::dimensions(&bytes).expect("a readable frame"),
+        (320, 213)
+    );
+}
+
+/// M10g — a sibling the companion test rejects does not rescue.
+///
+/// A `bigThumbnail` pyramid on the same uuid holds a perfectly good 320 payload
+/// and is still not used: the rescue is bound to the pyramid §5.10 measured a
+/// render writing, so the image stays `missing-payload` and the sibling stays an
+/// orphan.
+#[test]
+fn m10g_a_sibling_of_another_quality_does_not_rescue() {
+    let pyramid = uuid(25);
+    let sibling_digest = "d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3";
+    let vault = Vault::modern()
+        .image(ImageRow::new(25, "IMG_0025").cache(&pyramid))
+        .pyramid(
+            PyramidRow::new(&pyramid)
+                .profile("AdobeRGB")
+                .quality("standard")
+                .level(3840, 2560),
+        )
+        .row_without_file(Level::sized(&pyramid, 3840, 2560))
+        .pyramid(
+            PyramidRow::new(&pyramid)
+                .digest(sibling_digest)
+                .profile("sRGB")
+                .quality("bigThumbnail")
+                .level(320, 213),
+        )
+        .level_file(Level::sized(&pyramid, 320, 213).digest(sibling_digest))
+        .write();
+
+    let plan = vault.plan(&Options::default());
+    assert_eq!(item_for(&plan, 25).status, Status::MissingPayload);
+    assert_eq!(plan.stats.missing_payload, 1);
+    assert_eq!(
+        plan.stats.unmapped, 1,
+        "the sibling is an orphan, not a companion"
+    );
+    assert_eq!(plan.cache.thumbnail_pyramids, 0);
+}
+
 #[test]
 fn m11_a_digest_mismatched_file_is_another_pyramid() {
     let vault = modern();

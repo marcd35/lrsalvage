@@ -82,6 +82,14 @@ bytes.**
    exists. `missing-payload` means *no* level file of that pyramid exists, never
    "the advertised top level is absent": 14.0+ prunes in the background, so a
    partial pyramid is normal (§5.5).
+   **Amended 2026-11-16 by ADR 0009:** *no level file of that pyramid* is no longer
+   the whole test. A render gives the image a second pyramid beside the claimed
+   one (§5.10), so when the claimed pyramid holds no file anywhere the plan reads
+   the classified companion's largest level instead — judged against the
+   companion's own row, counted against the floor, and written under the image's
+   own name. `missing-payload` therefore means no pyramid of that image holds a
+   file. Rescuing from any other sibling stays out: that would be a mapping
+   invented from a shared uuid, which ADR 0002 forbids.
 6. **Disagreement has three outcomes, kept apart.** A file that parses but whose
    name carries a different digest from its row is an orphan — only the pair maps
    (ADR 0002). A file that is payload-like but not the right shape — wrong shard,

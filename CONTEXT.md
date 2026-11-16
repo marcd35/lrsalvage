@@ -101,8 +101,9 @@ target unless the caller explicitly asks for it.
 _Avoid_: recoverable image, lost photo, missing image
 
 **Best level**:
-The largest level present in an image's pyramid, and the one salvage writes by
-default.
+The largest level present across an image's pyramids — its own, or the render
+companion beside it when the pyramid the cache entry names has no file at all —
+and the one salvage writes by default.
 _Avoid_: highest quality, full size, original
 
 **Tier**:
