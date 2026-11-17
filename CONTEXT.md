@@ -129,7 +129,8 @@ _Avoid_: recoverable image, lost photo, missing image
 **Best level**:
 The largest level present across an image's pyramids — its own, or the render
 companion beside it when the pyramid the cache entry names has no file at all —
-and the one salvage writes by default.
+and the one salvage writes by default. When a cap is set, the best level written
+is the largest that clears it.
 _Avoid_: highest quality, full size, original
 
 **Tier**:
@@ -137,6 +138,18 @@ A size class for a best level, by long edge: `full` (4000 px and above), `large`
 (1920–3999), `standard` (1024–1919), `small` (640–1023), `thumbnail` (below 640).
 The classes set expectations; they do not change what is in the cache.
 _Avoid_: quality, resolution
+
+**Floor**:
+The smallest long edge worth writing: a level below it is counted and left
+unwritten. `--min-long-edge` sets it, 640 by default, and `0` removes it.
+_Avoid_: minimum, threshold, filter
+
+**Cap**:
+The largest long edge worth writing: the largest level that measures at or below
+it is the one salvage writes, and every level above it is counted and left
+unwritten. `--max-long-edge` sets it, and `0` removes it. A cap is not the
+cache's limit — no setting raises what the cache holds.
+_Avoid_: ceiling, maximum, limit, filter
 
 **Recovered**:
 A JPEG now exists at the planned output path for the image.

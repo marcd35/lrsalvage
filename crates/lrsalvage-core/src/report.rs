@@ -27,7 +27,7 @@ const VERIFICATION_SCHEMA: &str = "lrsalvage.verification";
 /// come from the caller for the reason `plan` gives — a plan records what the run
 /// decided, not the knobs that shaped it — and a summary that named a floor or a
 /// cap nobody applied would be a lie about the run
-/// (`adr-0011-a-cap-demotes-the-level`).
+/// (`adr-0013-a-cap-demotes-the-level`).
 pub fn summary(plan: &Plan, options: &Options) -> String {
     let stats = &plan.stats;
     let floor = options.min_long_edge;

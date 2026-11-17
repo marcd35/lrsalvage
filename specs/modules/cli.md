@@ -37,11 +37,13 @@ it needs to know about an image comes from a `Plan`.
   some failures, `3` nothing selected to do, `4` unsafe or unwritable
   destination, `5` the catalog changed while it was being copied. `scan` and
   `extract` share the "nothing selected" rule, so they agree on `3` for the same
-  inputs; `scan` never returns `2`. `main.rs`'s unit test asserts the six
-  published numbers and one case per code, and its `EXIT_USAGE` arm names every
-  remaining variant rather than defaulting, so a new error cannot compile until
-  this mapping decides what it means. Which code an *existing* variant takes is
-  the arm beside it: moving one is a review change, and so is the rows' prose.
+  inputs — every original present, no usable index, or every level outside the
+  floor-and-cap window; `scan` never returns `2`. `main.rs`'s unit test asserts
+  the six published numbers and one case per code, and its `EXIT_USAGE` arm names
+  every remaining variant rather than defaulting, so a new error cannot compile
+  until this mapping decides what it means. Which code an *existing* variant
+  takes is the arm beside it: moving one is a review change, and so is the rows'
+  prose.
 - **`--verify-source` is the proof, and it is opt-in on both commands.** The flag
   routes the one open of the user's catalog through `Catalog::open_verified`, so
   the catalog is hashed, copied and the copy hashed, and a pair that disagrees is

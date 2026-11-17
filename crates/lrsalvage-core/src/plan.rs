@@ -156,7 +156,7 @@ pub struct Options {
     pub min_long_edge: u32,
     /// Write the largest level at or below this long edge, instead of the
     /// largest present. `0` disables the cap. A cap below the floor is a legal
-    /// window with nothing in it, not an error (`adr-0011-a-cap-demotes-the-level`).
+    /// window with nothing in it, not an error (`adr-0013-a-cap-demotes-the-level`).
     pub max_long_edge: u32,
     /// Emit every level instead of only the best one.
     pub all_levels: bool,
@@ -196,7 +196,7 @@ pub struct Stats {
     pub below_floor: u64,
     /// Level items above the configured cap: counted, reported and never
     /// written, because a cap chooses the level rather than emptying the image
-    /// (`adr-0011-a-cap-demotes-the-level`).
+    /// (`adr-0013-a-cap-demotes-the-level`).
     pub above_cap: u64,
     pub bytes: u64,
     /// Every level item in the plan, including the extra ones `--all_levels`
@@ -825,7 +825,7 @@ struct Tally<'a> {
 /// that lies about a size cannot smuggle a payload past it. The row and the name
 /// are only for a file the cache sweep found no readable frame for — the same
 /// "unknown" answer the floor gives such a level
-/// (`adr-0011-a-cap-demotes-the-level`).
+/// (`adr-0013-a-cap-demotes-the-level`).
 fn candidate_long_edge(candidate: &Candidate<'_>, measured: &Measurements) -> u32 {
     measured
         .frames
@@ -862,7 +862,7 @@ fn level_file_levels(
     // afterwards: the last candidate that clears it is what owns the image's
     // name. When nothing clears it no candidate is written, and the largest is
     // still the item that carries the image's status — the same shape as an
-    // image below the floor (`adr-0011-a-cap-demotes-the-level`).
+    // image below the floor (`adr-0013-a-cap-demotes-the-level`).
     let winner = match options.max_long_edge {
         0 => ranked.len() - 1,
         cap => ranked
@@ -1019,7 +1019,7 @@ fn container_levels(
             // uncapped run; a cap can choose a smaller chunk, and judging it
             // against the best row would flag an ordinary level `suspect`
             // (`adr-0005-discover-payloads-by-index` ¶5,
-            // `adr-0011-a-cap-demotes-the-level`).
+            // `adr-0013-a-cap-demotes-the-level`).
             let claim = if !judged {
                 None
             } else if position == last {

@@ -10,6 +10,24 @@ minor saying so here before one is removed, renamed or given a different meaning
 
 ## [Unreleased]
 
+### Added
+
+- **`--max-long-edge`, a cap on the level written.** `scan` and `extract` both
+  take it, default `0` (no cap). A cache that built 1:1 previews holds a doubling
+  ladder ending at each original's own long edge, so until now salvage wrote the
+  largest level it found; with a cap it writes the largest level at or below the
+  cap and counts the rest as `above_cap`. That count joins the terminal summary,
+  `scan --json` and the verification report's `stats`, and the report's `options`
+  echo `max_long_edge`. The cap chooses a level rather than excluding the image:
+  an image whose every level is above it is counted, reported and left unwritten,
+  never `failed`, and a cap below the floor is an empty window that exits `3`
+  rather than a usage error
+  ([ADR 0013](https://github.com/marcd35/lrsalvage/blob/main/docs/adr/0013-a-cap-demotes-the-level.md)).
+  This is the part of
+  [#67](https://github.com/marcd35/lrsalvage/issues/67) its decision 2 left open;
+  the other filters and every rename template stay declined, and the README now
+  says so rather than leaving them unmentioned.
+
 ### Known limitation
 
 - **The published `lrsalvage-core` 0.3.0 tarball builds but cannot run its own

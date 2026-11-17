@@ -369,6 +369,7 @@ one machine-readable object; `--verbose` lines follow it.
 | `failed` | A payload that is truncated, unreadable, or holds no complete JPEG level. |
 | `original_present` | Images skipped because the original file is still on disk. Always `0` with `--include-present`. |
 | `below_floor` | Items the floor excluded. |
+| `above_cap` | Items the cap excluded: levels larger than `--max-long-edge` that were counted and left unwritten. |
 | `superseded` | Claimed pyramids held twice — level files and a legacy `.lrprev` — where only the level files are read. |
 | `deleted` | `missing-payload` images whose pyramid `previews.db` has a `DeletedPyramid` row for. Lightroom's own record; it never claims who removed the file. |
 | `unrecognised` | Payload-like files that matched no shape. They appear here and nowhere else: no status, no item, no exit code. |
@@ -386,7 +387,8 @@ own machine. When you want to hand a run to somebody else, use
 `--report <file>`: it writes the **verification report**, one JSON object with
 schema `lrsalvage.verification`, the tool `version` and `generated_unix`, the
 `layout` and both version strings, the `options` the run applied (`min_long_edge`,
-`all_levels`, `include_present`), the same `stats` counts as above, and `shapes`
+`max_long_edge`, `all_levels`, `include_present`), the same `stats` counts as
+above, and `shapes`
 as one object per class — `level_file` with its `count`, how many of those leaves
 name the long edge their own frame measures (`suffix_matches_sof`) and the
 grammar they follow, `container` with its `count` and grammar. A class the cache
@@ -409,12 +411,13 @@ Nothing there asks where your library lives, because the report has no path to
 give.
 
 `extract` takes the same two paths plus a destination. It shares
-`--min-long-edge`, `--all-levels`, and `--include-present` with `scan`; the table
-names which command each flag belongs to:
+`--min-long-edge`, `--max-long-edge`, `--all-levels`, and `--include-present`
+with `scan`; the table names which command each flag belongs to:
 
 | Flag | Effect |
 |---|---|
 | `--min-long-edge 640` | Ignore levels below this long edge (default 640; `0` disables the floor). |
+| `--max-long-edge 0` | Write the largest level at or below this long edge instead of the largest present (default `0`, no cap). A 1:1 cache with `--max-long-edge 1920` writes the 1,920 px level and nothing bigger; the levels above it are counted as `above_cap`. An image whose every level is larger keeps its size in the plan, is reported, and is not written — it is never failed. `0` disables the cap, and a cap below the floor is an empty window rather than an error: nothing is selected and the run exits `3`. |
 | `--all-levels` | Export every intermediate level, not just the best one. |
 | `--include-present` | Also include images whose original file still exists on disk. |
 | `--verbose` | `scan` only: print one line per plan item instead of only totals. |
@@ -534,7 +537,7 @@ live catalog image claims is listed as `unmapped`.
 
 | Status | Meaning |
 |---|---|
-| **recovered** | A payload was found and parsed, and its decoded dimensions agree with `previews.db`. `extract` writes it if it clears `--min-long-edge`; a recovered image below the floor is counted but not selected. |
+| **recovered** | A payload was found and parsed, and its decoded dimensions agree with `previews.db`. `extract` writes it if it clears both `--min-long-edge` and `--max-long-edge`; a recovered image the floor excludes, or whose levels the cap leaves above it, is counted but not selected. |
 | **suspect** | The payload is a real, complete photo whose decoded size disagrees with the size `previews.db` recorded. It is still extracted, subject to the floor, and flagged in every report: a real photo at the wrong declared size is worth recovering. |
 | **original-present** | The original RAW/JPEG/TIFF is still on disk, so there is nothing to salvage. Skipped by default; `--include-present` turns these into ordinary recovery candidates. |
 | **no-cache-entry** | The catalog has the image, but `previews.db` has no row for it. Nothing was ever rendered, or the row is gone. |
@@ -617,7 +620,7 @@ payload is written unchanged and carries no marker. See
 | 0 | Success. Also what `--help` and `--version` return. |
 | 1 | Usage or input error: bad arguments, a catalog that is missing, unreadable or not a catalog, or a `--previews` path that is not a directory. |
 | 2 | `extract` completed with some failures: at least one selected image could not be written. The run did real work and also hit something it could not do. `scan` never returns 2. |
-| 3 | Nothing selected to do: no image was selected to write — for example, every original is still present, every preview is below the floor, or the cache has no readable `previews.db` so no payload could be named. `scan` and `extract` use the same test, so they agree on this code. `masks` returns 3 when it finds no `.dat` file or decodes none. |
+| 3 | Nothing selected to do: no image was selected to write — for example, every original is still present, every preview falls outside the floor and the cap, or the cache has no readable `previews.db` so no payload could be named. `scan` and `extract` use the same test, so they agree on this code. `masks` returns 3 when it finds no `.dat` file or decodes none. |
 | 4 | Unsafe or unwritable destination: `--out` (or the contact sheet's or verification report's directory) resolves inside the catalog or preview cache — or, for `masks`, inside the `.lrcat-data` directory — or cannot be created or written. |
 | 5 | The catalog changed while it was being read: `--verify-source` hashed it, copied it, and the copy is not the catalog. Nothing is planned from that copy, so no JPEG and no report is written. Retry, with Lightroom closed if it was open on this catalog. |
 
@@ -688,6 +691,16 @@ this page is the summary.
 - **Undo compression.** A JPEG that was re-encoded once cannot be made lossless
   again. `lrsalvage` never re-encodes, so at least it does not add a second
   generation of loss.
+- **Filter by rating, folder, or anything else.** No flag narrows which images
+  are salvaged; every salvageable image gets a plan. That is a decision, not a
+  gap: `manifest.json` and `report.csv` already carry every fact a filter would
+  use — star rating, capture time, original path, dimensions — so a script can
+  select from the manifest instead of the tool growing a flag per question.
+- **Rename or re-folder the output.** Output names come from the catalog: the
+  mirrored tree, the original's own name, the virtual copy's copy name. A rename
+  template would make the name one this tool invented rather than one Lightroom
+  recorded, and no later run could then recognise its own output as the
+  photograph it is.
 
 One confusion worth heading off: a `.lrcat-data` directory sitting next to the
 catalog is **not** preview data. It holds AI mask alpha channels (Select Subject,
