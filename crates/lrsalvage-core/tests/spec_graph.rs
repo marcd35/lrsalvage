@@ -6,17 +6,30 @@
 //! `snapshot, model`, which `spec_validate` cannot see because the link it checks
 //! resolves. So the agreement is asserted here, mechanically.
 //!
-//! Two properties, both cheap:
+//! Two properties about the code, both cheap:
 //!
 //! 1. **Every `crate::<module>` a shipped module reaches is declared** in that
 //!    module's `depends-on`. A used-but-undeclared dependency is the bug above.
 //! 2. **Every shipped module has a spec.** A new module with no design decision
 //!    recorded is the same class of surprise, one commit earlier.
 //!
+//! And three about the graph itself, which are `spec_validate`'s job as well —
+//! but that is an in-app tool, so CI and a checkout without the spec tools cannot
+//! ask it, and AGENTS.md's "a slice that re-links a spec ends on a clean graph"
+//! rests on an agent remembering. These read the same files and answer the same
+//! three questions:
+//!
+//! 3. **Every id is unique.** Two specs sharing one is a link that resolves to
+//!    whichever file was read first.
+//! 4. **Every link resolves** — `parent` and each of `depends-on`, `references`,
+//!    `implements`, `covers`. A dangling target is a decision nobody can reach.
+//! 5. **No spec is its own ancestor.** A `parent` loop has no root to read from.
+//!
 //! `error` is exempt: it is the crate's shared error type, imported by nearly
 //! every module and declared by none, so listing it everywhere would be noise
 //! rather than a decision. Everything else has to be named.
 
+use std::collections::{BTreeSet, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -302,5 +315,227 @@ fn every_module_has_a_spec() {
         missing.is_empty(),
         "a module with no spec has no recorded boundary or decision:\n  {}",
         missing.join("\n  ")
+    );
+}
+
+/// The frontmatter list fields whose entries are ids of other specs.
+const LINK_FIELDS: [&str; 4] = ["depends-on", "references", "implements", "covers"];
+
+/// One file in the spec graph: the id it declares, the parent it names, and the
+/// ids its list fields point at.
+///
+/// Unlike [`Spec`], every id is kept verbatim. `plan` names a Rust module and
+/// `adr-0006-degrade-without-guessing` names a file, and a link is this graph's
+/// edge only when it is the id it resolves to.
+struct Node {
+    id: String,
+    path: PathBuf,
+    parent: Option<String>,
+    links: Vec<(&'static str, String)>,
+}
+
+/// Every indexed spec in the repository, found the way `spec_validate` finds
+/// them: a markdown file whose frontmatter carries an `id`.
+///
+/// Not only `specs/`: `CONTEXT.md`, `docs/format-notes.md` and `docs/adr/*.md`
+/// carry ids too, and links cross between them — `adr-0006-degrade-without-guessing`
+/// is referenced from a module spec — so a reader that stopped at `specs/modules`
+/// would call every ADR reference dangling.
+fn indexed_specs() -> Vec<Node> {
+    let mut found = Vec::new();
+    let repo = root().join("../..");
+    let mut stack = vec![repo.clone()];
+    while let Some(directory) = stack.pop() {
+        let Ok(entries) = fs::read_dir(&directory) else {
+            continue;
+        };
+        for entry in entries {
+            let path = entry.expect("a readable entry").path();
+            let name = path
+                .file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            if path.is_dir() {
+                // `target/` holds the crate's own sources again among thousands of
+                // build artefacts, and a dot directory is not ours to read.
+                if name != "target" && !name.starts_with('.') {
+                    stack.push(path);
+                }
+            } else if name.ends_with(".md") {
+                let text = fs::read_to_string(&path).expect("a readable markdown file");
+                // Repository-relative, so a failure names `CONTEXT.md` rather than
+                // this machine's checkout of it.
+                let relative = path.strip_prefix(&repo).unwrap_or(&path).to_path_buf();
+                if let Some(node) = parse_node(&relative, &text) {
+                    found.push(node);
+                }
+            }
+        }
+    }
+    found.sort_by(|a, b| a.id.cmp(&b.id).then_with(|| a.path.cmp(&b.path)));
+    found
+}
+
+fn parse_node(path: &Path, text: &str) -> Option<Node> {
+    let frontmatter = text
+        .strip_prefix("---")
+        .and_then(|rest| rest.split("\n---").next())
+        .unwrap_or_default();
+
+    let mut id = String::new();
+    let mut parent = None;
+    let mut links: Vec<(&'static str, String)> = Vec::new();
+    let mut reading: Option<&'static str> = None;
+    for line in frontmatter.lines() {
+        let line = line.trim_end_matches('\r');
+        if let Some(value) = line.strip_prefix("id: ") {
+            id = value.trim().to_string();
+            reading = None;
+            continue;
+        }
+        if let Some(value) = line.strip_prefix("parent: ") {
+            parent = Some(value.trim().to_string());
+            reading = None;
+            continue;
+        }
+        // One meaning, two shapes: the spec editor writes a flow list, a hand
+        // edit writes the block form. `parse_spec` above knows both for
+        // `depends-on`, and a link check that knew one would miss half the graph.
+        let mut handled = false;
+        for field in LINK_FIELDS {
+            let Some(value) = line
+                .strip_prefix(field)
+                .and_then(|rest| rest.strip_prefix(':'))
+            else {
+                continue;
+            };
+            handled = true;
+            let value = value.trim();
+            match value.strip_prefix('[') {
+                Some(flow) => {
+                    links.extend(
+                        flow.trim_end_matches(']')
+                            .split(',')
+                            .map(str::trim)
+                            .filter(|entry| !entry.is_empty())
+                            .map(|entry| (field, entry.to_string())),
+                    );
+                    reading = None;
+                }
+                None => reading = Some(field),
+            }
+        }
+        if handled {
+            continue;
+        }
+        match line.strip_prefix("  - ") {
+            Some(value) => {
+                if let Some(field) = reading {
+                    links.push((field, value.trim().to_string()));
+                }
+            }
+            None => reading = None,
+        }
+    }
+
+    (!id.is_empty()).then(|| Node {
+        id,
+        path: path.to_path_buf(),
+        parent,
+        links,
+    })
+}
+
+#[test]
+fn no_two_specs_share_an_id() {
+    let nodes = indexed_specs();
+    assert!(
+        nodes.len() > 20,
+        "the walk found {} specs, so it is not reading the graph at all",
+        nodes.len()
+    );
+
+    let mut seen: Vec<(&str, &Path)> = Vec::new();
+    let mut duplicates = Vec::new();
+    for node in &nodes {
+        match seen.iter().find(|(id, _)| *id == node.id) {
+            Some((_, first)) => duplicates.push(format!(
+                "`{}` is declared by {} and by {}",
+                node.id,
+                first.display(),
+                node.path.display()
+            )),
+            None => seen.push((&node.id, &node.path)),
+        }
+    }
+
+    assert!(
+        duplicates.is_empty(),
+        "two specs with one id leave every link to it ambiguous:\n  {}",
+        duplicates.join("\n  ")
+    );
+}
+
+#[test]
+fn every_link_in_the_spec_graph_resolves() {
+    let nodes = indexed_specs();
+    let ids: BTreeSet<&str> = nodes.iter().map(|node| node.id.as_str()).collect();
+
+    let mut dangling = Vec::new();
+    for node in &nodes {
+        let edges = node
+            .parent
+            .iter()
+            .map(|parent| ("parent", parent))
+            .chain(node.links.iter().map(|(field, target)| (*field, target)));
+        for (field, target) in edges {
+            if !ids.contains(target.as_str()) {
+                dangling.push(format!(
+                    "{}: `{field}: {target}` names no id",
+                    node.path.display()
+                ));
+            }
+        }
+    }
+
+    assert!(
+        dangling.is_empty(),
+        "a link that resolves to nothing is a decision no reader can reach:\n  {}",
+        dangling.join("\n  ")
+    );
+}
+
+#[test]
+fn no_spec_is_its_own_ancestor() {
+    let nodes = indexed_specs();
+    let by_id: HashMap<&str, &Node> = nodes.iter().map(|node| (node.id.as_str(), node)).collect();
+
+    let mut cycles = Vec::new();
+    for node in &nodes {
+        let mut chain = vec![node.id.as_str()];
+        let mut current = node;
+        while let Some(parent) = current
+            .parent
+            .as_deref()
+            .and_then(|parent| by_id.get(parent))
+        {
+            if chain.contains(&parent.id.as_str()) {
+                chain.push(parent.id.as_str());
+                cycles.push(format!(
+                    "{} closes: {}",
+                    node.path.display(),
+                    chain.join(" -> ")
+                ));
+                break;
+            }
+            chain.push(parent.id.as_str());
+            current = parent;
+        }
+    }
+
+    assert!(
+        cycles.is_empty(),
+        "a spec that is its own ancestor has no root to read up to:\n  {}",
+        cycles.join("\n  ")
     );
 }
