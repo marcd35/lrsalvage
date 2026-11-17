@@ -1,0 +1,240 @@
+name: release
+
+# A pushed tag is the only trigger, because the tag *is* the version: this file
+# holds no version literal, and the binary's own `--version` is what proves the
+# tag and the manifest agree. There is deliberately no `workflow_dispatch` — a
+# dispatchable release would publish an artifact from an untagged branch, which
+# is the one thing this file exists to make impossible.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  # One archive per platform. The name is a promise to `cargo-binstall`, a tool we
+  # do not control, so it is one of its own templates rather than one we invented:
+  # `binstalk-fetchers`'s `DEFAULT_PKG_URL` is
+  # `{ repo }/releases/download/v{ version }/{ name }-{ target }-v{ version }.{ archive-format }`,
+  # which is why the tag is `v<version>` and the file is
+  # `lrsalvage-<target>-v<version>.<tgz|zip>`. `{ name }` there is the crate name,
+  # except that `binstalk`'s resolve pass also tries the crate's lone binary name
+  # against the same template — and `lrsalvage-cli` has exactly one binary, called
+  # `lrsalvage`. Both spellings therefore resolve; this file ships the one a user
+  # types. `SHA256SUMS` is the only integrity claim 0.2 makes: no signing, no
+  # notarisation, no attestations.
+  # Nothing here runs a gate and nothing here restates one: the gate list is
+  # `scripts/check.sh` and `ci.yml` is what runs it. So this job trusts the tag to
+  # be cut on a commit that reached `main` through that workflow — the checklist in
+  # `docs/release-0.2.md` is where the tag's commit is chosen — and a tag on a
+  # commit that never did is not caught here.
+  build:
+    name: ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # `ubuntu-22.04`, not `-latest`: a binary built on 24.04 links glibc 2.39
+          # and refuses to start on 22.04 LTS, which is still in support. The floor
+          # is the oldest LTS image, not the newest — the target triple stays
+          # `-gnu`, so binstall's default template still matches.
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            archive: tgz
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            archive: zip
+          # `macos-latest` is Apple Silicon (`macos-26` unless the label moves), so
+          # that is the target that runs natively — the archive is proven by
+          # running it. An Intel Mac is a `cargo install` route, because 0.2 ships
+          # one archive per platform and not one per architecture.
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            archive: tgz
+    steps:
+      - uses: actions/checkout@v7
+
+      # Keep the version in sync with rust-toolchain.toml, exactly as `ci.yml`
+      # does: the same compiler that proved the gates builds the artifact, so the
+      # release is the build CI checked rather than a second one.
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.100.0
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      # The version and the archive name get one home here, so no later step
+      # restates either. The tag carries the `v`; the version does not.
+      - name: Name the version and the archive
+        shell: bash
+        run: |
+          set -eu
+          version="${GITHUB_REF_NAME#v}"
+          case "$version" in
+            [0-9]*) ;;
+            *)
+              printf 'tag %s does not carry a version\n' "$GITHUB_REF_NAME" >&2
+              exit 1
+              ;;
+          esac
+          archive="lrsalvage-${{ matrix.target }}-v${version}.${{ matrix.archive }}"
+          {
+            printf 'VERSION=%s\n' "$version"
+            printf 'ARCHIVE=%s\n' "$archive"
+          } >> "$GITHUB_ENV"
+          printf '%s\n' "$archive"
+
+      - name: Build
+        run: cargo build --release --locked --target ${{ matrix.target }}
+
+      # Tar for the two Unix targets and a zip for Windows: each platform's own
+      # tool, and the extension binstall resolves for that platform.
+      - name: Package (tgz)
+        if: matrix.archive == 'tgz'
+        shell: bash
+        run: |
+          set -eu
+          stage="dist/lrsalvage-${{ matrix.target }}-v$VERSION"
+          mkdir -p "$stage"
+          cp "target/${{ matrix.target }}/release/lrsalvage" "$stage/"
+          # Both licence texts travel with the binaries: Apache-2.0 §4(a) and the
+          # MIT notice clause each ask for it, and binstall extracts the binary and
+          # ignores the rest.
+          cp LICENSE-MIT LICENSE-APACHE "$stage/"
+          tar -czf "dist/$ARCHIVE" -C "$stage" lrsalvage LICENSE-MIT LICENSE-APACHE
+
+      - name: Package (zip)
+        if: matrix.archive == 'zip'
+        shell: pwsh
+        run: |
+          $stage = "dist/lrsalvage-${{ matrix.target }}-v$env:VERSION"
+          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+          Copy-Item "target/${{ matrix.target }}/release/lrsalvage.exe" $stage
+          Copy-Item LICENSE-MIT, LICENSE-APACHE $stage
+          Compress-Archive -Path "$stage/*" -DestinationPath "dist/$env:ARCHIVE"
+
+      # The archive is what ships, so the archive is what gets run: unpack it,
+      # execute the unpacked binary, and hold its `--version` to the tag. That is
+      # one assertion covering three of the ticket's Done-when clauses — the
+      # archive unpacks, the binary runs on its own platform, and the tag agrees
+      # with the manifest's version — and it cannot pass on the wrong architecture,
+      # because a mismatched binary does not run at all.
+      - name: Prove the archive (tgz)
+        if: matrix.archive == 'tgz'
+        shell: bash
+        run: |
+          set -eu
+          unpacked="$(mktemp -d)"
+          tar -xzf "dist/$ARCHIVE" -C "$unpacked"
+          got="$("$unpacked/lrsalvage" --version)"
+          want="lrsalvage $VERSION"
+          if [ "$got" != "$want" ]; then
+            printf 'the tag says %s, the archive answers %s\n' "$want" "$got" >&2
+            exit 1
+          fi
+          printf '%s\n' "$got"
+
+      - name: Prove the archive (zip)
+        if: matrix.archive == 'zip'
+        shell: pwsh
+        run: |
+          $unpacked = Join-Path $env:RUNNER_TEMP "unpacked"
+          Expand-Archive -Path "dist/$env:ARCHIVE" -DestinationPath $unpacked -Force
+          $got = (& (Join-Path $unpacked "lrsalvage.exe") --version)
+          $want = "lrsalvage $env:VERSION"
+          if ($got -ne $want) {
+            Write-Error "the tag says $want, the archive answers $got"
+            exit 1
+          }
+          Write-Output $got
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.target }}
+          path: dist/*.${{ matrix.archive }}
+          if-no-files-found: error
+
+  # One release, built from the three archives and nothing else: the body is the
+  # changelog section for this version, extracted rather than written, because a
+  # hand-copied body drifts from the file a reader trusts. It is never generated
+  # from `scan --report`, which describes a cache and not a release.
+  release:
+    name: release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+
+      # Sorted and verified before it is published, so the file describes exactly
+      # the bytes that are about to be attached: a reader's `sha256sum -c
+      # SHA256SUMS` is checked here first.
+      - name: Checksums
+        shell: bash
+        run: |
+          set -eu
+          cd dist
+          sha256sum *.tgz *.zip | LC_ALL=C sort -k2 > SHA256SUMS
+          sha256sum --check --strict SHA256SUMS
+          cat SHA256SUMS
+
+      # The body is `CHANGELOG.md`'s section for this version, verbatim — heading
+      # included, since that is what "the section" names. A missing or empty
+      # section fails here rather than shipping a release with no notes.
+      - name: Take the release body from the changelog
+        shell: bash
+        run: |
+          set -eu
+          version="${GITHUB_REF_NAME#v}"
+          heading="## [$version]"
+          # The section runs from this heading to the next `## [` heading, or to the
+          # link-reference block a Keep a Changelog file keeps at the bottom. The
+          # heading is matched by prefix, so a dated heading — `## [0.2.0] -
+          # 2026-11-16`, which that format encourages — is this section rather than
+          # a missing one, and the date travels with it verbatim.
+          awk -v heading="$heading" '
+            inside && (/^## \[/ || /^\[[^]]*\]: /) { exit }
+            index($0, heading) == 1 { inside = 1 }
+            inside { print }
+          ' CHANGELOG.md > body.md
+          if [ ! -s body.md ]; then
+            printf 'CHANGELOG.md has no %s heading\n' "$heading" >&2
+            exit 1
+          fi
+          # A heading on its own is an empty section, and a release with no notes
+          # is the failure this job exists to avoid: count the lines that say
+          # something beyond the heading.
+          lines="$(grep -cve '^[[:space:]]*$' body.md || true)"
+          if [ "$lines" -lt 2 ]; then
+            printf 'the %s section of CHANGELOG.md holds nothing but its heading\n' \
+              "$heading" >&2
+            exit 1
+          fi
+          cat body.md
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -eu
+          # A tag whose version carries a semver pre-release suffix is a scratch
+          # proof, so it lands as a pre-release and never takes the `latest` slot
+          # away from a real one.
+          version="${GITHUB_REF_NAME#v}"
+          args=(--notes-file body.md)
+          case "$version" in
+            *-*) args+=(--prerelease) ;;
+          esac
+          gh release create "$GITHUB_REF_NAME" "${args[@]}" \
+            dist/*.tgz dist/*.zip dist/SHA256SUMS
