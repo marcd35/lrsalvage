@@ -5,6 +5,11 @@
 //! the originals a row needs to still exist, and `<dir>/out`. Nothing is
 //! committed; the tree is dropped with the vault's `TempDir`.
 //!
+//! One thing breaks that one-directory rule on purpose: `same_destination_as`
+//! points a second vault's `out` at a first vault's, so two catalogs recover into
+//! one destination (row M15). Then the output tree belongs to the *other* vault's
+//! `TempDir`, which is why that vault has to outlive this one's `write()`.
+//!
 //! An archetype constructor (`Vault::modern()`, `Vault::legacy()`, …) fixes what
 //! the **cache** holds — the layout, whether the index exists, the catalog's
 //! version strings — because those are decided once per cache. Composition adds
@@ -555,6 +560,19 @@ impl Vault {
         self
     }
 
+    /// Recover into another vault's output tree: two catalogs, one destination.
+    ///
+    /// The two vaults keep their own catalog, cache and originals; only `out` is
+    /// shared, which is what a library split across machines — or a second
+    /// catalog recovered into the same folder — leaves behind (row M15). The
+    /// other vault must outlive this one's `write()`, since it drops the
+    /// directory the output tree lives in.
+    #[must_use]
+    pub fn same_destination_as(mut self, other: &Vault) -> Self {
+        self.out_path = other.out_path.clone();
+        self
+    }
+
     // -- composition --------------------------------------------------------
 
     /// One catalog image: its row, its original path, its orientation, its XMP.
@@ -730,7 +748,8 @@ impl Vault {
         &self.previews_path
     }
 
-    /// `<dir>/out`.
+    /// `<dir>/out` — or the other vault's, after
+    /// [`Vault::same_destination_as`].
     pub fn out(&self) -> &Path {
         &self.out_path
     }
@@ -1218,6 +1237,26 @@ mod tests {
             .preoccupied_destination("2015/IMG_0001.jpg", &bytes::jpeg(1616, 1077))
             .write();
         assert!(vault.out().join("2015").join("IMG_0001.jpg").is_file());
+    }
+
+    #[test]
+    fn two_vaults_can_share_one_destination() {
+        let first = Vault::modern()
+            .image(ImageRow::new(1, "IMG_0001").cache(UUID))
+            .level_file(Level::sized(UUID, 1616, 1077))
+            .write();
+        let second = Vault::modern()
+            .same_destination_as(&first)
+            .image(ImageRow::new(1, "IMG_0001").cache(UUID))
+            .level_file(Level::sized(UUID, 1616, 1077))
+            .write();
+
+        // One output tree, two of everything else: the second catalog's name
+        // derives the same destination from its own `rootFolder` (row M15).
+        assert_eq!(second.out(), first.out());
+        assert!(second.out().is_dir(), "the shared tree is the first's");
+        assert_ne!(second.catalog(), first.catalog());
+        assert_ne!(second.previews(), first.previews());
     }
 
     #[test]

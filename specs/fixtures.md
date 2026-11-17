@@ -78,6 +78,8 @@ no_soi(w, h)                         the body without its SOI
 not_a_jpeg()                         bytes that never were images
 our_output(w, h, version)            a destination we could have written: complete,
                                      SOF (w, h), IFD0 0x0131 = "lrsalvage <version>"
+foreign_output(w, h, software)       the same frame and the same tag, carrying a
+                                     marker that is not ours (another tool's file)
 chunk(name, payload, padding)        one AgHg chunk (24 + name.len() header)
 container(levels)                    the header chunk plus one level_N chunk each
 leaf(uuid, digest, long_edge)        "<UUID>-<digest>_<long_edge>"
@@ -100,6 +102,8 @@ Vault::unclaimed(levels)            a pyramid no image claims
 Vault::superseded(levels)           level files plus a deliberately unreadable .lrprev
 Vault::unrecognised_file(shape)     payload-like, wrong shard / no suffix / bad uuid
 Vault::preoccupied_destination(relative, bytes)  a file already in the output tree
+Vault::same_destination_as(&Vault)  recover into another vault's `out`: two catalogs,
+                                    one destination (M15)
 Vault::raw_index(bytes)            bytes at `previews.db` instead of an index (a torn file)
 Vault::write() -> Vault             catalog(), previews(), out(), plan(&Options),
                                     level_files(), containers()
@@ -157,7 +161,8 @@ run: it exits 3 for "nothing recognised", never 1.
 
 ## Rows
 
-Rows are per-image variations inside one vault. `Assertion` is `count` (a plan or
+Rows are per-image variations inside one vault — M15 is the one row whose state
+needs two, and it says so. `Assertion` is `count` (a plan or
 report field: status, stats, `declared`, `payload_metadata`, CSV column, manifest
 member), `bytes` (the bytes of a written file), or `both` (the item's fields and
 the file it produced). `Evidence` uses `format-notes`' labels plus `synthetic` for
@@ -214,6 +219,21 @@ is a row of its own if anyone wants it |
 | `extract` with `preoccupied_destination(M1, jpeg(1616×1077))` | exit 2; M1 `failed` with `destination exists and is not a verified extraction; use --force`; the foreign file is byte-for-byte untouched; a same-size complete JPEG without the marker is never ours |
 | `extract --no-metadata` then `extract` | first run exit 0 and 8 outputs byte-identical to their payloads (no APP1 of ours); second run exit 2, 8 `failed`, every output untouched — a metadata-free run never verifies anything |
 | `extract` (report files) | `report.csv` header ends `…,note,payload,payload_metadata`; an unmapped item carries `payload` and `-` for `output` and `original_path`; `manifest.json` carries `stats.superseded` and `stats.deleted` (0 and 1 here) and one `payload` member per unclaimed pyramid; `report.csv` never carries `superseded` or `deleted` |
+
+### Two catalogs, one destination — row M15
+
+A row inside one vault cannot express this state: it needs two catalogs, each with
+its own cache and its own root folder, deriving the same output path into one
+`out`. So the row stands on a table of its own and carries a `Cannot show` entry;
+the run it names belongs to neither vault's `Runs` row above, because it needs
+both. The second vault composes onto the first with `same_destination_as`.
+
+| # | Variation | Builder produces | Status | Stats | Run | Exit | Assertion | Evidence | Pins | Cannot show |
+|---|---|---|---|---|---|---|---|---|---|---|
+| M15 | a second catalog recovering into a written destination | two `modern` vaults sharing one `out`: the first writes `IMG_0001.jpg` and `IMG_0002.jpg` at 1616×1077, `IMG_0003.jpg` at 960×1077, and an `IMG_0004.jpg` that already carries another tool's marker; the second derives all four names — its `IMG_0001` is a different 1616×1077 frame carrying its own XMP packet, its `IMG_0002` is 1616×640, its `IMG_0003` is 640×1077, and its `IMG_0004` is 1616×1077 | `recovered` and selected on all four; the run's outcomes are `skipped`, `failed`, `failed`, `failed` | — (the run prints `4 evaluated`, `0 written`, `1 skipped`, `3 failed`) | `extract` on the second catalog, after the first catalog's own `extract` | 2 | both | synthetic | the identity is the marker's `lrsalvage ` prefix, a complete JPEG and matching `SOF` dimensions — so another photograph at the same name and the same size is `skipped`, its own bytes never written. Each part has a destination only it decides, which is what makes weakening any one of them fail this row: a size sharing the width, a size sharing the height, and the same size behind a marker that names this tool without preceding with it (`lrsalvage-compatible importer 1.2`, which a `contains` test would wrongly keep) are every one of them `failed`, never skipped. That `--force` does not replace the collided file either is `extract`'s own unit test, not this row's. Strengthening the identity is the deferred decision in #66 | this is **our** limitation, not Adobe's behaviour: no measured cache produces a collision, and the state is composed from two catalogs this repository builds. The row says nothing about what Lightroom does when two catalogs share a folder |
+
+Exit 2 is the run's, not the collision's: one item is skipped while three are
+refused, and only the skip is the limitation.
 
 ### `legacy` — 5 images, 1 unclaimed pyramid
 
@@ -325,6 +345,11 @@ fails if a single path, uuid, digest, shard folder or leaf name reaches the file
   `status`, `declared`, `width`, `height`, `deleted` — are what a row pins
   (`report.md`). Existing assertions on note text in `pipeline.rs` move onto those
   fields when the fixtures migrate.
+- **A row whose state is ours carries `Cannot show`.** M15 composes a state no run
+  over a real cache can produce — two catalogs, one destination — so its table adds
+  that entry, naming what the row therefore cannot establish about Lightroom. Every
+  other row's limit is already the label in `Evidence`, so no other table carries
+  the column.
 - **Row ids are stable.** A row is referenced by id (`M3`, `X1`, …) from code
   comments, the resolution of the ticket that added it, and later specs.
 - **Every row is built, never loaded.** No vault, no payload and no SQLite file is
