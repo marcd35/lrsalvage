@@ -27,8 +27,9 @@ masks = ["dep:png"]
 
 [dev-dependencies]
 # `path` only: a dev-dependency carrying a `version` is published to the index,
-# and this crate is test-only (`publish = false`). Adding one back breaks
-# `cargo publish` for every crate that depends on it.
+# and `lrsalvage-fixtures` is test-only (`publish = false`), so there is nothing
+# to resolve. Adding one back breaks `cargo publish` for every crate that depends
+# on it.
 lrsalvage-fixtures = { path = "../lrsalvage-fixtures" }
 serde_json.workspace = true
 kamadak-exif = "0.6"

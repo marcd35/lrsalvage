@@ -32,12 +32,12 @@ byte-identical.
 | Frozen surface | ADR 0010 itself — no slice, a review |
 | Docs | #51 (contract in the README), #57 (the sealed seam), #58 (format-notes retirements), #59 (report intake), #60 (resume limitation), #61 (README rewrite) |
 
-## What is left, in order
+## What was left, and in what order
 
-Five slices and one merge, then the tag. Each slice is one pull request, and all
-five have to be in the tree the tag ships — the last two because the release body
-and the published tarballs come out of that tree, not out of a tree that moved
-after it.
+The five slices and the one merge this release still needed, in the order it
+needed them. Each slice is one pull request, and all five had to be in the tree
+the tag ships — the last two because the release body and the published tarballs
+come out of that tree, not out of a tree that moved after it.
 
 | Slice | What it changes | Closes |
 |---|---|---|
@@ -67,34 +67,36 @@ Evidence — what the release may claim:
       both names rather than skipping.
 - [x] Every §5.5 `unmeasured` row still names the fixture row that pins the
       reader's behaviour in it; no new byte-level claim landed without a label.
-      Audited 2026-11-17: all seven states name a row that exists exactly once —
-      `M3`, `M4`, `X1`, `X2` and `M10f` labelled `unmeasured §5.5`, `M13` and
-      `M10c` `verified §5.10`, `M10d`/`M10e` `synthetic` — and the paragraph
-      above that table claimed every row was labelled `unmeasured`, which is true
-      of five of the nine and now states the split.
-      **§5.11 is the one published claim that is neither labelled nor gated.** Its
-      counts — `recovered 10`, tiers `large 9` / `standard 1`,
-      `thumbnail_pyramids 0`, `unmapped 0`, `deleted 1` — are a dated one-off
-      measurement on a copy of the `Auto (3840px)` render, held by no test, which
-      is the standing §5.4 had when its claim went false. The README cites §5.11
-      only for the mechanism — a discard takes the companion too — and never for a
-      number. A fourth evidence family (`LRSALVAGE_DISCARD_*`, a `real-discard`
-      gate) needs a fresh copy of that cache and a Lightroom session; that is a
-      slice, and it is [#86](https://github.com/marcd35/lrsalvage/issues/86) in
-      `vNext`, not something this release claims to have done.
+      Audited 2026-11-17: the table's seven rows name nine fixture rows, and each
+      of those exists exactly once — `M3`, `M4`, `X1`, `X2` and `M10f` labelled
+      `unmeasured §5.5`; `M10c` `verified §5.10`; `M13` "verified §5.10 for the
+      segments; synthetic for the payload's own orientation"; and `M10d`, `M10e`
+      `synthetic`. Five of the nine read `unmeasured`, and the paragraph above the
+      table said all of them did — it now states the split.
+      **§5.11 is the one published claim whose label rests on no gate.** It reads
+      `VERIFIED` for a dated one-off measurement on a copy of the `Auto (3840px)`
+      render, and no test holds it: the standing §5.4 had when its claim went
+      false. Its numbers live in §5.11 and nowhere else — the README cites that
+      section for the mechanism, that a discard takes the companion too, and
+      never for a count. A fourth evidence family (`LRSALVAGE_DISCARD_*`, a
+      `real-discard` gate) needs a fresh copy of that cache and a Lightroom
+      session; that is a slice, and it is
+      [#86](https://github.com/marcd35/lrsalvage/issues/86) in `vNext`, not
+      something this release claims to have done.
 - [ ] [#70](https://github.com/marcd35/lrsalvage/issues/70)'s discarded-cache
-      fixture row is merged — PR 87, row `M10h` — so the state a Lightroom discard
-      leaves is pinned by the reader rather than by prose. Independent of the five
-      slices; it only has to land before the tag.
+      fixture row is merged — PR 87, which adds row `M10h` — so the state a
+      Lightroom discard leaves is pinned by the reader rather than by prose.
+      Independent of the five slices; it only has to land before the tag.
 
 Artifact — what a stranger runs:
 
 - [x] `0.2.0` in the workspace, and `--version`, the `Software` marker and both
       schema strings agree — asserted by a test, not eyeballed.
 - [x] `CHANGELOG.md`'s 0.2.0 entry accounts for every user-visible change since
-      `v0.1.0`, each naming its ADR. Walked 2026-11-17 over the 51 commits
-      between the tag and the release, fourteen of which touched `crates/*/src`,
-      and each maps to a line: the modern reader and the index keying it fixed
+      `v0.1.0`, each naming its ADR. Walked 2026-11-17 over `v0.1.0..046729b` —
+      the whole range from the tag to the branch point, fourteen of whose commits
+      touched `crates/*/src` — and each maps to a line: the modern reader and the
+      index keying it fixed
       (ADRs 0004, 0005), the degraded mode (0006), `--report` (0007), a payload's
       own metadata and the `Software` marker (0003), the second pyramid (0008),
       the rescue (0009), plus the eight new `--json` fields and the two new
@@ -190,16 +192,19 @@ Frozen surface — what ADR 0010 promises:
 Docs — what a reader trusts:
 
 - [x] `format-notes` retirements landed; no dead `TODO` left behind.
-      Audited 2026-11-17, all thirteen. The one #89 called dead was not: ADR
+      Audited 2026-11-17: twelve live `TODO`s, beside the legend that defines the
+      label and one prose reference to it. The one #89 called dead was not: ADR
       0005's `(§5.7 TODO)` pointed at a `TODO` bullet living inside a section
       whose heading reads **VERIFIED**. That is a real defect and the opposite
       one, so the claim moved into §5.5's unmeasured list and the ADR cites it
       there. The tombstone `TODO` was narrowed by §5.11, which measured one
-      deletion that takes the rows and their payloads together. The rest are
-      live and name what they wait for: the `AgHg` `version`/`kind` values (one
+      deletion that takes the rows and their payloads together. The rest are live
+      and name what they wait for: the `AgHg` `version`/`kind` values (one
       published hexdump), padding contents, a `formatVersion` other than `3`, the
-      three unexplained count gaps in §5.4, the `.lrcat-data` shard split, and
-      which orientation column wins when the two disagree.
+      three unexplained count gaps in §5.4, the `.lrcat-data` shard split, which
+      orientation column wins when the two disagree, an orientation code outside
+      the four measured ones, and the source table's thread URLs, which were not
+      captured.
 - [x] `CONTEXT.md` matches the vocabulary the release actually uses. Audited
       2026-11-17: the **Preview layout** entry named the five cases in prose and
       none of the words a script reads, so it now names all five — `legacy`,
@@ -228,6 +233,12 @@ Docs — what a reader trusts:
 
 ## Making the tag
 
+The tag and everything under it are a maintainer's acts, each on its own
+go-ahead: the agent prepares the command, runs every gate it can run first, and
+verifies the outcome afterwards. Nothing under **After the tag** happens without
+its own separate go-ahead — one approval for "the release" is not one for an
+irreversible upload.
+
 - [ ] `CHANGELOG.md`'s 0.2.0 section is the release body, verbatim.
 - [ ] The tag is `v0.2.0`, annotated, on the commit that merged the last of
       slices 1–5 or PR 87, whichever lands last. That tree is the one published
@@ -240,9 +251,12 @@ Docs — what a reader trusts:
 
 ## After the tag (irreversible)
 
-The tree is frozen here. Everything below is an external act that another commit
-cannot walk back, so each one is run deliberately, one at a time, and the README
-and the changelog follow them rather than leading.
+**The publish is the frozen-tree part of this list.** Everything under *Publish*
+is an external act that another commit cannot walk back, so each is run
+deliberately, one at a time, on its own go-ahead, and the README and the changelog
+follow them rather than leading. The docs group after it writes and merges commits
+like any other — it is here because it can only be written once the publish has
+said what is true, not because it is irreversible.
 
 Publish — the artifact's second route, and the one no dry run can prove:
 
@@ -280,10 +294,12 @@ Publish — the artifact's second route, and the one no dry run can prove:
 
 Docs and the record, once the publish has said what is true:
 
-- [ ] The README's two "Neither name is on crates.io yet" sentences — the one
-      under `### cargo install` and the one in the binstall paragraph — are
-      replaced in a pull request merged after the publish, so the page never
-      describes a route that does not exist in either direction.
+- [ ] The README's two crates.io sentences are corrected in a pull request merged
+      after the publish: "Neither name is on crates.io yet ([#54]), so this route
+      is not open today", under `### cargo install`, and the binstall paragraph's
+      "both of its forms wait on something 0.2 does not have yet", whose "starts
+      working at the publish" is the other half of the same claim. The page must
+      never describe a route that does not exist in either direction.
 - [ ] `rust-version` and `rust-toolchain.toml` are re-checked against the
       dependency tree, so the next release does not inherit a stale claim the way
       0.1 did.
