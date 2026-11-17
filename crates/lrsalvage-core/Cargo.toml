@@ -7,6 +7,45 @@ repository.workspace = true
 rust-version.workspace = true
 description = "Salvage JPEG previews from Adobe Lightroom Classic catalogs"
 
+# The crate page is what a reader meets before the API docs, so each field below
+# is a claim with a reader behind it rather than a blank the registry fills.
+#   readme        — the page itself. Cargo cannot point at a file outside the
+#                   package, so the crate root carries its own short copy, and
+#                   that copy repeats no number from `docs/format-notes.md`.
+#   keywords      — what someone recovering a catalog searches for; crates.io
+#                   takes at most five, ASCII, 20 characters each.
+#   categories    — slugs from the registry's own category list, so the crate is
+#                   filed where those readers browse (`multimedia::images` is the
+#                   images subcategory of `multimedia`).
+#   documentation — the docs.rs build of this crate, which `cargo doc` already
+#                   gates, so the page links the API rather than describing it.
+#   homepage      — the repository, where the README, the format notes and the
+#                   ADRs this page points at live. It repeats `repository`, so
+#                   Cargo's `redundant_homepage` lint warns on every build while
+#                   the two are equal; that warning is this field's known cost,
+#                   not an oversight, because the crate page is read on its own.
+readme = "README.md"
+keywords = ["lightroom", "previews", "recovery", "catalog", "jpeg"]
+categories = ["multimedia::images", "filesystem", "database"]
+documentation = "https://docs.rs/lrsalvage-core"
+homepage = "https://github.com/marcd35/lrsalvage"
+
+# The test tree a tarball cannot run. `matrix.rs` and `pipeline.rs` import
+# `lrsalvage-fixtures`, a `path`-only dev-dependency the published manifest drops,
+# and `spec_graph.rs` walks `../../specs`, outside the package root, so a tarball
+# carrying them fails `cargo test` for an auditor instead of proving anything.
+# `properties.rs` needs neither and travels.
+#
+# This list is not the whole story: five `#[cfg(test)]` sites inside `src/exif.rs`,
+# `src/extract.rs` and `src/plan.rs` call the same fixtures crate, and a manifest
+# cannot drop code inside a source file. Measured 2026-11-17 by unpacking
+# `target/package/lrsalvage-core-0.2.0.crate` outside the repository and running
+# `cargo test`: five `unresolved module lrsalvage_fixtures` errors, no test run.
+# Making that green needs the fixture-dependent unit tests moved out of `src/` or
+# `lrsalvage-fixtures` published (ADR 0011 D6 refuses the second), so the published
+# crate is a library whose own suite is a repository gate, not a crate one.
+exclude = ["tests/matrix.rs", "tests/pipeline.rs", "tests/spec_graph.rs"]
+
 [dependencies]
 rusqlite.workspace = true
 tempfile.workspace = true
