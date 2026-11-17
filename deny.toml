@@ -17,8 +17,9 @@ yanked = "warn"
 # `extract::set_capture_time`: parse a catalog timestamp, interpret it in the
 # machine's local zone, and drop the mtime rather than guess when that local
 # time is ambiguous. Ignoring the advisory is a dated decision rather than a
-# preference — 0.2 ships with it, and the replacement is tracked as its own
-# `vNext` issue — because the alternative leaves a release gate red for a reason
+# preference — 0.2 ships with it, and the replacement is tracked as
+# [#101](https://github.com/marcd35/lrsalvage/issues/101) — because the
+# alternative leaves a release gate red for a reason
 # that depends on when the advisory database was last fetched, not on our code.
 ignore = ["RUSTSEC-2026-0543"]
 

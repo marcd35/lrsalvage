@@ -405,7 +405,7 @@ names which command each flag belongs to:
 | `--json` | `scan` only: emit one machine-readable object instead of the table. |
 | `--report <file>` | `scan` only: write the path-free verification report to this file. Written whenever the flag is given and a plan exists, exit `3` included; its parent must not be inside the catalog, the cache or `.lrcat-data`; an existing name takes the next free number (`scan (2).json`). |
 | `--dry-run` | Do everything except write files, report files included. |
-| `--force` | Replace a destination file that does not verify as ours. A file is ours only when it carries the `Software` marker `lrsalvage <version>` (the prefix is what is compared, not the version), is a complete JPEG, and its dimensions match the planned item. Anything else — a same-size file another tool wrote, or one of our own outputs from before the marker existed — is reported as failed and left byte-identical. It never replaces a file that *does* verify as ours; see *Resumable* for the one case where that matters. |
+| `--force` | Replace a destination file that does not verify as ours. A file is ours only when it carries the `Software` marker `lrsalvage <version>` (the prefix is what is compared, not the version), is a complete JPEG, and its dimensions match the planned item. Anything else — a same-size file another tool wrote, or one of our own outputs from before the marker existed — is reported as failed and left byte-identical. In a metadata-bearing run it never replaces a file that *does* verify as ours; a `--no-metadata` run verifies nothing — its output carries no proof of authorship — so there `--force` replaces whatever it finds. See *Resumable* for the case where that matters. |
 | `--no-metadata` | Do not add any metadata to the recovered JPEGs: no EXIF (so no orientation or rating), no rating XMP packet, no ICC profile, and no marker. Such output carries no proof of authorship, so a later run reports every destination as not a verified extraction and leaves it alone unless `--force` is given. |
 | `--no-timestamps` | Leave the file modification time at the time of writing, instead of setting it to the capture time. |
 
@@ -498,10 +498,11 @@ The catalog is the only copy of the map. It is treated as read-only evidence:
   One blind spot comes with it: identity is the marker, the JPEG and the size,
   not the photograph. Two catalogs recovered into one destination can collide,
   and a different image that derives the same output name at the same dimensions
-  is skipped as already recovered — and `--force` will not replace it either,
-  because `--force` only replaces a file that does *not* verify as ours. Keep one
-  destination per catalog, and delete the collided file if you need the other
-  image.
+  is skipped as already recovered — and in a metadata-bearing run `--force` will
+  not replace it either, because `--force` only replaces a file that does *not*
+  verify as ours. A `--no-metadata` run cannot make that distinction and will
+  overwrite it; see the `--force` row. Keep one destination per catalog, and
+  delete the collided file if you need the other image.
 
 ## What the statuses mean
 

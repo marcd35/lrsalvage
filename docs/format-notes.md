@@ -1153,9 +1153,10 @@ cache-size event, not a loss: the largest surviving level in this cache was
 claimed pyramid holding only 320, 960 and 1920 px, typed `bigThumbnail`, with no
 companion, and pins what the reader reports in it: `recovered` at the surviving
 1920 × 1280 level, tier `large`, `quality bigThumbnail` on a **claimed** pyramid,
-`unmapped 0`, `thumbnail_pyramids 0`, `missing_payload 0` and `below_floor 0`. It
-is a synthetic composition, so it pins the reader and not Adobe: this section
-stays the record that Lightroom writes the state, and the row's label says so.
+and the same four counters the run above reports, at zero. It is a synthetic
+composition of a state this section measured, and its label says both: the reader
+is what the row pins, and this section stays the record that Lightroom writes the
+state.
 
 **What neither measures — TODO.** What a discard does to the pyramid row's own
 `croppedWidth` and `croppedHeight`. The level set before and after is in the
