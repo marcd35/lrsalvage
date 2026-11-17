@@ -73,6 +73,10 @@ struct ScanArgs {
     /// Ignore previews below this long edge.
     #[arg(long, default_value_t = 640)]
     min_long_edge: u32,
+    /// Write the largest preview at or below this long edge, not the largest
+    /// present. `0` disables the cap.
+    #[arg(long, default_value_t = 0)]
+    max_long_edge: u32,
     /// Inspect every level, not only the best one.
     #[arg(long)]
     all_levels: bool,
@@ -95,8 +99,13 @@ struct ExtractArgs {
     /// Do everything except write files.
     #[arg(long)]
     dry_run: bool,
+    /// Ignore previews below this long edge.
     #[arg(long, default_value_t = 640)]
     min_long_edge: u32,
+    /// Write the largest preview at or below this long edge, not the largest
+    /// present. `0` disables the cap.
+    #[arg(long, default_value_t = 0)]
+    max_long_edge: u32,
     #[arg(long)]
     all_levels: bool,
     /// Also include images whose original file is still present.
@@ -235,6 +244,7 @@ fn require_cache_directory(previews: &Path) -> Result<()> {
 fn scan(args: ScanArgs) -> Result<u8> {
     let options = Options {
         min_long_edge: args.min_long_edge,
+        max_long_edge: args.max_long_edge,
         all_levels: args.all_levels,
         include_present: args.include_present,
     };
@@ -249,7 +259,7 @@ fn scan(args: ScanArgs) -> Result<u8> {
     if args.json {
         println!("{}", scan_json(&plan, &args.catalog, &args.previews));
     } else {
-        print!("{}", report::summary_with_floor(&plan, args.min_long_edge));
+        print!("{}", report::summary(&plan, &options));
     }
     index_hint(&plan, index_problem.as_ref(), &args.previews);
     layout_hint(&plan);
@@ -382,6 +392,7 @@ fn scan_json(plan: &Plan, catalog: &Path, previews: &Path) -> String {
         "failed": stats.failed,
         "original_present": stats.original_present,
         "below_floor": stats.below_floor,
+        "above_cap": stats.above_cap,
         "superseded": stats.superseded,
         "deleted": stats.deleted,
         "unrecognised": stats.unrecognised,
@@ -395,6 +406,7 @@ fn scan_json(plan: &Plan, catalog: &Path, previews: &Path) -> String {
 fn extract(args: ExtractArgs) -> Result<u8> {
     let options = Options {
         min_long_edge: args.min_long_edge,
+        max_long_edge: args.max_long_edge,
         all_levels: args.all_levels,
         include_present: args.include_present,
     };
@@ -418,7 +430,7 @@ fn extract(args: ExtractArgs) -> Result<u8> {
         &args.out,
         args.verify_source,
     )?;
-    print!("{}", report::summary_with_floor(&plan, args.min_long_edge));
+    print!("{}", report::summary(&plan, &options));
     index_hint(&plan, index_problem.as_ref(), &args.previews);
     layout_hint(&plan);
 

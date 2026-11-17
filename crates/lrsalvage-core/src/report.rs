@@ -19,17 +19,19 @@ use crate::{jpeg, lrprev};
 /// The tag a consumer reads to know which facts a verification report holds.
 const VERIFICATION_SCHEMA: &str = "lrsalvage.verification";
 
-/// One-line-per-status summary for the terminal, using the default 640 px floor.
-pub fn summary(plan: &Plan) -> String {
-    summary_with_floor(plan, 640)
-}
-
-/// The same summary, naming the floor the caller actually applied.
+/// One-line-per-status summary for the terminal, naming the bounds the run
+/// actually applied.
 ///
 /// One leading line names the cache's layout and nothing else; the cache's own
-/// counts follow the image counts, each only when it is non-zero.
-pub fn summary_with_floor(plan: &Plan, floor: u32) -> String {
+/// counts follow the image counts, each only when it is non-zero. The options
+/// come from the caller for the reason `plan` gives — a plan records what the run
+/// decided, not the knobs that shaped it — and a summary that named a floor or a
+/// cap nobody applied would be a lie about the run
+/// (`adr-0011-a-cap-demotes-the-level`).
+pub fn summary(plan: &Plan, options: &Options) -> String {
     let stats = &plan.stats;
+    let floor = options.min_long_edge;
+    let cap = options.max_long_edge;
 
     // label, count, optional trailing note
     let mut rows: Vec<(String, u64, Option<String>)> = Vec::with_capacity(16);
@@ -63,6 +65,13 @@ pub fn summary_with_floor(plan: &Plan, floor: u32) -> String {
             format!("below floor ({floor}px)"),
             stats.below_floor,
             Some("not written unless --min-long-edge 0".to_string()),
+        ));
+    }
+    if stats.above_cap > 0 {
+        rows.push((
+            format!("above cap ({cap}px)"),
+            stats.above_cap,
+            Some("not written unless --max-long-edge 0".to_string()),
         ));
     }
     for (label, count) in [
@@ -536,6 +545,7 @@ impl Verification<'_> {
             "snapshot_sha256": self.digests.map(SourceDigests::snapshot),
             "options": {
                 "min_long_edge": self.options.min_long_edge,
+                "max_long_edge": self.options.max_long_edge,
                 "all_levels": self.options.all_levels,
                 "include_present": self.options.include_present,
                 "verify_source": self.digests.is_some(),
@@ -594,6 +604,7 @@ fn verification_stats(stats: &Stats) -> Value {
         "failed": stats.failed,
         "original_present": stats.original_present,
         "below_floor": stats.below_floor,
+        "above_cap": stats.above_cap,
         "bytes": stats.bytes,
         "levels": stats.levels,
         "selected_items": stats.selected_items,
@@ -940,13 +951,16 @@ mod tests {
         tiers.insert("full", 53);
         tiers.insert("standard", 2696);
 
-        let text = summary(&plan_with(Stats {
-            images: 3416,
-            recoverable: 3057,
-            bytes: 1_143_100_000,
-            tiers,
-            ..Stats::default()
-        }));
+        let text = summary(
+            &plan_with(Stats {
+                images: 3416,
+                recoverable: 3057,
+                bytes: 1_143_100_000,
+                tiers,
+                ..Stats::default()
+            }),
+            &Options::default(),
+        );
 
         assert!(text.contains("catalog images"), "{text}");
         assert!(text.contains("recovered"), "{text}");
@@ -985,7 +999,7 @@ mod tests {
         });
         plan.cache.thumbnail_pyramids = 10;
 
-        let text = summary(&plan);
+        let text = summary(&plan, &Options::default());
         assert!(text.contains("thumbnail pyramids"), "{text}");
         assert!(
             text.contains("a render's second pyramid; no image claims it"),
@@ -998,24 +1012,36 @@ mod tests {
     }
 
     #[test]
-    fn summary_names_the_floor_it_was_given() {
+    fn summary_names_the_bounds_it_was_given() {
         let stats = Stats {
             images: 1,
             recoverable: 1,
             below_floor: 2,
+            above_cap: 3,
             ..Stats::default()
         };
 
-        let text = summary_with_floor(&plan_with(stats), 1024);
+        let text = summary(
+            &plan_with(stats),
+            &Options {
+                min_long_edge: 1024,
+                max_long_edge: 1920,
+                ..Options::default()
+            },
+        );
         assert!(text.contains("below floor (1024px)"), "{text}");
+        assert!(text.contains("above cap (1920px)"), "{text}");
         assert!(!text.contains("640px"), "{text}");
 
-        let default = summary(&plan_with(Stats {
-            images: 1,
-            recoverable: 1,
-            below_floor: 2,
-            ..Stats::default()
-        }));
+        let default = summary(
+            &plan_with(Stats {
+                images: 1,
+                recoverable: 1,
+                below_floor: 2,
+                ..Stats::default()
+            }),
+            &Options::default(),
+        );
         assert!(default.contains("below floor (640px)"), "{default}");
     }
 
@@ -1036,7 +1062,7 @@ mod tests {
             },
             ..Plan::default()
         };
-        let text = summary(&plan);
+        let text = summary(&plan, &Options::default());
 
         assert!(
             text.starts_with(
@@ -1068,7 +1094,7 @@ recovered"
         );
 
         // A zero cache count is omitted, exactly like a zero image count.
-        let quiet = summary(&Plan::default());
+        let quiet = summary(&Plan::default(), &Options::default());
         for label in ["superseded", "deleted", "unrecognised"] {
             assert!(
                 !quiet.contains(label),
@@ -1087,7 +1113,7 @@ recovered"
 
     #[test]
     fn empty_plan_still_reports_a_recovered_row() {
-        let text = summary(&plan_with(Stats::default()));
+        let text = summary(&plan_with(Stats::default()), &Options::default());
         assert!(text.contains("recovered"), "{text}");
         assert!(text.contains("0.0 MiB"), "{text}");
     }
@@ -1598,7 +1624,8 @@ recovered"
     }
 
     /// The frozen `stats` set, sorted so the assertion needs no helper.
-    const FROZEN_STATS: [&str; 17] = [
+    const FROZEN_STATS: [&str; 18] = [
+        "above_cap",
         "below_floor",
         "bytes",
         "deleted",
@@ -1638,6 +1665,7 @@ recovered"
                 failed: 1,
                 original_present: 0,
                 below_floor: 1,
+                above_cap: 2,
                 bytes: 1234,
                 levels: 6,
                 selected_items: 3,
@@ -1667,6 +1695,7 @@ recovered"
         let path = dir.path().join("scan.json");
         let options = Options {
             min_long_edge: 800,
+            max_long_edge: 1920,
             all_levels: true,
             include_present: true,
         };
@@ -1713,6 +1742,7 @@ recovered"
         assert_eq!(report["options"]["verify_source"], false);
 
         assert_eq!(report["options"]["min_long_edge"], 800);
+        assert_eq!(report["options"]["max_long_edge"], 1920);
         assert_eq!(report["options"]["all_levels"], true);
         assert_eq!(report["options"]["include_present"], true);
 

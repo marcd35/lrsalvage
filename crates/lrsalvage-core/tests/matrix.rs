@@ -1883,3 +1883,210 @@ fn an_unreadable_index_is_an_empty_one() {
     assert_eq!(plan.stats.unmapped, 1);
     assert_eq!(plan.cache.layout, Layout::Modern);
 }
+
+// ---------------------------------------------------------------------------
+// M15–M17, L7: `--max-long-edge`
+//
+// The cap is the floor's counterpart, so its rows read the same way: a bound
+// that chooses a level, never a status. ADR 0011 is the reasoning.
+// ---------------------------------------------------------------------------
+
+/// M15–M17's pyramid: four level files, one row each, from 320 to 3840 — the
+/// doubling ladder §5.7 measured a 1:1 build writing.
+fn capped() -> Vault {
+    let pyramid = uuid(31);
+    let mut vault = Vault::modern()
+        .image(ImageRow::new(31, "IMG_0031").cache(&pyramid))
+        .pyramid(
+            PyramidRow::new(&pyramid)
+                .profile("sRGB")
+                .level(320, 213)
+                .level(960, 640)
+                .level(1920, 1280)
+                .level(3840, 2560),
+        );
+    for (width, height) in [(320, 213), (960, 640), (1920, 1280), (3840, 2560)] {
+        vault = vault.level_file(Level::sized(&pyramid, width, height));
+    }
+    vault.write()
+}
+
+#[test]
+fn m15_a_cap_chooses_the_largest_level_at_or_below_it() {
+    let vault = capped();
+    let plan = vault.plan(&Options {
+        max_long_edge: 1920,
+        ..Options::default()
+    });
+
+    let m15 = item_for(&plan, 31);
+    assert_eq!(m15.status, Status::Recoverable);
+    assert_eq!(
+        (m15.width, m15.height),
+        (Some(1920), Some(1280)),
+        "the winner is the 1920 level, not the 3840 present beside it"
+    );
+    assert!(m15.selected, "a level that clears the cap is written");
+    assert_eq!(
+        m15.declared,
+        Some((1920, 1280)),
+        "the chosen level is judged against its own row"
+    );
+    let expected = level_path(vault.previews(), &uuid(31), 1920);
+    assert_eq!(
+        slashed(m15.payload.as_ref().expect("payload").path()),
+        slashed(&expected)
+    );
+    assert_eq!(
+        plan.stats.above_cap, 0,
+        "without `--all-levels` the levels above the cap are not items, \
+         exactly as levels below the floor are not"
+    );
+    assert_eq!(plan.stats.levels, 1);
+
+    // What the cap chose owns the image's plain name.
+    let outcomes = run_extract(&vault, &plan);
+    assert_eq!(outcomes.len(), 1);
+    assert_eq!(
+        jpeg::dimensions(&fs::read(&outcomes[0].output).expect("the written file"))
+            .expect("a readable frame"),
+        (1920, 1280)
+    );
+}
+
+#[test]
+fn m16_a_cap_no_level_clears_writes_nothing_and_is_not_a_failure() {
+    let pyramid = uuid(32);
+    let vault = Vault::modern()
+        .image(ImageRow::new(32, "IMG_0032").cache(&pyramid))
+        .pyramid(PyramidRow::new(&pyramid).level(3840, 2560))
+        .level_file(Level::sized(&pyramid, 3840, 2560))
+        .write();
+
+    let plan = vault.plan(&Options {
+        max_long_edge: 1920,
+        ..Options::default()
+    });
+
+    let m16 = item_for(&plan, 32);
+    assert_eq!(
+        m16.status,
+        Status::Recoverable,
+        "a cap leaves an image unwritten, never failed: the payload is a good photograph"
+    );
+    assert_eq!((m16.width, m16.height), (Some(3840), Some(2560)));
+    assert_eq!(m16.tier, Some(Tier::Large));
+    assert!(
+        !m16.selected,
+        "above the cap: counted and named, not written"
+    );
+    assert_eq!(plan.stats.above_cap, 1);
+    assert_eq!(plan.stats.failed, 0);
+    assert_eq!(plan.selected_images(), 0);
+    assert!(
+        run_extract(&vault, &plan).is_empty(),
+        "an above-cap item writes no JPEG"
+    );
+}
+
+#[test]
+fn m17_all_levels_bounds_both_ends_of_the_ladder() {
+    let vault = capped();
+    let plan = vault.plan(&Options {
+        min_long_edge: 640,
+        max_long_edge: 1920,
+        all_levels: true,
+        ..Options::default()
+    });
+
+    let items = items_for(&plan, 31);
+    assert_eq!(
+        items.len(),
+        4,
+        "every level is an item under `--all-levels`"
+    );
+    assert_eq!(
+        plan.stats.levels, 4,
+        "and `levels` still counts levels, not images"
+    );
+    assert_eq!(plan.stats.below_floor, 1, "the 320 is below the floor");
+    assert_eq!(plan.stats.above_cap, 1, "the 3840 is above the cap");
+    assert_eq!(plan.stats.selected_items, 2, "960 and 1920 are written");
+
+    let mut written: Vec<u32> = items
+        .iter()
+        .filter(|item| item.selected)
+        .filter_map(|item| item.width)
+        .collect();
+    written.sort_unstable();
+    assert_eq!(written, vec![960, 1920]);
+
+    // The plain name belongs to the level the cap chose; the smaller survivor
+    // carries the size suffix `--all-levels` gives an extra level.
+    let plain: Vec<u32> = items
+        .iter()
+        .filter(|item| {
+            item.output
+                .as_ref()
+                .and_then(|path| path.file_name())
+                .is_some_and(|name| name.to_string_lossy().starts_with("IMG_0031."))
+        })
+        .filter_map(|item| item.width)
+        .collect();
+    assert_eq!(plain, vec![1920], "`IMG_0031.jpg` is the cap's choice");
+    let suffixed: Vec<String> = items
+        .iter()
+        .filter(|item| {
+            item.output
+                .as_ref()
+                .and_then(|path| path.file_name())
+                .is_some_and(|name| name.to_string_lossy().contains(" - "))
+        })
+        .filter_map(|item| item.output.as_ref())
+        .map(|path| path.file_name().unwrap().to_string_lossy().into_owned())
+        .collect();
+    assert!(
+        suffixed.contains(&"IMG_0031 - 960x640.jpg".to_string()),
+        "{suffixed:?}"
+    );
+}
+
+#[test]
+fn l7_a_cap_ranks_a_containers_decoded_levels() {
+    let pyramid = uuid(40);
+    let vault = Vault::legacy()
+        .image(ImageRow::new(40, "IMG_0040").cache(&pyramid))
+        .pyramid(
+            PyramidRow::new(&pyramid)
+                .level(101, 68)
+                .level(808, 539)
+                .level(1616, 1077),
+        )
+        .container(&[
+            Level::sized(&pyramid, 101, 68),
+            Level::sized(&pyramid, 808, 539),
+            Level::sized(&pyramid, 1616, 1077),
+        ])
+        .write();
+
+    let plan = vault.plan(&Options {
+        max_long_edge: 1000,
+        ..Options::default()
+    });
+
+    let l7 = item_for(&plan, 40);
+    assert_eq!(l7.status, Status::Recoverable);
+    assert_eq!(
+        (l7.width, l7.height),
+        (Some(808), Some(539)),
+        "the container is ranked by decoded area and the cap picks the 808 chunk"
+    );
+    assert!(l7.selected);
+    let outcomes = run_extract(&vault, &plan);
+    assert_eq!(outcomes.len(), 1);
+    assert_eq!(
+        jpeg::dimensions(&fs::read(&outcomes[0].output).expect("the written file"))
+            .expect("a readable frame"),
+        (808, 539)
+    );
+}
