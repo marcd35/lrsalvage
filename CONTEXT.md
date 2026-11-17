@@ -39,7 +39,7 @@ A second, smaller pyramid a render keeps beside the preview one — typically on
 small level, and claimed by no cache entry. It is part of the render, not an
 orphan: nothing was lost to produce it. The word *companion* names it in relation
 to the image's preview pyramid; it is not a second name for the object. It is
-disposable: a prune removes it and Lightroom rebuilds it when the image is next
+disposable: a discard removes it, and Lightroom rebuilds it when the image is next
 shown.
 _Avoid_: thumbnail cache, lose pyramid, companion pyramid
 
@@ -90,11 +90,25 @@ _Avoid_: row, mapping, index entry
 
 **Prune**:
 Lightroom removing the payload bytes of levels it no longer keeps, leaving the
-cache's index rows behind as the only claim that those levels existed. Three
+cache's index rows behind as the only claim that those levels existed. Two
 triggers do it, and each has its own scope: the background cache-limit purge
-(oldest first, thumbnails and levels below the standard size exempt), the timed
-1:1 discard, and the explicit discard command over a selection.
-_Avoid_: purge, discard, cleanup, trim — each names a trigger, never the act
+(oldest first, thumbnails and levels below the standard size exempt) and the
+timed 1:1 discard.
+_Avoid_: purge, cleanup, trim — each names a trigger, never the act — and avoid
+_prune_ for a discard, which deletes the rows too.
+
+**Discard**:
+The explicit command over a selection — Lightroom's *Discard Standard and 1:1
+Previews*. It removes each preview pyramid's standard levels **and their rows**,
+rewrites that pyramid's recorded quality from `standard` to `bigThumbnail`, and
+takes its render companion with it. `quality` therefore describes the levels a
+pyramid currently holds rather than the build that wrote it. A pyramid shrinks
+rather than emptying: levels below the standard size survive, so a claimed
+pyramid never ends with no file at all, and nothing is lost that could still be
+salvaged. It is not a prune, because a prune leaves the rows as the only record
+and a discard leaves none.
+_Avoid_: prune, purge, cleanup, trim — a discard deletes the claim, not only the
+bytes
 
 **Orphan payload**:
 A payload — or a whole pyramid of level files — that exists in the cache but is
