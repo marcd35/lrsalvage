@@ -46,8 +46,12 @@ wildcards = "deny"
 # `serde = "*"` still fails, because this option only forgives paths.
 allow-wildcard-paths = true
 # No async runtime, no TLS stack: this tool is a file reader, and both would be
-# pure attack surface.
+# pure attack surface. And no `chrono`, which RUSTSEC-2026-0543 leaves
+# unmaintained in every version: it left this tree in 0.3, and a transitive
+# dependency that pulls it back fails here rather than waiting for the advisory
+# feed to notice a crate nobody maintains.
 deny = [
+    { name = "chrono" },
     { name = "tokio" },
     { name = "openssl" },
     { name = "openssl-sys" },
