@@ -8,7 +8,11 @@ photos they point at are not there any more. Lightroom still has a rendered copy
 of each one in its preview cache, and this tool writes those copies out as
 ordinary JPEG files, with the catalog's metadata attached.
 
-Version 0.1. Early, and deliberately conservative: it would rather tell you it
+Version 0.2, the first release with something to download rather than a tree to
+build: [Install](#install) names all four routes. [The 0.2 release
+checklist](docs/release-0.2.md) is what the number covers, and
+[ADR 0010](docs/adr/0010-what-0-2-promises.md) is the surface list a script can
+lean on. Still early, and deliberately conservative: it would rather tell you it
 found nothing than hand you a folder of wrong images.
 
 ## Lightroom is not required
@@ -58,6 +62,126 @@ These are **previews**, not originals.
 
 If that is still worth having — and after a drive failure, it usually is — read
 on.
+
+## Install
+
+Four routes to the same `lrsalvage` binary: the platform archive for your
+machine, `cargo install` if you would rather have cargo build it, `cargo
+binstall` to fetch a prebuilt binary instead of building one, or a source build
+for a platform 0.2 ships no archive for. [Compatibility](#compatibility) says
+whether it reads your catalog at all, before you download anything.
+
+0.2 ships **no installer and no notarised bundle**. Both are decisions rather
+than gaps — [What this repository is not](#what-this-repository-is-not) has the
+cost behind each — so what follows is you unpacking an archive and putting the
+binary where you want it.
+
+### Release archives
+
+One archive per platform, attached to the release for the tag alongside
+`SHA256SUMS`:
+
+| Platform | Asset |
+|---|---|
+| Linux x64 (glibc 2.35 or newer) | `lrsalvage-x86_64-unknown-linux-gnu-v0.2.0.tgz` |
+| Windows x64 | `lrsalvage-x86_64-pc-windows-msvc-v0.2.0.zip` |
+| macOS, Apple Silicon only | `lrsalvage-aarch64-apple-darwin-v0.2.0.tgz` |
+| checksums for all three | `SHA256SUMS` |
+
+Those four assets are already on the
+[`v0.2.0-rc.1` pre-release](https://github.com/marcd35/lrsalvage/releases/tag/v0.2.0-rc.1)
+under that tag's spelling (`…-v0.2.0-rc.1.tgz`); at `v0.2.0` the same four carry
+`v0.2.0`, because the tag is the version in every asset name. What builds,
+proves and publishes them is
+[`.github/workflows/release.yml`](.github/workflows/release.yml) — its own step
+list is the description, and the cheapest proof it offers is that the archive you
+download was unpacked and run before it was attached. An archive holds the binary
+and both licence texts at its root, and nothing else.
+
+The `…-{target}-v{version}.{tgz|zip}` spelling is `cargo-binstall`'s own default
+template rather than a scheme invented here, which is what leaves the binstall
+route below open without a second upload.
+
+`SHA256SUMS` lists all three archives, so the checks below read the one line for
+the file you downloaded rather than checking the whole file.
+
+Linux — verify, unpack, run:
+
+```console
+grep lrsalvage-x86_64-unknown-linux-gnu-v0.2.0.tgz SHA256SUMS | sha256sum -c
+tar -xzf lrsalvage-x86_64-unknown-linux-gnu-v0.2.0.tgz
+./lrsalvage --version
+```
+
+macOS — the same, with the tool macOS ships in place of `sha256sum`'s name:
+
+```console
+grep lrsalvage-aarch64-apple-darwin-v0.2.0.tgz SHA256SUMS | shasum -a 256 -c
+tar -xzf lrsalvage-aarch64-apple-darwin-v0.2.0.tgz
+./lrsalvage --version
+```
+
+Windows, in PowerShell — compare the two hashes, which must be equal, then
+unpack with `Expand-Archive` (or right-click → Extract All):
+
+```powershell
+Select-String lrsalvage-x86_64-pc-windows-msvc-v0.2.0.zip SHA256SUMS
+(Get-FileHash lrsalvage-x86_64-pc-windows-msvc-v0.2.0.zip -Algorithm SHA256).Hash.ToLower()
+Expand-Archive lrsalvage-x86_64-pc-windows-msvc-v0.2.0.zip -DestinationPath .
+.\lrsalvage.exe --version
+```
+
+**macOS: one command before the first run.** The binary is unsigned and not
+notarised, so Gatekeeper quarantines a downloaded copy and refuses it. Clear the
+attribute once, on the copy you unpacked:
+
+```console
+xattr -d com.apple.quarantine ./lrsalvage
+```
+
+**macOS is Apple Silicon only.** There is one macOS archive and its target is
+`aarch64-apple-darwin`; on an Intel Mac, build from source (a few lines below) or
+use `cargo install`, which compiles for the machine it runs on.
+
+### cargo install
+
+```console
+cargo install lrsalvage-cli --version 0.2.0
+```
+
+The package is `lrsalvage-cli`; the binary it installs is `lrsalvage`, so the
+command you run afterwards is still `lrsalvage`. Neither name is on crates.io yet
+([#54](https://github.com/marcd35/lrsalvage/issues/54)), so this route is not
+open today — until that lands, unpack an archive or build from source.
+
+### cargo binstall
+
+[`cargo-binstall`](https://github.com/cargo-bins/cargo-binstall) downloads the
+platform archive instead of building it. It is a cargo subcommand you install
+once — `cargo install cargo-binstall` — and both of its forms wait on something
+0.2 does not have yet:
+
+```console
+cargo binstall lrsalvage-cli
+cargo binstall --git https://github.com/marcd35/lrsalvage lrsalvage-cli
+```
+
+The bare form resolves through the crates.io index, so it starts working at the
+publish. The `--git` form clones this tree and needs no registry entry, so it
+starts working at the tag instead. The dated attempt against `v0.2.0-rc.1` is in
+[the checklist](docs/release-0.2.md) rather than claimed here, and neither form
+changes the archives: they are already named to `cargo-binstall`'s own default
+template.
+
+### From source
+
+```console
+cargo build --release
+```
+
+This is the route for an Intel Mac, for a platform 0.2 ships no archive for, or
+for reading the code before trusting it. Output path and requirements are in
+[Building](#building).
 
 ## Compatibility
 
@@ -272,7 +396,7 @@ names which command each flag belongs to:
 | `--json` | `scan` only: emit one machine-readable object instead of the table. |
 | `--report <file>` | `scan` only: write the path-free verification report to this file. Written whenever the flag is given and a plan exists, exit `3` included; its parent must not be inside the catalog, the cache or `.lrcat-data`; an existing name takes the next free number (`scan (2).json`). |
 | `--dry-run` | Do everything except write files, report files included. |
-| `--force` | Replace a destination file that does not verify as ours. A file is ours only when it carries the `Software` marker `lrsalvage <version>`, is a complete JPEG, and its dimensions match the planned item. Anything else — a same-size file another tool wrote, or one of our own outputs from before the marker existed — is reported as failed and left byte-identical. |
+| `--force` | Replace a destination file that does not verify as ours. A file is ours only when it carries the `Software` marker `lrsalvage <version>` (the prefix is what is compared, not the version), is a complete JPEG, and its dimensions match the planned item. Anything else — a same-size file another tool wrote, or one of our own outputs from before the marker existed — is reported as failed and left byte-identical. |
 | `--no-metadata` | Do not add any metadata to the recovered JPEGs: no EXIF (so no orientation or rating), no rating XMP packet, no ICC profile, and no marker. Such output carries no proof of authorship, so a later run reports every destination as not a verified extraction and leaves it alone unless `--force` is given. |
 | `--no-timestamps` | Leave the file modification time at the time of writing, instead of setting it to the capture time. |
 
@@ -355,11 +479,13 @@ The catalog is the only copy of the map. It is treated as read-only evidence:
   a recovered one.
 - **Resumable.** Re-running `extract` skips an output only when it proves it is
   ours: it carries the `Software` marker `lrsalvage <version>`, is a complete
-  JPEG, and its dimensions match the planned item. A same-size file somebody else
-  wrote, or one written before the marker existed, is left byte-identical and
-  reported as failed; `--force` is the explicit way to replace it. Output written
-  with `--no-metadata` can never be proven ours, by design. Interrupting a run
-  costs nothing.
+  JPEG, and its dimensions match the planned item. What is compared is the
+  marker's `lrsalvage ` prefix, not the version inside it, so a later release
+  keeps the files an earlier 0.2 one wrote. A same-size file somebody else wrote,
+  or one written before the marker existed — anything a 0.1.0 run produced — is
+  left byte-identical and reported as failed; `--force` is the explicit way to
+  replace it. Output written with `--no-metadata` can never be proven ours, by
+  design. Interrupting a run costs nothing.
 
 ## What the statuses mean
 
@@ -538,17 +664,41 @@ instead: `lrsalvage-cli`'s `tests/readme.rs` checks the flag list and the
 
 ### What this repository is not
 
-`lrsalvage` is a command-line binary you build from this tree. Packaging it is a
-separate concern, and none of it lives here: there is no installer, no signed or
-notarised bundle, no auto-updater, no package-manager formula, and no release
-workflow — CI runs the gates and publishes nothing. Those are their own
-decisions with their own platform and provenance questions, and they are out of
-scope for the reader.
+`lrsalvage` is a command-line binary. This tree does release it: a `v*` tag runs
+[`.github/workflows/release.yml`](.github/workflows/release.yml), which is where
+the archive set, the `SHA256SUMS` file and the changelog-derived release body are
+described. The commit a tag is cut on is chosen by
+[the 0.2 checklist](docs/release-0.2.md), not by the tag itself.
 
-A graphical interface is separate in the same way. Reading, planning and writing
-live in `crates/lrsalvage-core` behind a library interface, so a future UI would
-drive that library rather than change it — but there is no UI today, and none is
-planned here. See the map at [issue #6](https://github.com/marcd35/lrsalvage/issues/6).
+What that release deliberately does not do. Each is a decision with a cost, and
+the cost is why it stays out:
+
+- **No installer.** You unpack an archive and put the binary where you want it.
+  Nothing writes a registry key, a `PATH` entry or an uninstall record, so an
+  install cannot leave a half-removed state behind. The cost: adding `lrsalvage`
+  to `PATH` is your step, and there is nothing for a non-technical user to click.
+- **No signing, no notarisation, no attestations.** The release's only integrity
+  claim is `SHA256SUMS`. The cost: a Mac download needs the one manual step
+  under [Install](#install) before it will run, and a Windows download carries no
+  publisher signature to show you. Signing is a provenance decision with an
+  account and a secret behind it — an Apple Developer ID, a certificate on a
+  runner — not a flag on the build.
+- **No auto-updater.** A new version is a new download, and the binary makes no
+  update check, so it never reaches the network at all. The cost: nobody tells
+  you a release happened.
+- **No package-manager formula.** No Homebrew cask, Scoop manifest or distro
+  package. Those routes carry their own maintainers and their own review, and a
+  formula pointing at an archive that changes shape is worse than no formula. The
+  cost: the archives, `cargo install`, `cargo binstall` and a source build are
+  the routes this release carries, and a distro user's usual command is not yet
+  one of them.
+
+A graphical interface is planned after 0.2 rather than ruled out
+([#68](https://github.com/marcd35/lrsalvage/issues/68)). It is separate in the way
+that matters for this tree: reading, planning and writing live in
+`crates/lrsalvage-core` behind a library interface, so a UI drives that library
+rather than changing it, and the surfaces [ADR 0010](docs/adr/0010-what-0-2-promises.md)
+freezes are the ones it inherits. There is no UI today.
 
 ## Licence
 
