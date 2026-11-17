@@ -327,9 +327,13 @@ measured here; a 14 or 15 catalog was never inspected, and §5.5 keeps that gap.
 | `FacePreviewCacheEntry` | image → face preview | |
 
 `DeletedPyramid` is interesting for salvage: it proves a preview once existed for
-a `(uuid, digest)`. Whether Lightroom also deletes the payload at the same time
-is **unverified**; if it does not, a deleted row plus a live orphan payload is a
-recoverable image. TODO: test by trashing a preview in a copy of a catalog.
+a `(uuid, digest)`. The one deletion measured here (§5.11) removes the rows and
+their payloads together and consumes tombstones rather than writing them, so a
+tombstone is evidence of a deletion event and never of a payload that survived
+it. Whether the background purge behaves the same way is **unverified**, and that
+is the case that matters: if it did not delete the payload, a deleted row beside
+a live orphan payload would be a recoverable image. TODO: test by trashing a
+preview in a copy of a catalog.
 
 What Lightroom uses `MotionPreview` and `FacePreview` for is **unverified**; only
 their columns were read. Neither holds a photograph of the kind we are salvaging.
@@ -764,13 +768,19 @@ closest and still not equal.
 **Not measured at all:** a cache with pruned levels or stale rows; a cache holding
 both `.lrprev` and modern payloads (this upgrade converted everything in place,
 so coexistence was not observed); any conversion from a catalog newer than
-`1200001`; and whether a render *rewrites* a pyramid it already holds — every
-render measured here was of an image the catalog had never seen.
+`1200001`; whether a render *rewrites* a pyramid it already holds — every render
+measured here was of an image the catalog had never seen; and the payload shape
+of `MotionPreview` and `FacePreview`, which the index holds here with no rows at
+all, so one carrying a payload is counted as an unmapped item on a shape nobody
+has measured.
 
 Every state above that a fixture *can* construct has a row in
-`specs/fixtures.md`. Those rows are labelled `unmeasured` — `unverified` for
-M13, which §5.10 has since measured in the field — because a fixture proves how
-the reader behaves in a state and never that Adobe produces it:
+`specs/fixtures.md`, and each row carries the label that says what it is worth:
+`unmeasured` for the five states §5.10 never produced in the field, `verified
+§5.10` where a render did produce it, and `synthetic` where the row is a variant
+of a measured shape rather than the shape itself. The label matters because a
+fixture proves how the reader behaves in a state and never that Adobe produces
+it:
 
 | Unmeasured state | Row that pins the reader | What the row cannot show |
 |---|---|---|
@@ -863,11 +873,12 @@ All 390 payloads of the upgraded cache were read (every file, not a sample) on
   tool, because each leaf's `_<n>` matched the long edge its own `SOF` declared,
   on every file in the cache. The histogram is a measurement, not a second
   reading of the name. §5.9 records that run in full.
-- **TODO**: `MotionPreview` and `FacePreview` (with their `Deleted*` and
-  `CacheEntry` siblings) exist in this store and hold 0 rows. No video or
-  face-preview cache has been inspected, so their modern payload shape is
-  **unverified**; until it is measured, a payload-shaped motion preview will be
-  counted as an orphan.
+- **The one shape this section does not cover.** `MotionPreview` and
+  `FacePreview` (with their `Deleted*` and `CacheEntry` siblings) exist in this
+  store and hold 0 rows, and no video or face-preview cache has been inspected,
+  so their modern payload shape is no part of what was read here. Until it is
+  measured, one that has the payload shape is counted as an unmapped item —
+  section 5.5 records the state as unmeasured.
 
 ### 5.8 Payloads that carry their own metadata — VERIFIED for a render
 

@@ -72,9 +72,11 @@ beside it, as the legacy layout stores them.
 _Avoid_: archive, bundle, lrprev file
 
 **Preview layout**:
-The way a cache arranges its payloads on disk: a legacy pyramid, one file per
-level, both at once, nothing at all, or something unrecognised. A property of the
-cache, not of an image.
+The way a cache arranges its payloads on disk. One word, one of five, and the tool
+publishes that word because a script reads it: **legacy** (containers only),
+**modern** (level files only), **mixed** (both, anywhere in the cache), **none**
+(an index and no payloads) or **unknown** (payload-like files that match no
+shape). A property of the cache, not of an image.
 _Avoid_: format, cache version, schema
 
 **Catalog format version**:
