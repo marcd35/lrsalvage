@@ -12,7 +12,8 @@ minor saying so here before one is removed, renamed or given a different meaning
 
 ## [0.2.0]
 
-0.2.0 is the first release a user can install rather than build —
+0.2.0 is the first release with archives a stranger can run rather than a tree
+to build —
 [ADR 0010](https://github.com/marcd35/lrsalvage/blob/main/docs/adr/0010-what-0-2-promises.md)
 calls 0.1.0 a tag on a tree — and it is `v0.1.0` plus the whole reader for the
 preview layout Lightroom Classic 13.3 and later writes. For a 0.1.0 user that
@@ -20,8 +21,8 @@ means the modern layout, five `layout` words, `--json`, `--report`, the cache
 counts and the companion rescue; for a new one, nothing here replaced anything.
 
 **The release changes nothing on top of the tree it ships.** 0.2.0 is a tag on
-today's tree, so the tree and the artifact are one: no status word, exit code,
-flag, field, column or output name differs between them, and the surfaces
+the tree it ships from, so the tree and the artifact are one: no status word, exit
+code, flag, field, column or output name differs between them, and the surfaces
 [ADR 0010](https://github.com/marcd35/lrsalvage/blob/main/docs/adr/0010-what-0-2-promises.md)
 freezes are the ones this artifact already has.
 
@@ -77,7 +78,9 @@ photograph (ADR 0003).
   with every name a `<uuid…>`, `<digest>` or `<longedge>` template, so a run can be
   handed to somebody else without publishing a path. It obeys the destination rule,
   takes the next free numbered name instead of overwriting, is written whenever the
-  flag is given and a plan exists, and never moves the exit code (ADR 0007).
+  flag is given and a plan exists, and never moves the exit code (ADR 0007). The
+  repository's verification report form asks for that file and what the run was
+  against, and for nothing else.
 - **Cache counts the run did not report before**: `superseded` pyramids held both
   ways, `deleted` missing-payload images the index has a `DeletedPyramid` row for,
   `unrecognised` payload-like files that match no shape, and `thumbnail_pyramids`,

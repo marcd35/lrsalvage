@@ -91,16 +91,23 @@ Artifact — what a stranger runs:
 
 - [x] `0.2.0` in the workspace, and `--version`, the `Software` marker and both
       schema strings agree — asserted by a test, not eyeballed.
-- [ ] `CHANGELOG.md`'s 0.2.0 entry accounts for every user-visible change since
-      `v0.1.0`, each naming its ADR. Slice 5, and the proof is a diff-level walk
-      of `v0.1.0..HEAD` recorded in this box — one line per user-visible change,
-      matched to the entry and the ADR it names, gaps fixed in the entry. Not a
-      test asserting ADR ids appear: that goes green on an entry which names the
-      right ADR and describes the wrong change, and the last two ADRs (0009's
-      rescue, 0010's contract) are both things a reader would notice. The walk
-      also fixes the entry's opening sentence, which promises "the first release a
-      user can install rather than build" while the crates are still unpublished
-      at the tag.
+- [x] `CHANGELOG.md`'s 0.2.0 entry accounts for every user-visible change since
+      `v0.1.0`, each naming its ADR. Walked 2026-11-17 over the 51 commits
+      between the tag and the release, fourteen of which touched `crates/*/src`,
+      and each maps to a line: the modern reader and the index keying it fixed
+      (ADRs 0004, 0005), the degraded mode (0006), `--report` (0007), a payload's
+      own metadata and the `Software` marker (0003), the second pyramid (0008),
+      the rescue (0009), plus the eight new `--json` fields and the two new
+      `report.csv` columns that started from a comparison against `v0.1.0`'s
+      README and `report.rs` rather than from memory. Two entries name a gate
+      instead of an ADR because no ADR governs them: the MSRV move to 1.89
+      (`scripts/check.sh msrv`) and the verification report form. Everything else
+      in the range is a gate, a spec, evidence or our own release docs, which
+      ship no user-visible surface.
+      Both defects the walk found are fixed rather than listed: the opening
+      sentence promised "the first release a user can install rather than build"
+      while the crates are still unpublished at the tag, and "a tag on today's
+      tree" would have outlived the day it was written.
 - [x] Three platform archives and `SHA256SUMS` attached to the release; archive
       names match `cargo-binstall`'s templates. Proven end to end at
       `v0.2.0-rc.1`: four assets, `sha256sum -c` green on the downloads, and the
