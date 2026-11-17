@@ -105,18 +105,26 @@ Artifact — what a stranger runs:
       names match `cargo-binstall`'s templates. Proven end to end at
       `v0.2.0-rc.1`: four assets, `sha256sum -c` green on the downloads, and the
       names resolving through binstalk's own default templates.
-- [ ] Both crates package, and the tarballs are what a publication would carry —
+- [x] Both crates package, and the tarballs are what a publication would carry —
       slice 4. No `version` on either `lrsalvage-fixtures` dev-dependency, because
       Cargo strips a dev-dependency only when it carries none and `cargo publish`
       otherwise refuses a package crates.io does not have. `LICENSE-MIT` and
       `LICENSE-APACHE` in each crate root: both manifests declare
       `MIT OR Apache-2.0`, the release workflow copies the two texts into every
       archive for exactly that reason, and cargo cannot reach a file outside the
-      package root. Proven by `cargo publish --dry-run -p lrsalvage-core` and by
-      `cargo package --list` showing the two texts. `lrsalvage-cli`'s dry run
-      cannot pass before `lrsalvage-core` is live — it resolves `0.2.0` through
-      the index — so `cargo package -p lrsalvage-cli` and its file list are the
-      proof there, and that gap is recorded rather than papered over.
+      package root.
+      Measured 2026-11-17: `cargo publish --dry-run -p lrsalvage-core` packaged,
+      compiled from `target/package/` and reached `aborting upload due to dry
+      run`; `cargo package --list` on both crates now lists `LICENSE-MIT` and
+      `LICENSE-APACHE`; the dry run printed **no** warning about the missing
+      texts before them, which is why the omission survived two releases.
+      **For `lrsalvage-cli` that file list is all the proof the tag can hold.**
+      `cargo package`, `cargo package --no-verify` and `cargo publish --dry-run`
+      all fail on it in the same way — `no matching package named
+      lrsalvage-core` — because the manifest's `lrsalvage-core 0.2.0` resolves
+      through the index. The cli's tarball is therefore built for the first time
+      after core is live, which is why **After the tag** runs a cli dry run
+      between the two publishes and why a cli failure there is fix-forward.
 - [x] The README's install commands ran verbatim against a published pre-release,
       for the two platforms verified here. Done 2026-11-17 against `v0.2.0-rc.1`
       for Linux and Windows: the Linux `grep … | sha256sum -c` and `tar -xzf`
@@ -229,9 +237,11 @@ Publish — the artifact's second route, and the one no dry run can prove:
 
 - [ ] `lrsalvage-core` then `lrsalvage-cli` on crates.io, from a clean checkout of
       `v0.2.0` rather than from a working tree: `cargo publish -p lrsalvage-core`,
-      then `cargo publish -p lrsalvage-cli`. The order is not a preference — the
+      then `cargo publish --dry-run -p lrsalvage-cli` — the first moment that
+      command can run, and the only build the cli tarball gets before it ships —
+      then `cargo publish -p lrsalvage-cli`. The order is not a preference: the
       cli resolves `lrsalvage-core 0.2.0` through the index, so it cannot go first
-      and could not be dry-run beforehand.
+      and nothing about it can be packaged beforehand.
       **Two stop rules, decided before the attempt rather than after it.**
       If core lands and the cli publish fails, the fix is forward: correct the
       tree and publish `lrsalvage-cli 0.2.0`, because an index carrying core and
