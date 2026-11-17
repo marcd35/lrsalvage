@@ -7,6 +7,43 @@ repository.workspace = true
 rust-version.workspace = true
 description = "CLI for salvaging Lightroom Classic previews"
 
+# The crate page is what a reader meets before the API docs, so each field below
+# is a claim with a reader behind it rather than a blank the registry fills.
+#   readme        — the page itself. Cargo cannot point at a file outside the
+#                   package, so the crate root carries its own short copy, and
+#                   that copy repeats no number from `docs/format-notes.md`.
+#   keywords      — what someone recovering a catalog searches for; crates.io
+#                   takes at most five, ASCII, 20 characters each.
+#   categories    — slugs from the registry's own category list, so the crate is
+#                   filed where those readers browse (`multimedia::images` is the
+#                   images subcategory of `multimedia`).
+#   documentation — the docs.rs build of this crate, which `cargo doc` already
+#                   gates, so the page links the API rather than describing it.
+#   homepage      — the repository, where the README, the format notes and the
+#                   ADRs this page points at live. It repeats `repository`, so
+#                   Cargo's `redundant_homepage` lint warns on every build while
+#                   the two are equal; that warning is this field's known cost,
+#                   not an oversight, because the crate page is read on its own.
+readme = "README.md"
+keywords = ["lightroom", "previews", "recovery", "cli", "jpeg"]
+categories = ["command-line-utilities", "multimedia::images", "filesystem"]
+documentation = "https://docs.rs/lrsalvage-cli"
+homepage = "https://github.com/marcd35/lrsalvage"
+
+# The whole test tree, because no file in it can run from a tarball: `cli.rs`,
+# `matrix.rs`, `probe.rs` and `readme.rs` import `lrsalvage-fixtures`, a
+# `path`-only dev-dependency the published manifest drops, `readme.rs` also reads
+# `../../README.md` and `probe.rs` runs `scripts/probe-cache.sh`, and the two
+# evidence families (`render.rs`, `one_to_one.rs`) need a real cache and the env
+# pair their gate reads — `tests/support` is the module they share. Shipping them
+# fails `cargo test` for an auditor instead of proving anything, so the published
+# crate carries `src/`, this page, both licence texts and the manifest, and no
+# test tree; measured 2026-11-17 by unpacking
+# `target/package/lrsalvage-cli-0.2.0.crate` outside the repository, where
+# `cargo build --all-targets` and `cargo test` both finish green — the test run
+# finding nothing to execute, because `src/` carries no unit test of its own.
+exclude = ["tests"]
+
 [[bin]]
 name = "lrsalvage"
 path = "src/main.rs"
