@@ -221,7 +221,9 @@ everything else is always compiled. `report` reads its two name templates from
   assumed.
 - **User data is opened read-only.** The `.lrcat`, the preview cache and
   `.lrcat-data` are evidence. A destination inside any of those trees is refused
-  before the first write.
+  before the first write, and `--verify-source` makes the claim checkable: the
+  catalog is hashed, copied and hashed again, and a pair that disagrees fails the
+  run with its own exit code rather than a warning.
 
 ## Where the reasoning lives
 

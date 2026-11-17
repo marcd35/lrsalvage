@@ -129,7 +129,14 @@ landing first fails a test that is telling the truth.
       and CLI specs record the fields and the code, and ADR 0010 gains its dated
       *added by 0.3.0* block while ADR 0011 D13 gains its dated correction. A
       synthetic vault run with the flag reports equal digests; a deliberately
-      modified snapshot fails loudly with its own message.
+      modified snapshot fails loudly with its own message. Two repairs landed with
+      it rather than in a slice of their own, because it is the first change to
+      the seam between the crates: `scripts/check.sh package` now verifies the CLI
+      tarball against the core tarball the same run built (a `--config patch`),
+      since the version its manifest names is not on crates.io before this release
+      and the gate was therefore verifying the previous one; and `ADR 0007` gains
+      a dated amendment for the digest pair its path-freedom argument did not
+      anticipate.
 - [ ] **6 — #86.** A discarded cache rebuilt by the recipe below, on an evidence
       root that is not a scratch tree, with an `EVIDENCE.md` beside it recording
       what it is, when the discard ran and the source render's hashes — because the

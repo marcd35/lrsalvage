@@ -164,7 +164,22 @@ impl Catalog {
 
     /// Convenience for callers that only have a path.
     pub fn open(path: &Path) -> Result<(crate::snapshot::CatalogSnapshot, Self)> {
-        let snapshot = crate::snapshot::CatalogSnapshot::capture(path)?;
+        Self::from_capture(crate::snapshot::CatalogSnapshot::capture(path)?)
+    }
+
+    /// [`Self::open`], with a verified acquisition: the private copy is proven
+    /// to be the catalog, and the digest pair rides on the snapshot this
+    /// returns (`crate::snapshot::CatalogSnapshot::digests`).
+    ///
+    /// A copy that is not the catalog is [`Error::SourceChanged`], never a
+    /// warning — nothing is planned from a torn read.
+    pub fn open_verified(path: &Path) -> Result<(crate::snapshot::CatalogSnapshot, Self)> {
+        Self::from_capture(crate::snapshot::CatalogSnapshot::capture_verified(path)?)
+    }
+
+    fn from_capture(
+        snapshot: crate::snapshot::CatalogSnapshot,
+    ) -> Result<(crate::snapshot::CatalogSnapshot, Self)> {
         let catalog = Self::from_snapshot(&snapshot)?;
         Ok((snapshot, catalog))
     }

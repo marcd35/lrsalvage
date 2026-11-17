@@ -16,6 +16,14 @@ const EXIT_USAGE: u8 = 1;
 const EXIT_PARTIAL: u8 = 2;
 const EXIT_NOTHING: u8 = 3;
 const EXIT_UNSAFE: u8 = 4;
+/// The catalog is not the file it was when the run started reading. Its own
+/// code because it is its own problem: not a bad destination (`4`), not a
+/// half-done extraction (`2`), and not something to retry unchanged.
+const EXIT_EVIDENCE: u8 = 5;
+
+/// The one wording both commands' `--verify-source` help uses: two copies of a
+/// promise drift, and clap's own `--help` is where a user meets it.
+const VERIFY_SOURCE_HELP: &str = "Prove the catalog was only read: hash it, copy it, hash the copy, and fail if the two disagree.";
 
 #[derive(Debug, Parser)]
 #[command(
@@ -71,6 +79,8 @@ struct ScanArgs {
     /// Also include images whose original file is still present.
     #[arg(long)]
     include_present: bool,
+    #[arg(long, help = VERIFY_SOURCE_HELP)]
+    verify_source: bool,
 }
 
 #[derive(Debug, clap::Args)]
@@ -92,6 +102,8 @@ struct ExtractArgs {
     /// Also include images whose original file is still present.
     #[arg(long)]
     include_present: bool,
+    #[arg(long, help = VERIFY_SOURCE_HELP)]
+    verify_source: bool,
     /// Do not add EXIF, XMP rating or the ICC profile to the recovered JPEGs.
     ///
     /// Such output carries no marker, so a later run cannot prove it wrote the
@@ -127,11 +139,29 @@ fn main() -> ExitCode {
 }
 
 /// Only an unsafe or unusable destination is code 4; everything else that
-/// stops a run before it finishes is a usage or input error.
+/// stops a run before it finishes is a usage or input error, except a copy that
+/// is not the catalog, which is code 5.
+///
+/// The `EXIT_USAGE` arm names every remaining variant one by one instead of a
+/// `_` default: a new error then cannot compile until this one place decides what
+/// it means, which is the whole edit a new exit code needs.
 fn exit_code_for(error: &Error) -> u8 {
     match error {
         Error::UnsafeDestination(_) | Error::Destination { .. } => EXIT_UNSAFE,
-        _ => EXIT_USAGE,
+        Error::SourceChanged { .. } => EXIT_EVIDENCE,
+        Error::Io { .. }
+        | Error::Sqlite(_)
+        | Error::NotACatalog { .. }
+        | Error::NotAPreviewCache { .. }
+        | Error::PayloadMissing { .. }
+        | Error::LrprevTruncated { .. }
+        | Error::LrprevHeader(_)
+        | Error::PyramidHeader(_)
+        | Error::JpegMalformed
+        | Error::JpegMarkersMissing
+        | Error::IccTooLarge(_)
+        | Error::Xmp(_)
+        | Error::Png(_) => EXIT_USAGE,
     }
 }
 
@@ -163,6 +193,7 @@ fn open_plan(
     previews: &Path,
     options: &Options,
     output_root: &Path,
+    verify_source: bool,
 ) -> Result<(
     lrsalvage_core::snapshot::CatalogSnapshot,
     Plan,
@@ -170,7 +201,15 @@ fn open_plan(
 )> {
     require_cache_directory(previews)?;
 
-    let (snapshot, catalog) = Catalog::open(catalog_path)?;
+    // The one open of the user's catalog. Asking for the proof costs one more
+    // read of the catalog, and one of our own copy, which is why
+    // `--verify-source` is opt-in rather than paid on every run
+    // (`adr-0010-what-0-2-promises`).
+    let (snapshot, catalog) = if verify_source {
+        Catalog::open_verified(catalog_path)?
+    } else {
+        Catalog::open(catalog_path)?
+    };
     // A missing or unreadable index is a mode, never a fatal error: the plan is
     // built from an empty index and the reason is carried out for the hint.
     let opened = previews_db::open(&previews.join(previews_db::INDEX_FILE));
@@ -199,8 +238,13 @@ fn scan(args: ScanArgs) -> Result<u8> {
         all_levels: args.all_levels,
         include_present: args.include_present,
     };
-    let (_snapshot, plan, index_problem) =
-        open_plan(&args.catalog, &args.previews, &options, Path::new("."))?;
+    let (snapshot, plan, index_problem) = open_plan(
+        &args.catalog,
+        &args.previews,
+        &options,
+        Path::new("."),
+        args.verify_source,
+    )?;
 
     if args.json {
         println!("{}", scan_json(&plan, &args.catalog, &args.previews));
@@ -226,7 +270,14 @@ fn scan(args: ScanArgs) -> Result<u8> {
     // recovered nothing is the run most worth handing over. Neither decides the
     // code (`adr-0007-publish-a-verification-report`).
     if let Some(path) = args.report {
-        write_verification_report(&plan, &options, &path, &args.catalog, &args.previews)?;
+        write_verification_report(
+            &plan,
+            &options,
+            snapshot.digests(),
+            &path,
+            &args.catalog,
+            &args.previews,
+        )?;
     }
 
     if let Some(path) = args.contact_sheet {
@@ -243,6 +294,10 @@ fn scan(args: ScanArgs) -> Result<u8> {
         )?;
         eprintln!("contact sheet: {}", path.display());
     }
+
+    // A mismatch already failed the run inside the acquisition: there is no
+    // plan, so nothing here can publish the evidence either
+    // (`adr-0007-publish-a-verification-report`).
 
     // Exit 3 means "nothing selected", the same set `extract` would write —
     // not the raw recoverable count, which includes items below the floor.
@@ -356,8 +411,13 @@ fn extract(args: ExtractArgs) -> Result<u8> {
         extract::ensure_safe_destination_create(&args.out, &args.catalog, &args.previews)?;
     }
 
-    let (_snapshot, plan, index_problem) =
-        open_plan(&args.catalog, &args.previews, &options, &args.out)?;
+    let (_snapshot, plan, index_problem) = open_plan(
+        &args.catalog,
+        &args.previews,
+        &options,
+        &args.out,
+        args.verify_source,
+    )?;
     print!("{}", report::summary_with_floor(&plan, args.min_long_edge));
     index_hint(&plan, index_problem.as_ref(), &args.previews);
     layout_hint(&plan);
@@ -460,6 +520,7 @@ fn destination_parent(path: &Path) -> &Path {
 fn write_verification_report(
     plan: &Plan,
     options: &Options,
+    digests: Option<&lrsalvage_core::snapshot::SourceDigests>,
     path: &Path,
     catalog: &Path,
     previews: &Path,
@@ -468,7 +529,7 @@ fn write_verification_report(
     let path = claim(path.to_path_buf());
     at_destination(
         &path,
-        report::write_verification(plan, options, &path, env!("CARGO_PKG_VERSION")),
+        report::write_verification(plan, options, digests, &path, env!("CARGO_PKG_VERSION")),
     )?;
     eprintln!("wrote {}", path.display());
     Ok(())
@@ -598,4 +659,78 @@ fn tier_label(tier: Option<Tier>) -> &'static str {
 #[allow(dead_code)]
 fn status_label(status: Status) -> &'static str {
     status.as_str()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn digest(byte: char) -> String {
+        byte.to_string().repeat(64)
+    }
+
+    /// The published numbers, and one case per code, are the contract this
+    /// crate can assert. Which code an existing variant takes is the `match`'
+    /// own prose: nothing compares a variant to a number except the arm beside
+    /// it. What the build does hold is the set — `exit_code_for` names every
+    /// variant rather than defaulting, so a new error cannot compile until the
+    /// mapping decides which code it takes.
+    #[test]
+    fn the_published_exit_numbers_are_pinned_and_each_code_has_a_case() {
+        assert_eq!(
+            [
+                EXIT_OK,
+                EXIT_USAGE,
+                EXIT_PARTIAL,
+                EXIT_NOTHING,
+                EXIT_UNSAFE,
+                EXIT_EVIDENCE
+            ],
+            [0, 1, 2, 3, 4, 5],
+            "the numbers are the contract; the README's table is their prose"
+        );
+
+        let path = PathBuf::from("C:/evidence/2023.lrcat");
+        let cases = [
+            (
+                Error::UnsafeDestination(path.clone()),
+                EXIT_UNSAFE,
+                "a destination inside the evidence",
+            ),
+            (
+                Error::Destination {
+                    path: path.clone(),
+                    source: std::io::Error::other("denied"),
+                },
+                EXIT_UNSAFE,
+                "a name that cannot be written",
+            ),
+            (
+                Error::SourceChanged {
+                    path: path.clone(),
+                    source_sha256: digest('a'),
+                    snapshot_sha256: digest('b'),
+                },
+                EXIT_EVIDENCE,
+                "a copy that is not the catalog",
+            ),
+            (
+                Error::NotACatalog { path: path.clone() },
+                EXIT_USAGE,
+                "an input that is not a catalog",
+            ),
+            (
+                Error::Io {
+                    path: path.clone(),
+                    source: std::io::Error::other("missing"),
+                },
+                EXIT_USAGE,
+                "a catalog that cannot be read",
+            ),
+        ];
+
+        for (error, code, what) in cases {
+            assert_eq!(exit_code_for(&error), code, "{what}: {error}");
+        }
+    }
 }

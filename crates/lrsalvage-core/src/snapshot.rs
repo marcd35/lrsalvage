@@ -2,9 +2,11 @@
 
 use std::ffi::OsString;
 use std::fs;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use rusqlite::{Connection, OpenFlags};
+use sha2::{Digest, Sha256};
 use tempfile::TempDir;
 
 use crate::error::{Error, IoContext, Result};
@@ -25,11 +27,32 @@ use crate::error::{Error, IoContext, Result};
 pub struct CatalogSnapshot {
     _dir: TempDir,
     catalog_path: PathBuf,
+    digests: Option<SourceDigests>,
 }
 
 impl CatalogSnapshot {
     /// Copy `<catalog>`, `<catalog>-wal` and `<catalog>-shm` into a temp dir.
     pub fn capture(catalog: &Path) -> Result<Self> {
+        Self::acquire(catalog, false)
+    }
+
+    /// [`Self::capture`], and prove the copy is the catalog.
+    ///
+    /// The catalog is hashed before the copy and the copy is hashed after it,
+    /// so a pair that disagrees is a torn read — Lightroom wrote to the catalog
+    /// while it was being read, or the disk returned different bytes — and a
+    /// plan built from that copy would be a plan about a catalog that never
+    /// existed. It is an error, never a warning: the whole claim is that the
+    /// user's evidence was only ever read.
+    ///
+    /// The catalog file alone is hashed, never `-wal`/`-shm`: the sidecars are
+    /// copied because SQLite needs them, and a Lightroom session appending to
+    /// the WAL is what the snapshot exists to tolerate.
+    pub fn capture_verified(catalog: &Path) -> Result<Self> {
+        Self::acquire(catalog, true)
+    }
+
+    fn acquire(catalog: &Path, verify: bool) -> Result<Self> {
         let name = catalog.file_name().ok_or_else(|| Error::Io {
             path: catalog.to_path_buf(),
             source: std::io::Error::new(
@@ -46,10 +69,25 @@ impl CatalogSnapshot {
                 source,
             })?;
 
+        // The catalog as it was when this run started, before anything we do to
+        // it could be mistaken for what it always was.
+        let source = if verify {
+            Some(sha256_file(catalog)?)
+        } else {
+            None
+        };
+
         // Keep the base name intact: SQLite only finds the sidecars when the
         // copy is called exactly the same thing as the original.
         let copy = dir.path().join(name);
         fs::copy(catalog, &copy).at(catalog)?;
+
+        // Before the checkpoint, which rewrites the copy by folding our WAL into
+        // it: after that the copy is ours, and no longer the catalog's bytes.
+        let digests = match source {
+            Some(source) => Some(verify_copy(catalog, &source, &copy)?),
+            None => None,
+        };
 
         for suffix in ["-wal", "-shm"] {
             let sidecar = with_suffix(catalog, suffix);
@@ -63,6 +101,7 @@ impl CatalogSnapshot {
         Ok(Self {
             _dir: dir,
             catalog_path: copy,
+            digests,
         })
     }
 
@@ -70,6 +109,76 @@ impl CatalogSnapshot {
     pub fn path(&self) -> &Path {
         &self.catalog_path
     }
+
+    /// The digest pair a verified capture proved, or `None` when this snapshot
+    /// was taken without asking for the proof.
+    pub fn digests(&self) -> Option<&SourceDigests> {
+        self.digests.as_ref()
+    }
+}
+
+/// The two SHA-256 digests a verified acquisition produced, as lowercase hex.
+///
+/// `source` is the catalog as this run read it and `snapshot` is the private
+/// copy the rest of the run queried. A verified acquisition never hands out a
+/// pair whose halves disagree — that is [`Error::SourceChanged`] instead — so a
+/// report carrying both members is a proof rather than a claim.
+#[derive(Debug)]
+pub struct SourceDigests {
+    source: String,
+    snapshot: String,
+}
+
+impl SourceDigests {
+    /// The catalog file's digest, taken before it was copied.
+    pub fn source(&self) -> &str {
+        &self.source
+    }
+
+    /// The private copy's digest, taken before it was checkpointed.
+    pub fn snapshot(&self) -> &str {
+        &self.snapshot
+    }
+}
+
+/// Compare the catalog's digest with our copy's, and fail when they differ.
+fn verify_copy(catalog: &Path, source: &str, copy: &Path) -> Result<SourceDigests> {
+    let snapshot = sha256_file(copy)?;
+    if source != snapshot {
+        return Err(Error::SourceChanged {
+            path: catalog.to_path_buf(),
+            source_sha256: source.to_string(),
+            snapshot_sha256: snapshot,
+        });
+    }
+    Ok(SourceDigests {
+        source: source.to_string(),
+        snapshot,
+    })
+}
+
+/// The SHA-256 of a file's bytes as lowercase hex, read in chunks so a catalog
+/// of a few hundred megabytes costs no more memory than an empty one.
+///
+/// Public because it is the number `--verify-source` publishes: the CLI matrix
+/// asserts the report's `source_sha256` against it, so the field and the file's
+/// bytes cannot drift into two definitions of the same hex.
+pub fn sha256_file(path: &Path) -> Result<String> {
+    let mut file = fs::File::open(path).at(path)?;
+    let mut hasher = Sha256::new();
+    let mut buffer = [0u8; 64 * 1024];
+    loop {
+        let read = file.read(&mut buffer).at(path)?;
+        if read == 0 {
+            break;
+        }
+        hasher.update(&buffer[..read]);
+    }
+    Ok(hasher
+        .finalize()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect())
 }
 
 /// Fold the copied WAL into the copied database, then drop the sidecars.
@@ -230,6 +339,113 @@ mod tests {
         assert_eq!(fs::read(&path).unwrap(), before_catalog);
         assert_eq!(fs::read(&wal).unwrap(), before_wal);
         drop(conn);
+    }
+
+    #[test]
+    fn the_digest_is_the_sha256_of_the_file_bytes_in_lowercase_hex() {
+        let live = tempfile::tempdir().unwrap();
+        let empty = live.path().join("empty.bin");
+        fs::write(&empty, b"").unwrap();
+        assert_eq!(
+            sha256_file(&empty).unwrap(),
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        );
+
+        let abc = live.path().join("abc.bin");
+        fs::write(&abc, b"abc").unwrap();
+        assert_eq!(
+            sha256_file(&abc).unwrap(),
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
+    }
+
+    #[test]
+    fn a_verified_capture_proves_the_copy_is_the_catalog() {
+        let live = tempfile::tempdir().unwrap();
+        let path = live.path().join("clean.lrcat");
+        {
+            let conn = Connection::open(&path).unwrap();
+            conn.execute_batch(
+                "CREATE TABLE Adobe_images (id_local INTEGER PRIMARY KEY, name TEXT);
+                 INSERT INTO Adobe_images (id_local, name) VALUES (1, 'one');",
+            )
+            .unwrap();
+        }
+
+        let snapshot = CatalogSnapshot::capture_verified(&path).unwrap();
+        let digests = snapshot
+            .digests()
+            .expect("a verified capture reports its pair");
+        assert_eq!(digests.source(), digests.snapshot());
+        assert_eq!(digests.source().len(), 64);
+        assert_eq!(
+            digests.source(),
+            sha256_file(&path).unwrap(),
+            "the reported digest is the catalog's own"
+        );
+
+        // A snapshot nobody asked to verify reports no pair: an unmeasured fact
+        // is absent, never a stand-in.
+        let plain = CatalogSnapshot::capture(&path).unwrap();
+        assert!(plain.digests().is_none());
+    }
+
+    #[test]
+    fn a_live_wal_does_not_trip_the_verified_capture() {
+        // The sidecars are copied, never hashed: a Lightroom session appending
+        // to the WAL is the case the snapshot exists to tolerate.
+        let live = tempfile::tempdir().unwrap();
+        let (path, conn) = live_wal_catalog(live.path());
+        assert!(
+            with_suffix(&path, "-wal").is_file(),
+            "test needs a live WAL"
+        );
+
+        let snapshot = CatalogSnapshot::capture_verified(&path).unwrap();
+        let digests = snapshot.digests().expect("a verified capture");
+        assert_eq!(digests.source(), digests.snapshot());
+        drop(conn);
+    }
+
+    #[test]
+    fn a_copy_that_is_not_the_catalog_fails_naming_both_digests() {
+        let live = tempfile::tempdir().unwrap();
+        let catalog = live.path().join("2023.lrcat");
+        fs::write(&catalog, b"the catalog as it was").unwrap();
+        let copy = live.path().join("copy.lrcat");
+        fs::copy(&catalog, &copy).unwrap();
+
+        let source = sha256_file(&catalog).unwrap();
+        // What a torn read leaves behind: the pair would agree only if the copy
+        // were still the catalog's bytes.
+        fs::write(&copy, b"not the catalog").unwrap();
+
+        let error = verify_copy(&catalog, &source, &copy).expect_err("a mismatch is an error");
+        let Error::SourceChanged {
+            path,
+            source_sha256,
+            snapshot_sha256,
+        } = &error
+        else {
+            panic!("expected SourceChanged, got {error:?}");
+        };
+        assert_eq!(path, &catalog);
+        assert_eq!(source_sha256, &source);
+        assert_eq!(snapshot_sha256, &sha256_file(&copy).unwrap());
+        assert_ne!(source_sha256, snapshot_sha256);
+
+        let message = error.to_string();
+        for stated in [
+            path.to_string_lossy().into_owned().as_str(),
+            source_sha256,
+            snapshot_sha256,
+        ] {
+            assert!(
+                message.contains(stated),
+                "the message states {stated:?}:\n{message}"
+            );
+        }
+        assert!(message.contains("changed"), "{message}");
     }
 
     #[test]

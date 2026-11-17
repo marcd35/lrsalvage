@@ -35,8 +35,25 @@ it needs to know about an image comes from a `Plan`.
 - **One exit-code vocabulary**, and it is the CLI's alone: `0` success (including
   `--help` and `--version`), `1` usage or input error, `2` extract finished with
   some failures, `3` nothing selected to do, `4` unsafe or unwritable
-  destination. `scan` and `extract` share the "nothing selected" rule, so they
-  agree on `3` for the same inputs; `scan` never returns `2`.
+  destination, `5` the catalog changed while it was being copied. `scan` and
+  `extract` share the "nothing selected" rule, so they agree on `3` for the same
+  inputs; `scan` never returns `2`. `main.rs`'s unit test asserts the six
+  published numbers and one case per code, and its `EXIT_USAGE` arm names every
+  remaining variant rather than defaulting, so a new error cannot compile until
+  this mapping decides what it means. Which code an *existing* variant takes is
+  the arm beside it: moving one is a review change, and so is the rows' prose.
+- **`--verify-source` is the proof, and it is opt-in on both commands.** The flag
+  routes the one open of the user's catalog through `Catalog::open_verified`, so
+  the catalog is hashed, copied and the copy hashed, and a pair that disagrees is
+  exit `5` with the path and both digests on stderr — never a warning, because
+  the whole claim is that this run only read the evidence. It fails before a plan
+  exists, so that run writes no JPEG and no report — `extract`'s `--out` may
+  already exist, as it does for any run that fails after the destination check.
+  `scan` hands the pair to `--report`; `extract` performs the same check and
+  publishes nothing, because `report.csv`, `manifest.json` and `--json` are not
+  surfaces for a digest. A passing verified run says nothing extra: the exit code
+  and, on `scan`, the report are the answer
+  (`adr-0010-what-0-2-promises`).
 - **A degraded cache is not an error.** A `previews.db` that is missing or cannot
   be read does not stop the run: the plan comes back with every image whose
   original is not on disk as `no-cache-entry` and every payload pyramid as
@@ -77,15 +94,16 @@ it needs to know about an image comes from a `Plan`.
   is promised — a count is the part of the rule that keeps changing, while "only
   what you name" does not.
 - **`--report <file>` writes the verification report, and never moves the exit
-  code.** It is written whenever the flag is given and a plan exists — on exit `0`
-  and on exit `3` alike — before the "nothing selected" decision is taken, exactly
-  as the contact sheet is. A run that exits `1` before a plan exists (a
-  `--previews` that is not a directory, an unreadable catalog) writes nothing,
-  because there is no plan to describe. A report write that fails is exit `4`
-  through the same `at_destination` mapping every named destination uses, so a
-  later implementer cannot turn a write failure into `3`, and the flag cannot
-  change the code the plan decided. What the file contains is `report`'s; the
-  path, the claim and the code are this spec's.
+  code by itself.** It is written whenever the flag is given and a plan exists —
+  on exit `0` and on exit `3` alike — before the "nothing selected" decision is
+  taken, exactly as the contact sheet is. A run that exits `1` before a plan
+  exists (a `--previews` that is not a directory, an unreadable catalog) writes
+  nothing, because there is no plan to describe, and neither does a run whose
+  `--verify-source` check failed inside the acquisition (`5`). A report write
+  that fails is exit `4` through the same `at_destination` mapping every named
+  destination uses, so a later implementer cannot turn a write failure into `3`,
+  and the flag cannot change the code the plan decided. What the file contains is
+  `report`'s; the path, the claim and the code are this spec's.
 - **The report obeys the `--out` destination rule, and its name is claimed.** Its
   parent is checked with `ensure_safe_destination_pending` before the write — never
   inside the catalog, the cache, or `.lrcat-data`. An existing name takes the next

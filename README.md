@@ -384,7 +384,12 @@ template means "no such file", never a broken one. The only names in
 the file are templates with `<uuid…>`, `<digest>` and `<longedge>` in place of the
 real ones, so it carries no catalog or cache path, no folder, no uuid and no file
 name. It is written whenever you ask for it and a plan exists — a run that
-recovered nothing included — and it never moves the exit code. There is no
+recovered nothing included — and it never moves the exit code. When you asked
+`--verify-source` it also carries the proof: `source_sha256` and
+`snapshot_sha256`, the catalog's digest and our private copy's, equal lowercase
+hex, or `null` for both when the flag was not given — so the object is the same
+eleven members either way — with `options.verify_source` beside the other knobs
+the run applied. There is no
 redaction flag on `--json`: two ways to produce one object would only be a flag
 to forget. To let a maintainer read a cache they cannot see, paste the file into
 the [verification report form](https://github.com/marcd35/lrsalvage/issues/new?template=verification-report.yml),
@@ -404,6 +409,7 @@ names which command each flag belongs to:
 | `--verbose` | `scan` only: print one line per plan item instead of only totals. |
 | `--json` | `scan` only: emit one machine-readable object instead of the table. |
 | `--report <file>` | `scan` only: write the path-free verification report to this file. Written whenever the flag is given and a plan exists, exit `3` included; its parent must not be inside the catalog, the cache or `.lrcat-data`; an existing name takes the next free number (`scan (2).json`). |
+| `--verify-source` | `scan` and `extract`: prove the catalog was only read. It is hashed, copied, and the copy hashed; a pair that disagrees stops the run with exit `5` and a stated reason, before a plan exists. `scan --report` publishes both digests; `report.csv`, `manifest.json` and `--json` are unchanged. Opt-in because it is one extra read pass over the catalog, and the cache is never hashed. See *Read-only* under [Safety](#safety). |
 | `--dry-run` | Do everything except write files, report files included. |
 | `--force` | Replace a destination file that does not verify as ours. A file is ours only when it carries the `Software` marker `lrsalvage <version>` (the prefix is what is compared, not the version), is a complete JPEG, and its dimensions match the planned item. Anything else — a same-size file another tool wrote, or one of our own outputs from before the marker existed — is reported as failed and left byte-identical. In a metadata-bearing run it never replaces a file that *does* verify as ours; a `--no-metadata` run verifies nothing — its output carries no proof of authorship — so there `--force` replaces whatever it finds. See *Resumable* for the case where that matters. |
 | `--no-metadata` | Do not add any metadata to the recovered JPEGs: no EXIF (so no orientation or rating), no rating XMP packet, no ICC profile, and no marker. Such output carries no proof of authorship, so a later run reports every destination as not a verified extraction and leaves it alone unless `--force` is given. |
@@ -469,6 +475,12 @@ long after the catalog is gone.
 The catalog is the only copy of the map. It is treated as read-only evidence:
 
 - **Read-only.** Neither the `.lrcat` nor the cache is ever opened for writing.
+  `--verify-source` is the evidence rather than the claim: it hashes the
+  catalog, copies it, hashes the copy, and stops the run (exit `5`, naming both
+  digests) if the two disagree, so a torn read is a failed run rather than a
+  quiet one. `scan --report` publishes the pair. It is opt-in because the proof
+  costs a read pass over the catalog, and asking for it is the only thing that
+  pays.
 - **Snapshot.** The catalog is copied to a temporary directory before querying,
   WAL included, so a Lightroom session left open on the same catalog cannot see
   half a query and a half-written WAL cannot corrupt the read.
@@ -596,10 +608,12 @@ payload is written unchanged and carries no marker. See
 | 2 | `extract` completed with some failures: at least one selected image could not be written. The run did real work and also hit something it could not do. `scan` never returns 2. |
 | 3 | Nothing selected to do: no image was selected to write — for example, every original is still present, every preview is below the floor, or the cache has no readable `previews.db` so no payload could be named. `scan` and `extract` use the same test, so they agree on this code. `masks` returns 3 when it finds no `.dat` file or decodes none. |
 | 4 | Unsafe or unwritable destination: `--out` (or the contact sheet's or verification report's directory) resolves inside the catalog or preview cache — or, for `masks`, inside the `.lrcat-data` directory — or cannot be created or written. |
+| 5 | The catalog changed while it was being read: `--verify-source` hashed it, copied it, and the copy is not the catalog. Nothing is planned from that copy, so no JPEG and no report is written. Retry, with Lightroom closed if it was open on this catalog. |
 
 `2` is the one to pay attention to in scripts: the report says which items failed
 and why. `3` is not an error — a catalog where every original is still on disk
-legitimately has nothing to salvage.
+legitimately has nothing to salvage. `5` is not retryable unchanged: the run's
+premise is that the evidence was only ever read, so a disagreement stops there.
 
 ## The compatibility contract
 
@@ -617,9 +631,9 @@ home for it.
 | Surface | Where this README states it | Held by |
 |---|---|---|
 | The seven status words: six an image can end in, plus the state for a payload no image claims | [What the statuses mean](#what-the-statuses-mean) | Gate for the states — `crates/lrsalvage-core/tests/matrix.rs` asserts the status each image of a vault came out with. Review for the words: nothing compares `no-cache-entry` or `missing-payload` to this page. |
-| The exit codes `0`–`4` | [Exit codes](#exit-codes) | Review — `scan`'s and `extract`'s codes are asserted per invocation, in the CLI matrix (`crates/lrsalvage-cli/tests/matrix.rs`) and `tests/cli.rs`; nothing runs `masks`, so its two clauses are the same kind of promise, and no test compares these meanings to `main.rs`'s mapping. |
+| The exit codes `0`–`5` | [Exit codes](#exit-codes) | Gate for the numbers and for the arms — `main.rs`'s unit test asserts the six codes and one case per code, and `exit_code_for` names every error variant rather than defaulting, so a new variant does not compile until the mapping gives it one. Review for the rows' prose and for moving an existing variant to another code, which nothing sees. `scan`'s and `extract`'s codes are asserted per invocation in the CLI matrix (`crates/lrsalvage-cli/tests/matrix.rs`) and `tests/cli.rs`, and nothing runs `masks`, so its two clauses stay the same kind of promise. |
 | `scan --json`'s field set, "these fields, and only these" | The field table under [Quick start](#quick-start) | Gate — `crates/lrsalvage-cli/tests/readme.rs` compares the table to the object the binary prints, field for field. |
-| The verification report's key set under `lrsalvage.verification`, and `lrsalvage.manifest`'s envelope | The `--report` paragraph under [Quick start](#quick-start) spells out the verification report's members; [What lands on disk](#what-lands-on-disk) names `manifest.json` as the same facts with a schema and version | Gate — the CLI matrix asserts the verification object's exact nine keys and `report.rs`'s own tests hold the manifest's; both schema strings are asserted as literals, and each file's `version` against `CARGO_PKG_VERSION`, so a bump that misses a surface fails. |
+| The verification report's key set under `lrsalvage.verification`, and `lrsalvage.manifest`'s envelope | The `--report` paragraph under [Quick start](#quick-start) spells out the verification report's members; [What lands on disk](#what-lands-on-disk) names `manifest.json` as the same facts with a schema and version | Gate — the CLI matrix asserts the verification object's exact eleven keys and `report.rs`'s own tests hold the manifest's; both schema strings are asserted as literals, and each file's `version` against `CARGO_PKG_VERSION`, so a bump that misses a surface fails. |
 | `report.csv` and `extract.csv`: their columns, in order, and what `payload_metadata` means | [What lands on disk](#what-lands-on-disk) states the tail's order and what each file holds, and the header the run writes is the list of columns | Gate for the tail — `tests/readme.rs` asserts the header ends `,note,payload,payload_metadata`, and the CLI matrix pins the field count and those columns' values. Review for the rest of the header: renaming or swapping a middle column passes. |
 | Output naming: the tree, an extra level's suffix, a virtual copy's name, a report name already taken | [What lands on disk](#what-lands-on-disk) | Review — `model.rs`'s tests pin the naming code and the CLI matrix pins the numbered `--report` name, but nothing reads these rules off the page. |
 | The flags, and which command takes each | The flag table under [Quick start](#quick-start) | Gate that a flag exists — `tests/readme.rs` fails when the table names one no command has. Review for which command takes it: `--help` is read from all three at once, so a `scan` only flag listed under `extract` would pass. |
@@ -627,7 +641,8 @@ home for it.
 
 Two tiers govern what may change. **Additive** changes — a new field, stat, flag,
 status word or exit code, provided no existing one changes meaning — may land in a
-minor release; a sixth exit code is a decision rather than a bump. **A removal, a
+minor release; a sixth exit code is a decision rather than a bump, and `5` was
+taken on that basis by 0.3.0. **A removal, a
 rename or a changed meaning** needs a new minor preceded by a deprecation stated
 in the release before it, and never arrives in a patch: a patch changes nothing in
 this list.

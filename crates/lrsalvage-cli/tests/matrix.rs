@@ -17,7 +17,7 @@
 //! What a run does assert is the cache's shape: the layout word, the two version
 //! strings, the three cache counts and the `shapes` triple, in `--json` and in
 //! `manifest.json`, plus the trailing `payload` column of a CSV row — and the
-//! verification report `--report` writes (rows R1–R9), which is asserted by
+//! verification report `--report` writes (rows R1–R11), which is asserted by
 //! absence as well as by field set.
 //!
 //! **No exit-code row was added for the widening or the orphan sweep, because no
@@ -941,7 +941,7 @@ fn e2_an_empty_run_writes_no_report_at_all() {
 }
 
 // ---------------------------------------------------------------------------
-// The verification report, rows R1–R9
+// The verification report, rows R1–R11
 // ---------------------------------------------------------------------------
 
 /// `modern with a suspect`, the cache R1, R2, R7, R8 and R9 run against: M1
@@ -1082,10 +1082,12 @@ fn r1_the_verification_report_is_the_frozen_field_set() {
             "options",
             "schema",
             "shapes",
+            "snapshot_sha256",
+            "source_sha256",
             "stats",
             "version",
         ],
-        "the report's keys are frozen at nine: no path-bearing member exists"
+        "the report's keys are frozen at eleven: no path-bearing member exists"
     );
 
     assert_eq!(report["schema"], "lrsalvage.verification");
@@ -1098,10 +1100,16 @@ fn r1_the_verification_report_is_the_frozen_field_set() {
     assert_eq!(report["db_version"], "1504001");
     assert_eq!(report["crs_version"], "18.0.0");
 
-    // The options the run applied, echoed: the floor and both switches.
+    // The options the run applied, echoed: the floor and all three switches.
     assert_eq!(report["options"]["min_long_edge"], 640);
     assert_eq!(report["options"]["all_levels"], false);
     assert_eq!(report["options"]["include_present"], false);
+
+    // A run that did not ask for the proof carries both digests absent, and the
+    // echo says so: the key set does not move with a flag.
+    assert_eq!(report["source_sha256"], Value::Null);
+    assert_eq!(report["snapshot_sha256"], Value::Null);
+    assert_eq!(report["options"]["verify_source"], false);
 
     // Every `stats` member is the plan's own number, under the frozen names.
     let plan = vault.plan(&lrsalvage_core::plan::Options::default());
@@ -1317,6 +1325,75 @@ fn r7_an_existing_report_name_is_numbered_and_left_alone() {
         fs::read(&path).expect("the old file"),
         b"somebody else's file",
         "a name on disk may belong to somebody else"
+    );
+}
+
+/// R10. `--verify-source` publishes the proof: the catalog's digest and the
+/// copy's, equal, the catalog's own number and the flag echoed beside them.
+#[test]
+fn r10_a_verified_run_publishes_the_same_digest_for_the_catalog_and_its_copy() {
+    let (vault, _) = modern_with_a_suspect();
+    let path = vault.out().join("scan.json");
+
+    scan(&vault)
+        .arg("--verify-source")
+        .arg("--report")
+        .arg(&path)
+        .assert()
+        .code(0);
+
+    let (text, report) = verification(&path);
+    let source = report["source_sha256"]
+        .as_str()
+        .unwrap_or_else(|| panic!("a digest, never null:\n{text}"));
+    let snapshot = report["snapshot_sha256"]
+        .as_str()
+        .unwrap_or_else(|| panic!("a digest, never null:\n{text}"));
+
+    assert_eq!(source, snapshot, "the copy is the catalog:\n{text}");
+    assert_eq!(
+        source,
+        lrsalvage_core::snapshot::sha256_file(vault.catalog()).expect("the catalog's digest"),
+        "the member is the catalog file's own sha256, never a label"
+    );
+    assert_eq!(report["options"]["verify_source"], true);
+}
+
+/// R11. On `extract` the flag performs the same check and publishes nothing:
+/// the per-run reports are the files they were, and a passing run is silent.
+#[test]
+fn r11_a_verified_extract_checks_the_copy_and_leaves_its_reports_unchanged() {
+    let vault = modern();
+
+    let output = extract(&vault)
+        .arg("--verify-source")
+        .output()
+        .expect("run extract --verify-source");
+    assert_eq!(output.status.code(), Some(0));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("sha256"),
+        "a passing run says nothing about digests:\n{stderr}"
+    );
+
+    assert_eq!(
+        jpeg_names(vault.out()),
+        vec!["IMG_0001.jpg", "IMG_0013.jpg"],
+        "the check does not change what is written"
+    );
+    let manifest: Value =
+        serde_json::from_str(&fs::read_to_string(vault.out().join("manifest.json")).unwrap())
+            .unwrap();
+    for member in ["source_sha256", "snapshot_sha256", "verify_source"] {
+        assert!(
+            manifest.get(member).is_none(),
+            "manifest.json is untouched by the flag: it carries {member}"
+        );
+    }
+    let csv = fs::read_to_string(vault.out().join("report.csv")).expect("report.csv");
+    assert!(
+        !csv.contains("sha256"),
+        "report.csv is untouched by the flag:\n{csv}"
     );
 }
 

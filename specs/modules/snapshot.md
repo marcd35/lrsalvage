@@ -13,7 +13,8 @@ parent: architecture
 Hand every other module a catalog file that cannot change under it: copy
 `<catalog>` and its `-wal` / `-shm` sidecars into a private temporary directory
 whose lifetime is the snapshot's, keeping the file name identical because SQLite
-only discovers sidecars by name.
+only discovers sidecars by name. When the caller asks for the proof, hash the
+catalog before the copy and the copy after it, and hand back the pair — or fail.
 
 ## Boundary
 
@@ -41,3 +42,25 @@ has to read them in time.
 - **Read-only, always.** `mode=ro` on every open; the caller's file is never
   handed to SQLite at all, so a Lightroom session left running cannot be affected
   by a salvage run.
+- **A verified capture proves the copy is the catalog, at acquisition.**
+  `capture_verified` hashes the catalog, copies it, hashes the copy and compares
+  the two; a pair that disagrees is `Error::SourceChanged`, never a warning. The
+  window is the acquisition because that is the run's only read of the user's
+  file — everything afterwards reads our copy — so this is the failure that
+  cannot be caused by a Lightroom session saving the live catalog an hour later.
+  Both digests are taken **before** `checkpoint_copy`: the checkpoint folds the
+  WAL into our copy and rewrites it, so a digest taken after it would compare our
+  own work with the user's file and always disagree.
+- **The catalog file is hashed; the sidecars are not.** `-wal` and `-shm` are
+  copied because SQLite needs them and a session appending to the WAL is the case
+  the snapshot exists to tolerate, so hashing them would refuse runs the rest of
+  the module was built to accept. `sha256_file` is the one definition of the hex:
+  it is public so a surface that shows a digest computes it the same way this
+  module does, not against a second implementation.
+- **A benign mismatch is possible and is accepted.** A Lightroom checkpoint that
+  lands inside the copy window changes the catalog's own bytes, so a copy that is
+  perfect can still be refused: the pair is two observations of a file someone
+  else may be writing. The window is short, the failure is loud and retryable,
+  and the alternative — trusting a copy the run cannot prove is the catalog — is
+  the claim this module exists to make. What the comparison never does is fail
+  because of work that happened after the acquisition.

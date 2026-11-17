@@ -189,7 +189,15 @@ _Avoid_: public API, output format, interface
 
 **Verification report**:
 The object a run can write about the cache it read and the plan it built — the
-layout, the version strings, the options applied, the counts and the filename
-shapes — with every path replaced by a template, so a result can leave the
+layout, the version strings, the options applied, the counts, the filename
+shapes, and, when it was asked for, the digests that prove the catalog was only
+ever read — with every path replaced by a template, so a result can leave the
 machine without carrying one of the user's.
 _Avoid_: scan report, summary, log
+
+**Source digest**:
+The SHA-256 of the catalog this run read, published together with the digest of
+the copy the run worked from, so a stranger can see the two agree. `--verify-source`
+asks for the pair; a run that does not ask has no digest to show and says so with
+an absent value rather than a made-up one.
+_Avoid_: checksum, fingerprint, hash of the cache
