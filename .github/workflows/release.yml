@@ -131,7 +131,15 @@ jobs:
           unpacked="$(mktemp -d)"
           tar -xzf "dist/$ARCHIVE" -C "$unpacked"
           got="$("$unpacked/lrsalvage" --version)"
-          want="lrsalvage $VERSION"
+          # The manifest's version is what the binary answers, and the tag may add a
+          # semver pre-release suffix on top of it: `v0.2.0-rc.1` against a `0.2.0`
+          # manifest is the scratch proof the release checklist asks for, and it must
+          # not need an edit to `Cargo.toml` to run. A release tag still has to match
+          # exactly, because a pre-release suffix is the only slack this allows — and
+          # `gh release create --prerelease` publishes it as one, so a scratch tag
+          # cannot take the `latest` slot.
+          base="${VERSION%%-*}"
+          want="lrsalvage $base"
           if [ "$got" != "$want" ]; then
             printf 'the tag says %s, the archive answers %s\n' "$want" "$got" >&2
             exit 1
@@ -145,7 +153,8 @@ jobs:
           $unpacked = Join-Path $env:RUNNER_TEMP "unpacked"
           Expand-Archive -Path "dist/$env:ARCHIVE" -DestinationPath $unpacked -Force
           $got = (& (Join-Path $unpacked "lrsalvage.exe") --version)
-          $want = "lrsalvage $env:VERSION"
+          $base = $env:VERSION.Split('-')[0]
+          $want = "lrsalvage $base"
           if ($got -ne $want) {
             Write-Error "the tag says $want, the archive answers $got"
             exit 1
