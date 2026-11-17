@@ -113,7 +113,8 @@ bytes.**
    `DeletedPyramid` tombstone does not subtract: a tombstone is not a mapping, and
    its surviving payload is exactly what salvage is for. Motion and face previews
    are counted when they have the payload shape — their modern shape is
-   unverified (§5.7 TODO), and subtracting them would commit to an assumption
+   unverified (§5.5, which lists the state among what remains unmeasured and has
+   no fixture row for it), and subtracting them would commit to an assumption
    instead of measuring one.
    **Amended 2026-11-15 by ADR 0008:** one exception, because a fresh render
    produces it for every image. An unclaimed pyramid that is a render's second
