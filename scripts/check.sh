@@ -18,6 +18,9 @@
 # only its own tests, so adding a family cannot reach into another's and break
 # it.
 #
+# `package` is the slow one — two builds and a test run — so name it while
+# iterating and let the no-argument run carry it at hand-off.
+#
 # A missing tool is a failure, never a skip: a green run must mean CI's green.
 #
 # Two gates are the one exception to "CI calls this file": `typos` and
@@ -96,6 +99,53 @@ gate_doc() {
 gate_build() {
     printf '%s\n' '== build --release'
     cargo build --release --locked
+}
+
+# The artifact, not the tree. Every other gate reads this checkout, so a package
+# that cannot build from its own generated manifest — a test tree the published
+# metadata drops, a dev-dependency Cargo strips, a README the crate page points at
+# and the tarball lacks — is invisible to all of them. `#96` is that failure
+# measured: an unpacked crate whose `cargo test` cannot compile because
+# `lrsalvage-fixtures` is a `path`-only dev-dependency the published manifest drops.
+#
+# The slowest gate here (two builds and a test run), and it takes `--allow-dirty`
+# so it measures a working tree — which is exactly when it is worth running.
+# Name it while iterating, and let the no-argument run carry it at hand-off.
+gate_package() {
+    printf '%s\n' '== package'
+    for crate in lrsalvage-core lrsalvage-cli; do
+        cargo package --allow-dirty -p "$crate"
+        listed=$(cargo package --list --allow-dirty -p "$crate")
+        printf '%s\n' "$listed" | grep -qx 'README.md' || {
+            printf '%s\n' "$crate: the package must carry the README.md its manifest points at" >&2
+            exit 1
+        }
+        # A packaged test file that imports a stripped dev-dependency cannot
+        # build where the package lands, so the exclude list has a hole: the gate
+        # that would have caught #96's original shape.
+        for path in $(printf '%s\n' "$listed" | grep '^tests/.*\.rs$'); do
+            if grep -q 'lrsalvage_fixtures' "crates/$crate/$path"; then
+                printf '%s\n' \
+                    "$crate: $path ships in the package and imports lrsalvage-fixtures," \
+                    'which the published manifest drops — add it to [package] exclude' >&2
+                exit 1
+            fi
+        done
+        archive=$(ls -t "target/package/$crate"-*.crate | head -1)
+        unpacked=$(mktemp -d)
+        tar -xzf "$archive" -C "$unpacked"
+        root="$unpacked/$(tar -tzf "$archive" | head -1 | cut -d/ -f1)"
+        # `--all-targets` compiles test targets too, and core's lib test target
+        # names the stripped fixtures crate from `#[cfg(test)]` sites inside
+        # `src/`, where no `exclude` reaches (#96's open half). Its tarball is
+        # built, not tested, until those sites move; the CLI's is both.
+        if [ "$crate" = lrsalvage-cli ]; then
+            (cd "$root" && cargo build --all-targets && cargo test)
+        else
+            (cd "$root" && cargo build)
+        fi
+        rm -rf "$unpacked"
+    done
 }
 
 gate_typos() {
@@ -206,7 +256,7 @@ gate_real_1to1() {
     cargo test -p lrsalvage-cli --test one_to_one -- --ignored
 }
 
-all_gates='fmt shell clippy test doc build typos deny msrv'
+all_gates='fmt shell clippy test doc build package typos deny msrv'
 
 if [ "$#" -eq 0 ]; then
     set -- $all_gates
@@ -216,7 +266,7 @@ for gate in "$@"; do
     case "$gate" in
         real-render) gate_real_render ;;
         real-1to1) gate_real_1to1 ;;
-        fmt | shell | clippy | test | doc | build | typos | deny | msrv | real) "gate_$gate" ;;
+        fmt | shell | clippy | test | doc | build | package | typos | deny | msrv | real) "gate_$gate" ;;
         *)
             printf 'unknown gate: %s (one of: %s real real-render real-1to1)\n' "$gate" "$all_gates" >&2
             exit 1
