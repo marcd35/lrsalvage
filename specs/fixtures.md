@@ -163,12 +163,12 @@ member), `bytes` (the bytes of a written file), or `both` (the item's fields and
 the file it produced). `Evidence` uses `format-notes`' labels plus `synthetic` for
 a state this process has never observed.
 
-### `modern` — 13 images, 2 unclaimed pyramids
+### `modern` — 14 images, 2 unclaimed pyramids
 
-Pinned totals for a plain `plan`: `images 13`, `recovered 7`, `suspect 1`,
+Pinned totals for a plain `plan`: `images 14`, `recovered 8`, `suspect 1`,
 `missing_payload 3`, `no_cache_entry 1`, `original_present 1`, `unmapped 2`
-(items), `deleted 1`, `superseded 0`, `below_floor 1`, `levels 8`,
-`selected_images 7`.
+(items), `deleted 1`, `superseded 0`, `below_floor 1`, `levels 9`,
+`selected_images 8`.
 
 | # | Variation | Builder produces | Status | Stats | Run | Exit | Assertion | Evidence | Pins |
 |---|---|---|---|---|---|---|---|---|---|
@@ -188,6 +188,7 @@ Pinned totals for a plain `plan`: `images 13`, `recovered 7`, `suspect 1`,
 | M10e | `thumbnail` row that lies about its size | a claimed pyramid beside a `thumbnail` row declaring 320, whose only file measures 3840 | `unmapped` | `unmapped +1`, `thumbnail_pyramids 0` | `scan` | 0 | count | synthetic; ADR 0008 | the row's word is never enough: the bytes must also be small, so a mislabelled row cannot hide a payload the tool would write |
 | M10f | rescue from the companion | the claimed pyramid's rows with no files anywhere; its `thumbnail` companion holding one 320 file | `recovered` at 320×213, tier `thumbnail` | `recoverable +1`, `below_floor +1`, `missing_payload 0`, `thumbnail_pyramids 1` | `extract` with `--min-long-edge 0` | 0 | both | unmeasured §5.5 (attempted 2026-11-16, §5.11); ADR 0009 | a surviving payload is not `missing-payload`: it is read from the companion, judged against the companion's own row, counted against the floor, and written under the image's own name only when the floor allows. No measured deletion produces the state: a discard takes the companion too (§5.11) |
 | M10g | a sibling that may not rescue | claimed pyramid's rows with no files, plus a `bigThumbnail` sibling holding a 320 file | `missing-payload` | `missing_payload +1`, `unmapped +1`, `thumbnail_pyramids 0` | `scan` | 0 | count | synthetic; ADR 0009 | the rescue is bound to the pyramid §5.10 measured a render writing; another quality's payload stays an orphan and the image stays unmapped |
+| M10h | a discarded pyramid | one claimed pyramid in the state a discard leaves: `quality bigThumbnail`, levels `320`, `960` and `1920` with their files, no companion | `recovered` at 1920×1280, tier `large` | `quality bigThumbnail` on the **claimed** pyramid, `recoverable +1`, `levels +1`, `declared` = the 1920 row, `selected`, `unmapped 0`, `thumbnail_pyramids 0`, `missing_payload 0`, `below_floor 0` | `scan` | 0 | count | verified §5.11; ADR 0008, ADR 0009 | a demotion changes what `quality` means — the levels a pyramid currently holds, never the build that wrote it — and decides nothing else: the pair still claims the pyramid, so the largest surviving level is the best level and is written under the image's own name, while the demoted pyramid is neither an orphan nor a rescue candidate. Two arms of §5.11's state are omitted, each for its own reason: the leftover `DeletedPyramid` row names a pair that is also live, so `deleted` — which counts only per `missing-payload` item — would be 0 and the row would assert nothing; and the `final` pyramid a discard leaves alone needs a second image, so it is a row of its own if anyone wants it |
 | M10b | an orphan whose names lie | one unclaimed pyramid, its `_640` file holding a 1616×1077 frame and its `_1616` file a 640×427 one | `unmapped` | `unmapped +1`, `shapes.suffix_matches_sof 0` | `scan` | 0 | count | synthetic; ADR 0005 ¶9 | the item names the file whose **bytes** are the largest — one rule in every mode, so an indexless cache ranks the same way (U1) |
 | M11 | digest-mismatched file | row `(UUID, digestA)`; file `<UUID>-digestB_1616` | `missing-payload` + `unmapped` | `missing_payload +1`, `unmapped +1` | `scan` | 0 | count | synthetic; ADR 0005 ¶6 | only the pair maps, so the file is a second pyramid, not this one's level |
 | M12 | `longDimension` stored REAL | row `longDimension 101.0`, file `_101` at 101×68 | `recovered` | `below_floor +1`, tier `thumbnail`, unselected | `scan` | 0 | count | verified §5.7 | the suffix is the rounded integer, and the floor excludes without failing |
@@ -199,13 +200,13 @@ Pinned totals for a plain `plan`: `images 13`, `recovered 7`, `suspect 1`,
 | Run | Asserts |
 |---|---|
 | `scan` | the totals above; `layout`, `db_version`, `crs_version` in `--json` |
-| `extract` | exit 0, 7 files written; each output starts with the payload's own scan data, ends with EOI, carries exactly one Exif APP1 whose `0x0131` starts with `lrsalvage `; no `.partial` survives |
-| `extract` (rerun) | exit 0, 7 `skipped`, no byte rewritten (the marker prefix + completeness + SOF is what verifies) |
-| `extract --all-levels` | exit 0; 12 items; `levels 12`, `below_floor 2`, `selected_items 10`; `images` and every status unchanged (M2 alone contributes 5 items) |
+| `extract` | exit 0, 8 files written; each output starts with the payload's own scan data, ends with EOI, carries exactly one Exif APP1 whose `0x0131` starts with `lrsalvage `; no `.partial` survives |
+| `extract` (rerun) | exit 0, 8 `skipped`, no byte rewritten (the marker prefix + completeness + SOF is what verifies) |
+| `extract --all-levels` | exit 0; 15 items; `levels 15`, `below_floor 3`, `selected_items 12`; `images` and every status unchanged (M2 alone contributes 5 items and M10h three) |
 | `extract --min-long-edge 99999` | exit 3, `nothing to extract`, nothing written |
-| `extract` with `preoccupied_destination(M1, our_output(1616×1077))` | exit 0; M1 `skipped`, the six others written |
+| `extract` with `preoccupied_destination(M1, our_output(1616×1077))` | exit 0; M1 `skipped`, the seven others written |
 | `extract` with `preoccupied_destination(M1, jpeg(1616×1077))` | exit 2; M1 `failed` with `destination exists and is not a verified extraction; use --force`; the foreign file is byte-for-byte untouched; a same-size complete JPEG without the marker is never ours |
-| `extract --no-metadata` then `extract` | first run exit 0 and 7 outputs byte-identical to their payloads (no APP1 of ours); second run exit 2, 7 `failed`, every output untouched — a metadata-free run never verifies anything |
+| `extract --no-metadata` then `extract` | first run exit 0 and 8 outputs byte-identical to their payloads (no APP1 of ours); second run exit 2, 8 `failed`, every output untouched — a metadata-free run never verifies anything |
 | `extract` (report files) | `report.csv` header ends `…,note,payload,payload_metadata`; an unmapped item carries `payload` and `-` for `output` and `original_path`; `manifest.json` carries `stats.superseded` and `stats.deleted` (0 and 1 here) and one `payload` member per unclaimed pyramid; `report.csv` never carries `superseded` or `deleted` |
 
 ### `legacy` — 5 images, 1 unclaimed pyramid

@@ -12,7 +12,7 @@
 //! `original_present`, `below_floor`, `levels` and `selected_images` belong to
 //! the slice that completes each vault. So `modern` holds only the rows asserted
 //! below, and its `images` count is the count of this file's rows, not the
-//! thirteen the spec pins.
+//! fourteen the spec pins.
 //!
 //! What is asserted per vault is every **cache-level** fact, because ADR 0004
 //! decides those once per cache: the layout word, the two version strings, the
@@ -988,6 +988,79 @@ fn m10g_a_sibling_of_another_quality_does_not_rescue() {
         "the sibling is an orphan, not a companion"
     );
     assert_eq!(plan.cache.thumbnail_pyramids, 0);
+}
+
+/// M10h — a claimed pyramid in the state a discard leaves it.
+///
+/// `Library > Previews > Discard Standard and 1:1 Previews` deletes each preview
+/// pyramid's standard levels **and their rows**, rewrites `Pyramid.quality` to
+/// `bigThumbnail` and takes the render companion with it (§5.11). The demotion
+/// changes what `quality` means and decides nothing: the pair still claims the
+/// pyramid, so the largest surviving level is the best level, the pyramid is
+/// neither an orphan nor a rescue candidate, and nothing is below the floor.
+#[test]
+fn m10h_a_discarded_pyramid_is_still_the_one_the_entry_claims() {
+    let pyramid = uuid(26);
+    let vault = Vault::modern()
+        .image(ImageRow::new(26, "IMG_0026").cache(&pyramid))
+        .pyramid(
+            PyramidRow::new(&pyramid)
+                .profile("AdobeRGB")
+                .quality("bigThumbnail")
+                // The pre-discard value: §5.11 never reported what the discard
+                // does to `croppedWidth`/`croppedHeight`, and nothing reads them
+                // for a level-file pyramid. Stated rather than inherited from
+                // the builder's first-level fallback, which would claim 320.
+                .cropped(3840, 2560)
+                .level(320, 213)
+                .level(960, 640)
+                .level(1920, 1280),
+        )
+        .level_file(Level::sized(&pyramid, 320, 213))
+        .level_file(Level::sized(&pyramid, 960, 640))
+        .level_file(Level::sized(&pyramid, 1920, 1280))
+        .write();
+
+    let plan = vault.plan(&Options::default());
+    let item = item_for(&plan, 26);
+    assert_eq!(item.status, Status::Recoverable);
+    assert_eq!(
+        (item.width, item.height),
+        (Some(1920), Some(1280)),
+        "the largest surviving level, which the discard left alone"
+    );
+    assert_eq!(
+        item.tier,
+        Some(Tier::Large),
+        "1920 is below the 3840 render it was built from, and `large` anyway"
+    );
+    assert_eq!(
+        item.quality.as_deref(),
+        Some("bigThumbnail"),
+        "quality names the levels the pyramid holds now, not the build that wrote it"
+    );
+    assert_eq!(
+        item.declared,
+        Some((1920, 1280)),
+        "the surviving row is the claim, not the pyramid's cropped size"
+    );
+    assert!(item.selected, "1920 px is above the 640 floor");
+
+    assert_eq!(plan.stats.recoverable, 1);
+    assert_eq!(
+        plan.stats.levels, 1,
+        "the best level is the item; the two smaller files are not"
+    );
+    assert_eq!(
+        plan.stats.unmapped, 0,
+        "a demoted pyramid the entry claims is not an orphan"
+    );
+    assert_eq!(
+        plan.cache.thumbnail_pyramids, 0,
+        "the discard took the companion, and a claimed `bigThumbnail` pyramid is not one"
+    );
+    assert_eq!(plan.stats.missing_payload, 0);
+    assert_eq!(plan.stats.below_floor, 0);
 }
 
 #[test]

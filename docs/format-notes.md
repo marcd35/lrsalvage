@@ -1149,10 +1149,21 @@ exit 0. `extract --min-long-edge 0 --include-present` writes ten JPEGs totalling
 cache-size event, not a loss: the largest surviving level in this cache was
 1920 px, and no image needed a rescue.
 
-The state this leaves has no fixture row yet: `M10c`–`M10e` pin an *unclaimed*
-pyramid and `M3` pins a row without a file, and neither describes a claimed
-pyramid demoted to `bigThumbnail` with its companion gone. [#70](https://github.com/marcd35/lrsalvage/issues/70)
-adds the row; until it lands, this section is the record.
+**The state has a fixture row now.** `M10h` of `specs/fixtures.md` composes a
+claimed pyramid holding only 320, 960 and 1920 px, typed `bigThumbnail`, with no
+companion, and pins what the reader reports in it: `recovered` at the surviving
+1920 × 1280 level, tier `large`, `quality bigThumbnail` on a **claimed** pyramid,
+`unmapped 0`, `thumbnail_pyramids 0`, `missing_payload 0` and `below_floor 0`. It
+is a synthetic composition, so it pins the reader and not Adobe: this section
+stays the record that Lightroom writes the state, and the row's label says so.
+
+**What neither measures — TODO.** What a discard does to the pyramid row's own
+`croppedWidth` and `croppedHeight`. The level set before and after is in the
+table above; the cropped size was never read, and no reader path consults it for
+a level-file pyramid, so `M10h` composes the pre-discard value and claims nothing
+about it. Reading those two columns off a discarded copy would settle it, and is
+the first thing to check if the container arm ever needs that column for a
+demoted pyramid.
 
 
 ---
