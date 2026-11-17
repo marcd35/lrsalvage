@@ -1,0 +1,339 @@
+# Releasing 0.3
+
+The 0.3 checklist, as one list a release can be executed against line by line. It
+is the output of the grilling on
+[#106](https://github.com/marcd35/lrsalvage/issues/106), and its decisions live in
+[ADR 0011](adr/0011-0-3-is-the-trust-minor.md); the contract it may move is
+[ADR 0010](adr/0010-what-0-2-promises.md). This file holds only what to run and
+what to check off.
+
+Every box below is either provable or gone with its reason written where the box
+stood. That grilling settled which is which, and it corrected the release's own
+shape in five places it is worth stating up front, because a reader who has the
+issue open will otherwise meet them as surprises:
+
+- **`0.3.0` adds more than D13's sentence says.** ADR 0011 D5 and D13 describe "one
+  flag and two report fields". Measured against the tree, a flag cannot land
+  without its echo in the report's `options` (the frozen object echoes
+  `min_long_edge`, `all_levels` and `include_present` today —
+  [the report spec](../specs/modules/report.md)), and #63's "a digest change fails
+  the run" needs a non-zero exit that none of `0`–`4` means. The surface 0.3.0
+  adds is therefore **one flag, one `options` member, two digest fields and exit
+  code `5`**, and D13 is corrected with a date in the slice that lands them. It is
+  still additive: nothing in ADR 0010's eight surfaces is removed, renamed or given
+  a different meaning.
+- **§5.11's discarded copy no longer exists.** The gate #86 promised rests on a
+  copy that was deleted with the scratch tree it lived in. It is regenerable, and
+  this page's Evidence section says how — but the numbers are re-measured before
+  they are asserted, and the copy that was measured is not the copy that is kept.
+- **#96's own "patch release" sentence is wrong.** It says its fix reaches
+  crates.io in a patch; ADR 0011 D6 puts it in `0.3.0`, and slice 2 corrects the
+  ticket in its own pull request.
+- **#66 is a record, not a change.** Resume identity keeps marker prefix +
+  completeness + `SOF` dimensions, and the paragraph that says so lands in ADR
+  0003, where the rule already lives.
+- **`0.2.0`'s milestone is still open** and there is no `0.3.0` milestone. Slice 1
+  fixes both, because a reader of `vNext` should be able to tell what is in this
+  release without opening an ADR.
+
+**0.3 is the trust minor.** Its theme is that every claim it publishes is held by
+something a stranger can run, and what it mostly does is make what 0.2 already
+claims checkable: the counts §5.11 published, the promise that the evidence was
+never touched, the crate page that was blank, the advisory 0.2 shipped ignoring,
+and the resume limitation that shipped as prose. One surface is added
+(`--verify-source`); nothing is taken away.
+
+Until the tag exists the published version is `0.2.0`: this page describes a
+release that has not happened, and every sentence naming a version follows the
+publish rather than leading it.
+
+## The slices this list executes
+
+Eight slices, plus the acts below the tag. Each is one pull request; the version
+bump and the changelog section are boxes inside the last, not a ninth slice,
+because a `0.3.0` bump that lands early produces a tree claiming a version whose
+boxes are still open.
+
+| Group below | Slices |
+|---|---|
+| Slices | #96 (the crate page and tarball), #101 (`chrono`), #60 (the resume pin), #63 (`--verify-source`), #86 (the fourth evidence family), #66 (the identity record) |
+| Evidence | #86 — and §5.11's numbers re-measured rather than inherited |
+| Artifact | #96, and trusted publishing, which 0.2 deliberately cut |
+| Gates | #86's `real-discard` arm, and no other — every other gate already exists |
+| Frozen surface | ADR 0010's dated *added by 0.3.0* block — a review, no slice |
+| Docs | `CONTEXT.md`'s two digest terms, four README sentences, ADR 0003's amendment, every restatement of the fourth family |
+
+## What was left, and in what order
+
+The order is dependency, not preference. Slice 1 is where the other seven get
+their acceptance criteria; slices 2 and 8 have to be in the tagged tree because
+the tarballs and the release body come out of that tree; slice 5 precedes the bump
+because the report's `version` and its field set are asserted together, so a bump
+landing first fails a test that is telling the truth.
+
+| Slice | What it changes | Closes |
+|---|---|---|
+| 1 | This file: every box provable or cut, the milestone bookkeeping, and the six tickets' membership | — |
+| 2 | A README in each crate root, the five manifest fields, `[package] exclude` for the test tree, and #96's own text corrected to 0.3.0 | #96 |
+| 3 | `chrono` replaced in `extract::set_capture_time`, and `deny.toml`'s dated advisory ignore deleted in the same pull request | #101 |
+| 4 | The `specs/fixtures.md` row for two catalogs writing one destination, and the test that fails if the marker-prefix or dimension check weakens | #60 |
+| 5 | `--verify-source`, `source_sha256` and `snapshot_sha256`, the `options` echo, exit code `5`, the report and CLI specs, the README rows, and ADR 0010's and 0011 D13's dated corrections | #63 |
+| 6 | `LRSALVAGE_DISCARD_*`, the `real-discard` arm, `tests/discard.rs`, the rebuilt copy and its `EVIDENCE.md`, and all six restatements of the family | #86 |
+| 7 | A dated amendment in ADR 0003: resume identity keeps its shape | #66 |
+| 8 | The trusted-publisher workflow job, `0.3.0` in the workspace and in the cli's `lrsalvage-core` pin, and `CHANGELOG.md`'s `[0.3.0]` section | — |
+
+## Before the tag
+
+### Slices
+
+- [ ] **1 — this file** is merged, the `0.2.0` milestone is closed, `0.3.0` exists
+      and holds #96, #101, #60, #63, #86 and #66. Nothing else enters either
+      milestone: #62, #64, #65, #67, #68 and #93 are 0.4's or the app's, and #93
+      stays open after this tag with the README sentence it already has.
+- [ ] **2 — #96.** Both crate roots carry a `README.md` that says what the tool
+      does, links ADR 0010 for the compatibility promise, and gives the install
+      line; both manifests declare `readme`, `keywords`, `categories`,
+      `documentation` and `homepage`, each with its reason rather than a blank
+      fill; `[package] exclude` drops the test tree that imports the stripped
+      `lrsalvage-fixtures`. Proven by `cargo package --list -p` each crate listing
+      no test file that cannot build, and by unpacking both tarballs and running
+      `cargo build --all-targets` and `cargo test` with no checkout of this
+      repository present. The crate page is a claim surface: it carries no count
+      and no table this repo does not gate, and it repeats no number from
+      `format-notes`. #96's *Done when* sentence naming a patch release is
+      corrected here.
+- [ ] **3 — #101.** `chrono` is gone from `Cargo.lock`, `set_capture_time` resolves
+      a civil datetime through the replacement's time zone with the same
+      disambiguation policy, and the `[advisories] ignore` entry for
+      RUSTSEC-2026-0543 leaves in the same pull request. An ambiguous or
+      non-existent local time still drops the mtime rather than guessing, and a
+      test exercises that branch directly rather than only the happy path. The
+      mtime and the drop rule are unchanged, so the changelog says nothing about
+      this slice.
+- [ ] **4 — #60.** `specs/fixtures.md` gains the row for a second vault whose image
+      shares an output name and dimensions with an existing output, with its
+      assertion kind, evidence label and **`cannot show`** text recording that this
+      is *our* limitation and not Adobe's behaviour. The test fails if the
+      marker-prefix or the dimension check is weakened or removed. The README
+      sentence landed in 0.2 and is not rewritten; the deferred decision is linked
+      from the row rather than implied.
+- [ ] **5 — #63.** `--verify-source` on `scan` and `extract`; the verification
+      report carries `source_sha256` and `snapshot_sha256` as hex, `null` when the
+      flag was not given, so the object is eleven keys whether or not a run asked;
+      `options` gains `verify_source`; a digest that moved exits `5` with a stated
+      reason and is never a warning. The snapshot is what is compared, not the
+      catalog as it stands later, and neither digest is derived from the cache.
+      `report.csv` and `manifest.json` are untouched. `r1` moves from nine frozen
+      keys to eleven with the reason recorded in the test, the README's exit-code,
+      flag and verification-field rows are updated in this pull request, the report
+      and CLI specs record the fields and the code, and ADR 0010 gains its dated
+      *added by 0.3.0* block while ADR 0011 D13 gains its dated correction. A
+      synthetic vault run with the flag reports equal digests; a deliberately
+      modified snapshot fails loudly with its own message.
+- [ ] **6 — #86.** A discarded cache rebuilt by the recipe below, on an evidence
+      root that is not a scratch tree, with an `EVIDENCE.md` beside it recording
+      what it is, when the discard ran and the source render's hashes — because the
+      first copy was lost to a tidy-up and nothing asked. `LRSALVAGE_DISCARD_CATALOG`
+      / `LRSALVAGE_DISCARD_PREVIEWS` name it, and `sh scripts/check.sh real-discard`
+      fails rather than skipping when they are unset, exactly as the other three
+      families do. `crates/lrsalvage-cli/tests/discard.rs` asserts `scan --json`
+      (`layout modern`, `images 10`, `recovered 10`, tiers `large 9` / `standard 1`,
+      `thumbnail_pyramids 0`, `unmapped 0`, `missing_payload 0`, `below_floor 0`,
+      `superseded 0`, **`deleted 0`** — the capture that said `1` was wrong),
+      `scan` exit 0, and an `extract --min-long-edge 0 --include-present` writing
+      ten with `failed 0`, the byte total re-measured at `0.3.0` and
+      `quality bigThumbnail` on the demoted pyramid. The six restatements ride in
+      this pull request: `.env.example`, `scripts/check.sh` (usage line,
+      `require_pair` comment, `case` arm), `AGENTS.md`'s gate list and its
+      evidence-family paragraph, `docs/agents/rendering-a-test-cache.md`'s "names
+      all three pairs", `format-notes` §5.11, and this page.
+- [ ] **7 — #66.** ADR 0003 gains a dated amendment: resume identity stays marker
+      prefix + completeness + `SOF` dimensions, one destination per catalog is the
+      documented rule, and strengthening it waits for a report of the failure it
+      prevents. It records that the alternatives were weighed — the digest in the
+      marker, the `extract.csv` sidecar, asking the cache — and why each was
+      refused, rather than only that they were.
+- [ ] **8 — publishing.** `.github/workflows/release.yml` gains a publish job with
+      `id-token: write` and no long-lived token, a trusted publisher is configured
+      for each crate on crates.io, the workspace `version` is `0.3.0`, the cli's
+      `lrsalvage-core = { path, version = ... }` pin moves with it, and
+      `CHANGELOG.md` gains `## [0.3.0]` with **Added** (`--verify-source`, the two
+      digest fields, the `options` member), **Changed** (exit code `5`, the
+      `Software` marker's version — its prefix is unchanged, so a 0.2.0 output is
+      still ours) and a short **Packaging** note (the crate page and the tarballs).
+      Nothing here is listed for #101, #60 or #86: none of them changes what a user
+      or a script sees.
+
+### Evidence — what the release may claim
+
+- [ ] All four families are green here, on the commit the tag will land on:
+      `sh scripts/check.sh real`, `real-render`, `real-1to1` and `real-discard`.
+      Each fails rather than skipping when its own pair is unset, and none is
+      borrowed from another.
+- [ ] §5.11's numbers are re-measured at `0.3.0` against the rebuilt copy. The
+      capture they currently rest on came from an `0.1.0` build whose report echoes
+      `min_long_edge 640`, so neither the byte total nor the report's own members
+      are inherited.
+- [ ] The rebuild's provenance is recorded where the copy is: the render it was cut
+      from, the discard's own wording in the confirmation dialog, and the hashes
+      that show the surviving files are the render's bytes.
+- [ ] `format-notes` §5.11 still says `VERIFIED`, and now says in one sentence that
+      the copy it names was rebuilt after the first was deleted, with the date.
+      Nothing in it is downgraded to prose: the gate holds the counts, and the
+      section says which gate.
+- [ ] Where a byte-level claim has no gate behind it, the release says so in the
+      notes rather than in a checklist nobody reads twice.
+
+### Artifact — what a stranger can download
+
+- [ ] `cargo package --list -p lrsalvage-core` and `-p lrsalvage-cli` list no test
+      file that cannot build, and each tarball carries its crate's `README.md`.
+- [ ] `cargo publish --dry-run -p lrsalvage-core` packages and reaches
+      `aborting upload due to dry run`, with the cli's pin resolved against the
+      index rather than a path.
+- [ ] The tag still produces the three platform archives and `SHA256SUMS` from
+      `release.yml`, with the archive names `cargo-binstall`'s template requires —
+      unchanged by the publish job.
+- [ ] The publish job is the only new writer on crates.io: no repository secret
+      holds a crates.io token afterwards, and both crates list exactly one
+      trusted publisher.
+
+### Gates — the ones a script can run
+
+- [ ] `sh scripts/check.sh` green: `fmt`, `shell`, `clippy --all-targets`, the
+      workspace tests, `doc`, the release build, `typos` and `deny`. A missing tool
+      fails rather than skipping.
+- [ ] `sh scripts/check.sh msrv` green on the `rust-version` the manifests publish,
+      with the new dependency's floor checked against it — a dependency that raises
+      the floor is a decision, not a pin.
+- [ ] `spec_validate` clean: no dangling link, duplicate id or parent cycle across
+      `specs/`, including the row and the module specs this release edits.
+- [ ] `cargo test -p lrsalvage-core --test spec_graph` and
+      `cargo test -p lrsalvage-cli --test readme` green after the documentation
+      edits: a module's `depends-on` matches what it reaches, and the README's flag
+      and `--json` tables match the binary.
+- [ ] `typos` and `cargo deny` are green with their own policy files unchanged
+      except where a slice says otherwise: `deny.toml`'s advisory ignore is
+      *deleted* by slice 3, never renewed.
+
+### Frozen surface — what 0.2 promised, still promised
+
+- [ ] ADR 0010's eight surfaces reviewed against the whole diff: nothing removed,
+      renamed or given a different meaning, and the additions are exactly the flag,
+      the `options` member, the two digests and exit code `5`, each named in 0010's
+      dated block.
+- [ ] A later version keeps recognising what 0.2 wrote: the resume gate's
+      destination marked `lrsalvage 0.1.0` is still skipped byte for byte, and a
+      0.2.0 output is skipped for the same reason — the version inside the marker
+      is never compared. 0.3.0's own marker moves only that number.
+- [ ] Every sentence naming 0.2 as the present release is re-read and rewritten:
+      `README.md`'s version paragraph, the macOS gap's pointer, *"the frozen-surface
+      review in the 0.2 checklist"*, and *"the commit a tag is cut on is chosen by
+      the 0.2 checklist"* — plus the same claim in `release.yml`'s own comment.
+      Historical files keep their 0.2 references: this is a sweep of what a reader
+      takes for the present, not a rename.
+- [ ] The macOS paragraph still states its gap in its own words and points at
+      [#93](https://github.com/marcd35/lrsalvage/issues/93), which stays open after
+      this release; no box here claims the macOS route was proved.
+
+### Docs — the record
+
+- [ ] `CONTEXT.md` gains **Source digest** and **Snapshot digest**, each saying how
+      it differs from the payload digest Adobe writes into `previews.db`, and
+      **Verification report** grows the digests and the second half of its
+      path-free argument: a SHA-256 names no path. *Evidence family* stays out —
+      that is how this repository tests, not what the product is about.
+- [ ] ADR 0003's amendment (slice 7), ADR 0010's *added by 0.3.0* block and ADR
+      0011 D13's dated correction (slice 5) are all in the tree, each dated.
+- [ ] `specs/modules/report.md` records the two fields and the `options` member as
+      part of the frozen set, and `specs/modules/cli.md` records exit code `5` and
+      the flag — the two specs a reader consults instead of the code.
+- [ ] Each slice's own ticket is corrected in the pull request that implements it,
+      where its text had drifted: #96's patch-release sentence, #86's `deleted 1`,
+      #63's "two fields" without the `options` echo.
+
+## Making the tag
+
+The tag and everything under it are a maintainer's acts, each on its own go-ahead:
+the agent prepares the command, runs every gate it can run first, and verifies the
+outcome afterwards. Nothing under **After the tag** happens without its own
+separate go-ahead — one approval for "the release" is not one for an irreversible
+upload.
+
+- [ ] The tree the tag lands on is measured, not inherited: `sh scripts/check.sh`
+      green on that commit after it is merged and before a tag exists, all four
+      evidence families green on it, `cargo publish --dry-run -p lrsalvage-core`
+      packaging and reaching `aborting upload due to dry run`, and the release body
+      read from the extractor `release.yml` itself runs rather than by eye.
+- [ ] `CHANGELOG.md`'s `## [0.3.0]` section is the release body, verbatim. The
+      published body's first and last lines are that section's, and the heading
+      after it did not travel into the release.
+- [ ] The tag is `v0.3.0`, annotated, on the merge commit of the close-out pull
+      request — the tree published from, which carries slice 8's bump, changelog and
+      workflow by construction rather than by a later check.
+- [ ] The release publishes the three archives, `SHA256SUMS` and the changelog
+      section — and nothing generated from `scan --report`, which describes a cache,
+      not a release.
+
+## After the tag (irreversible)
+
+**The publish is the frozen-tree part of this list**, and 0.3.0 is the first
+release whose publishes run through OIDC rather than a token. That has never been
+rehearsed by anyone, because crates.io cannot attach a trusted publisher to a name
+that does not exist and cannot rehearse a publish it has not received — so both
+stop rules are decided here, before the attempt, not after it.
+
+Publish — the artifact's second route, and the one no dry run can prove:
+
+- [ ] `lrsalvage-core` then `lrsalvage-cli` 0.3.0, from a clean checkout of `v0.3.0`
+      rather than from a working tree, published by the trusted-publisher job in
+      `release.yml`. The order is not a preference: the cli resolves
+      `lrsalvage-core 0.3.0` through the index.
+      **Stop rule one.** If the OIDC job fails on `lrsalvage-core`, the fix is a
+      scoped, short-lived token for that one release so the version lands, and the
+      workflow defect becomes its own issue — never a yank of a version that was
+      never uploaded.
+      **Stop rule two.** If core lands and the cli publish fails, the fix is
+      forward: correct the tree and publish `lrsalvage-cli 0.3.0`, because an index
+      carrying core and no cli is recoverable. If core itself is defective —
+      building from the repository but not from the tarball — `0.3.0` cannot be
+      re-uploaded: yank it, fix it and release `0.3.1` with its own annotated tag
+      and its own release body. Either way, every sentence naming a version follows
+      the published one.
+- [ ] `cargo install lrsalvage-cli --version 0.3.0` works from a machine with no
+      checkout: the build comes from the registry, `lrsalvage --version` prints
+      `lrsalvage 0.3.0`, and `~/.cargo/.crates.toml` records the registry source.
+- [ ] `cargo binstall lrsalvage-cli` tried once against the tag, with its stop
+      rule: if it does not fetch the prebuilt, the README's binstall paragraph is
+      corrected to say so rather than left as an expectation.
+
+Docs and the record, once the publish has said what is true:
+
+- [ ] The README's install and crates.io sentences are corrected in a pull request
+      merged after the publish: both names are on crates.io as 0.3.0, the route was
+      proved, and no sentence describes a route that does not exist in either
+      direction.
+- [ ] `rust-version` and `rust-toolchain.toml` are re-checked against the
+      dependency tree, so the next release does not inherit a stale claim.
+- [ ] #96, #86, #101, #60, #63, #66, the `0.3.0` milestone and
+      [#106](https://github.com/marcd35/lrsalvage/issues/106) are closed with the
+      release link, and anything a slice cut on the way is an issue with its reason
+      rather than a paragraph here. #93 stays open, and #62, #64 and #67 stay open
+      as 0.4's candidates — the release says so rather than leaving their absence
+      to be inferred.
+
+## The discard, rebuilding it
+
+§5.11's state is what `Library > Previews > Discard Standard and 1:1 Previews`
+leaves, and it is reproducible on a machine with Lightroom Classic and a rendered
+cache: take the render's catalog and previews as a pair, apply the discard to all
+ten images, confirm the dialog that names the photo count, quit Lightroom so the
+index settles, and measure before and after by declared segment lengths. The GUI
+steps and the five facts that make driving them reliable are in
+[rendering a test cache](agents/rendering-a-test-cache.md); the discard's own
+section records the confirmation dialog's wording, which is what a driver keys on.
+
+Two things the first copy did not survive, and this rebuild does: the copy lives
+outside any scratch directory, and the hashes that tie it to the render it came
+from sit beside it. A copy that no document can identify is a copy a tidy-up
+deletes.
