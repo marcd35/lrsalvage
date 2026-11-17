@@ -53,8 +53,17 @@ pub fn not_a_jpeg() -> Vec<u8> {
 /// A destination we could have written: complete, SOF `(width, height)`, and
 /// IFD0 0x0131 (Software) = `lrsalvage <version>`.
 pub fn our_output(width: u16, height: u16, version: &str) -> Vec<u8> {
-    let software = format!("lrsalvage {version}");
-    let exif = exif_with(&[ascii_entry(0x0131, &software)]);
+    foreign_output(width, height, &format!("lrsalvage {version}"))
+}
+
+/// A destination somebody else wrote: complete, SOF `(width, height)`, and
+/// IFD0 0x0131 (Software) = `software` — a marker that is not ours.
+///
+/// The counterpart of [`our_output`]: the resume compares the marker's
+/// `lrsalvage ` prefix rather than any `Software` value, so a file this shape
+/// produces must be refused, never kept.
+pub fn foreign_output(width: u16, height: u16, software: &str) -> Vec<u8> {
+    let exif = exif_with(&[ascii_entry(0x0131, software)]);
     jpeg_with(width, height, &[exif])
 }
 
@@ -399,6 +408,22 @@ mod tests {
         let (tag, value) = ifd0_entry(&bytes, 0x0131).expect("IFD0 carries 0x0131");
         assert_eq!(tag, 0x0131);
         assert_eq!(value, b"lrsalvage 0.1.0\0");
+    }
+
+    #[test]
+    fn a_foreign_output_carries_a_marker_that_is_not_ours() {
+        let bytes = foreign_output(1616, 1077, "Adobe Photoshop 25.0");
+        assert!(jpeg::is_complete(&bytes));
+        assert_eq!(
+            jpeg::dimensions(&bytes).expect("a readable frame"),
+            (1616, 1077)
+        );
+
+        // A `Software` tag, so presence alone cannot tell the two apart: only
+        // the value's `lrsalvage ` prefix can.
+        let (tag, value) = ifd0_entry(&bytes, 0x0131).expect("IFD0 carries 0x0131");
+        assert_eq!(tag, 0x0131);
+        assert_eq!(value, b"Adobe Photoshop 25.0\0");
     }
 
     #[test]

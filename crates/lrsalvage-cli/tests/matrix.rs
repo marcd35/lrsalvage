@@ -459,6 +459,132 @@ fn extract_skips_every_output_its_own_earlier_run_wrote() {
     );
 }
 
+/// M15's second photograph carries this packet, so its absence from the file on
+/// disk proves the skip never wrote the second catalog's image.
+const SECOND_CATALOG_XMP: &str = r#"<x:xmpmeta xmlns:x="adobe:ns:meta/">
+ <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+  <rdf:Description rdf:about="" xmlns:xmp="http://ns.adobe.com/xap/1.0/" xmp:Rating="3"/>
+ </rdf:RDF>
+</x:xmpmeta>"#;
+
+/// The `Software` value M15's foreign file carries.
+///
+/// It names this tool without *preceding* with it: the marker is a prefix, so
+/// `contains("lrsalvage")` would wrongly keep this file and `starts_with` does
+/// not.
+const FOREIGN_SOFTWARE: &str = "lrsalvage-compatible importer 1.2";
+
+#[test]
+fn m15_a_second_catalog_skips_the_destination_its_predecessor_wrote() {
+    // The first catalog: three images recovered into the folder, plus a file
+    // another tool had already written into it at a fourth name.
+    let (a1, a2, a3) = (uuid(101), uuid(102), uuid(103));
+    let first = Vault::modern()
+        .image(ImageRow::new(1, "IMG_0001").cache(&a1))
+        .pyramid(PyramidRow::new(&a1).level(1616, 1077))
+        .level_file(Level::sized(&a1, 1616, 1077))
+        .image(ImageRow::new(2, "IMG_0002").cache(&a2))
+        .pyramid(PyramidRow::new(&a2).level(1616, 1077))
+        .level_file(Level::sized(&a2, 1616, 1077))
+        .image(ImageRow::new(3, "IMG_0003").cache(&a3))
+        .pyramid(PyramidRow::new(&a3).level(960, 1077))
+        .level_file(Level::sized(&a3, 960, 1077))
+        .preoccupied_destination(
+            "originals/IMG_0004.jpg",
+            &bytes::foreign_output(1616, 1077, FOREIGN_SOFTWARE),
+        )
+        .write();
+    extract(&first).assert().code(0);
+    let before = outputs(first.out());
+    assert_eq!(
+        before.len(),
+        4,
+        "three of ours and the foreign file: {before:#?}"
+    );
+
+    // The second catalog: its own library, the same destination, and every one
+    // of its names already taken — a different photograph of the same size, a
+    // size sharing only the width with the file on disk, one sharing only the
+    // height, and the same size behind another tool's marker.
+    let (b1, b2, b3, b4) = (uuid(201), uuid(202), uuid(203), uuid(204));
+    let second = Vault::modern()
+        .same_destination_as(&first)
+        .image(ImageRow::new(1, "IMG_0001").cache(&b1))
+        .pyramid(PyramidRow::new(&b1).level(1616, 1077))
+        .level_file(Level::sized(&b1, 1616, 1077).raw(&bytes::jpeg_with(
+            1616,
+            1077,
+            &[bytes::xmp_app1(SECOND_CATALOG_XMP)],
+        )))
+        .image(ImageRow::new(2, "IMG_0002").cache(&b2))
+        .pyramid(PyramidRow::new(&b2).level(1616, 640))
+        .level_file(Level::sized(&b2, 1616, 640))
+        .image(ImageRow::new(3, "IMG_0003").cache(&b3))
+        .pyramid(PyramidRow::new(&b3).level(640, 1077))
+        .level_file(Level::sized(&b3, 640, 1077))
+        .image(ImageRow::new(4, "IMG_0004").cache(&b4))
+        .pyramid(PyramidRow::new(&b4).level(1616, 1077))
+        .level_file(Level::sized(&b4, 1616, 1077))
+        .write();
+
+    let run = extract(&second)
+        .output()
+        .expect("run the second catalog's extract");
+    let stderr = String::from_utf8_lossy(&run.stderr);
+    assert_eq!(
+        run.status.code(),
+        Some(2),
+        "the three refusals make the run partial:\n{stderr}"
+    );
+    // One skip and three refusals: the identity is the marker prefix *and* both
+    // dimensions, and each has a destination only it decides. A comparison on
+    // one component alone turns its arm into a second skip, so this count is the
+    // assertion that keeps each half in place.
+    assert!(
+        stderr.contains("4 evaluated, 0 written, 1 skipped, 3 failed"),
+        "nothing is written, and exactly one destination is taken as ours:\n{stderr}"
+    );
+
+    // The collision: the file on disk is still the first catalog's photograph,
+    // and the second catalog's own bytes never reached it.
+    assert_eq!(
+        outputs(second.out()),
+        before,
+        "the shared tree is byte-identical: nothing at all was written"
+    );
+    let collided = &before["IMG_0001.jpg"];
+    assert!(
+        contains(collided, b"lrsalvage "),
+        "the skipped file is one of our own outputs"
+    );
+    assert!(
+        !contains(collided, SECOND_CATALOG_XMP.as_bytes()),
+        "and never the second catalog's photograph"
+    );
+
+    // The run's own record names the collision as already recovered — the
+    // report this row exists to pin. The first catalog's run claimed
+    // `extract.csv`, so this one is the numbered file. The status column is the
+    // structured field this row pins; the note beside it is prose, and prose is
+    // never asserted (`specs/fixtures.md`).
+    let record = fs::read_to_string(second.out().join("extract (2).csv"))
+        .expect("the second run's outcome record");
+    let skipped: Vec<&str> = record
+        .lines()
+        .filter(|line| line.starts_with("skipped"))
+        .collect();
+    assert_eq!(
+        skipped.len(),
+        1,
+        "only the same-name same-size file is skipped:\n{record}"
+    );
+    assert!(skipped[0].contains("IMG_0001.jpg"), "{}", skipped[0]);
+    assert!(
+        stderr.contains("not a verified extraction"),
+        "the other three are refused, not kept:\n{stderr}"
+    );
+}
+
 #[test]
 fn a_metadata_free_run_never_verifies_anything() {
     let vault = modern();
