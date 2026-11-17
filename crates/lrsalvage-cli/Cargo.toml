@@ -24,4 +24,6 @@ predicates.workspace = true
 tempfile.workspace = true
 # The vault (catalog, previews.db and payloads) comes from the shared builder,
 # so this crate needs no database driver or temp-directory crate of its own.
-lrsalvage-fixtures = { path = "../lrsalvage-fixtures", version = "0.2.0" }
+# `path` only: a dev-dependency carrying a `version` is published to the index,
+# and `lrsalvage-fixtures` is test-only (`publish = false`).
+lrsalvage-fixtures = { path = "../lrsalvage-fixtures" }
