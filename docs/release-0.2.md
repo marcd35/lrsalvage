@@ -65,9 +65,13 @@ Evidence — what the release may claim:
       when its pair is unset — the third evidence family beside `real` and
       `real-render`. Green 2026-11-17, and with the pair unset it exits 1 naming
       both names rather than skipping.
-- [ ] Every §5.5 `unmeasured` row still names the fixture row that pins the
+- [x] Every §5.5 `unmeasured` row still names the fixture row that pins the
       reader's behaviour in it; no new byte-level claim landed without a label.
-      Slice 2 does the audit.
+      Audited 2026-11-17: all seven states name a row that exists exactly once —
+      `M3`, `M4`, `X1`, `X2` and `M10f` labelled `unmeasured §5.5`, `M13` and
+      `M10c` `verified §5.10`, `M10d`/`M10e` `synthetic` — and the paragraph
+      above that table claimed every row was labelled `unmeasured`, which is true
+      of five of the nine and now states the split.
       **§5.11 is the one published claim that is neither labelled nor gated.** Its
       counts — `recovered 10`, tiers `large 9` / `standard 1`,
       `thumbnail_pyramids 0`, `unmapped 0`, `deleted 1` — are a dated one-off
@@ -170,16 +174,23 @@ Frozen surface — what ADR 0010 promises:
 
 Docs — what a reader trusts:
 
-- [ ] `format-notes` retirements landed; no dead `TODO` left behind. Slice 2.
-      One is already known dead rather than suspected:
-      `docs/adr/0005-discover-payloads-by-index.md` justifies counting motion and
-      face previews by "their modern shape is unverified (§5.7 TODO)" while §5.7
-      now reads **VERIFIED**. Every other `TODO` in the notes is re-read, not
-      assumed live.
-- [ ] `CONTEXT.md` matches the vocabulary the release actually uses. Slice 2.
-      Three of the five `layout` words the release publishes — `mixed`, `none`,
-      `unknown` — appear nowhere in the glossary, which is this box failing for a
-      reason rather than by inspection.
+- [x] `format-notes` retirements landed; no dead `TODO` left behind.
+      Audited 2026-11-17, all thirteen. The one #89 called dead was not: ADR
+      0005's `(§5.7 TODO)` pointed at a `TODO` bullet living inside a section
+      whose heading reads **VERIFIED**. That is a real defect and the opposite
+      one, so the claim moved into §5.5's unmeasured list and the ADR cites it
+      there. The tombstone `TODO` was narrowed by §5.11, which measured one
+      deletion that takes the rows and their payloads together. The rest are
+      live and name what they wait for: the `AgHg` `version`/`kind` values (one
+      published hexdump), padding contents, a `formatVersion` other than `3`, the
+      three unexplained count gaps in §5.4, the `.lrcat-data` shard split, and
+      which orientation column wins when the two disagree.
+- [x] `CONTEXT.md` matches the vocabulary the release actually uses. Audited
+      2026-11-17: the **Preview layout** entry named the five cases in prose and
+      none of the words a script reads, so it now names all five — `legacy`,
+      `modern`, `mixed`, `none`, `unknown` — in the sense
+      `specs/modules/previews-db.md` gives them, and says why the word is
+      published.
 - [ ] The README states the resume-identity limitation in one sentence, beside
       the `--force` row and the resume paragraph: a destination is ours on the
       marker prefix, a complete JPEG and matching dimensions, so a different
