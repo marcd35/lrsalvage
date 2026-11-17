@@ -586,38 +586,37 @@ legitimately has nothing to salvage.
 
 [ADR 0010](docs/adr/0010-what-0-2-promises.md) is the list of surfaces this tool
 promises a script, across versions. The table below says where each one is stated
-in this file and what holds it: a **gate** is a test in this tree that fails when
-the page and the binary disagree, and **review** means a person compares them, so
-nothing fails when the prose drifts. The two are named apart wherever they part
+in this file and what holds it: a **gate** is a test in this tree that pins the
+surface in the binary, so changing it fails `cargo test`; **review** means no test
+pins it and a person is the only check. The two are named apart wherever they part
 company.
 
-The table is a map, not a second copy. Every value — a status word, a field, a
-column, a flag — lives in the section the middle column names, and this page keeps
-no list of its own.
+The table is a map, not a second copy. This page keeps no list of its own, and
+where a detail lives only in the code, the row says so rather than inventing a
+home for it.
 
 | Surface | Where this README states it | Held by |
 |---|---|---|
-| The seven status words: six an image can end in, plus the state for a payload no image claims | [What the statuses mean](#what-the-statuses-mean) | Gate for the states — the vault matrix in `crates/lrsalvage-cli/tests/matrix.rs` asserts what each vault's images became. Review for the words: nothing compares `no-cache-entry` or `missing-payload` to this page. |
-| The exit codes `0`–`4` | [Exit codes](#exit-codes) | Review — the code a run returns is asserted per invocation, in `tests/matrix.rs` and `tests/cli.rs`, but nothing compares these meanings to `main.rs`'s mapping. |
+| The seven status words: six an image can end in, plus the state for a payload no image claims | [What the statuses mean](#what-the-statuses-mean) | Gate for the states — `crates/lrsalvage-core/tests/matrix.rs` asserts the status each image of a vault came out with. Review for the words: nothing compares `no-cache-entry` or `missing-payload` to this page. |
+| The exit codes `0`–`4` | [Exit codes](#exit-codes) | Review — `scan`'s and `extract`'s codes are asserted per invocation, in the CLI matrix (`crates/lrsalvage-cli/tests/matrix.rs`) and `tests/cli.rs`; nothing runs `masks`, so its two clauses are the same kind of promise, and no test compares these meanings to `main.rs`'s mapping. |
 | `scan --json`'s field set, "these fields, and only these" | The field table under [Quick start](#quick-start) | Gate — `crates/lrsalvage-cli/tests/readme.rs` compares the table to the object the binary prints, field for field. |
-| The verification report's key set under `lrsalvage.verification`, and `lrsalvage.manifest`'s envelope | The `--report` paragraph under [Quick start](#quick-start), and [What lands on disk](#what-lands-on-disk) | Gate — the report rows in `tests/matrix.rs` assert the object's exact nine keys and `report.rs`'s own tests hold the manifest's; both schema strings are asserted as literals, and each file's `version` against `CARGO_PKG_VERSION`, so a bump that misses a surface fails. |
-| `report.csv` and `extract.csv`: their columns, in order | [What lands on disk](#what-lands-on-disk) | Gate for `report.csv` — `tests/readme.rs` asserts its header and `tests/matrix.rs` its columns and order. Review for `extract.csv`: no test asserts its five columns. |
-| Output naming: the tree, an extra level's suffix, a virtual copy's name, a report name already taken | [What lands on disk](#what-lands-on-disk) | Review — `model.rs`'s tests pin the naming code and `tests/matrix.rs` pins the numbered `--report` name, but nothing reads these rules off the page. |
+| The verification report's key set under `lrsalvage.verification`, and `lrsalvage.manifest`'s envelope | The `--report` paragraph under [Quick start](#quick-start) spells out the verification report's members; [What lands on disk](#what-lands-on-disk) names `manifest.json` as the same facts with a schema and version | Gate — the CLI matrix asserts the verification object's exact nine keys and `report.rs`'s own tests hold the manifest's; both schema strings are asserted as literals, and each file's `version` against `CARGO_PKG_VERSION`, so a bump that misses a surface fails. |
+| `report.csv` and `extract.csv`: their columns, in order, and what `payload_metadata` means | [What lands on disk](#what-lands-on-disk) states the tail's order and what each file holds, and the header the run writes is the list of columns | Gate for the tail — `tests/readme.rs` asserts the header ends `,note,payload,payload_metadata`, and the CLI matrix pins the field count and those columns' values. Review for the rest of the header: renaming or swapping a middle column passes. |
+| Output naming: the tree, an extra level's suffix, a virtual copy's name, a report name already taken | [What lands on disk](#what-lands-on-disk) | Review — `model.rs`'s tests pin the naming code and the CLI matrix pins the numbered `--report` name, but nothing reads these rules off the page. |
 | The flags, and which command takes each | The flag table under [Quick start](#quick-start) | Gate that a flag exists — `tests/readme.rs` fails when the table names one no command has. Review for which command takes it: `--help` is read from all three at once, so a `scan` only flag listed under `extract` would pass. |
-| The `Software` marker `lrsalvage <version>`, and that only its prefix is compared | The *Resumable* bullet under [Safety](#safety), and [Metadata restored](#metadata-restored) | Gate — `extract`'s `a_preexisting_verified_file_is_skipped_and_its_bytes_untouched` marks a destination `lrsalvage 0.1.0` while the binary under test is `0.2.0`, and expects it skipped. |
+| The `Software` marker `lrsalvage <version>`, and that only its prefix is compared | The *Resumable* bullet under [Safety](#safety), and [Metadata restored](#metadata-restored) | Gate — `extract`'s `a_preexisting_verified_file_is_skipped_and_its_bytes_untouched` marks a destination `lrsalvage 0.1.0` and expects any later binary to skip it. |
 
 Two tiers govern what may change. **Additive** changes — a new field, stat, flag,
 status word or exit code, provided no existing one changes meaning — may land in a
-minor release. **A removal, a rename or a changed meaning** needs a new minor
-preceded by a deprecation stated in the release before it, and never arrives in a
-patch: a patch changes nothing in this list.
+minor release; a sixth exit code is a decision rather than a bump. **A removal, a
+rename or a changed meaning** needs a new minor preceded by a deprecation stated
+in the release before it, and never arrives in a patch: a patch changes nothing in
+this list.
 
 The version inside the marker is not part of the contract, which is what the
 prefix rule buys: resume compares `lrsalvage ` and stops there, so a later release
 keeps the files an earlier one wrote instead of reporting a whole library as
-somebody else's. The schema strings are identities rather than versions for the
-same reason — `lrsalvage.verification` and `lrsalvage.manifest` do not move when
-the tool's version does.
+somebody else's.
 
 A review-held row is a gap stated rather than hidden: those are the promises the
 frozen-surface review in [the 0.2 checklist](docs/release-0.2.md) reads by hand,
