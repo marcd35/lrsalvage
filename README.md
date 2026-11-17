@@ -139,6 +139,13 @@ attribute once, on the copy you unpacked:
 xattr -d com.apple.quarantine ./lrsalvage
 ```
 
+Neither macOS command has been run on a Mac against a published artifact. The
+Linux and Windows routes were proved that way, against `v0.2.0-rc.1`, command by
+command; the macOS pair — `shasum -a 256 -c` above and this `xattr` line — were
+not, because no Mac was available to the release. They are what this page would
+run first on one, and `docs/release-0.2.md` records the gap instead of this file
+implying it is closed.
+
 **macOS is Apple Silicon only.** There is one macOS archive and its target is
 `aarch64-apple-darwin`; on an Intel Mac, build from source (a few lines below) or
 use `cargo install`, which compiles for the machine it runs on.
