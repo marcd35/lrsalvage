@@ -83,5 +83,6 @@ destination. It decides nothing about which image deserves recovery — that is
   else the catalog's — so the file states what describes its own pixels and the
   report prints the value actually written.
 - **Capture time becomes the file modification time** unless `--no-timestamps` is
-  given or the date is missing or unparseable — in which case the mtime is left
-  as written rather than guessed.
+  given or the date is missing, unparseable, or ambiguous in the machine's local
+  zone — a DST fold reads the same wall clock twice, a spring-forward gap never —
+  in which case the mtime is left as written rather than guessed.

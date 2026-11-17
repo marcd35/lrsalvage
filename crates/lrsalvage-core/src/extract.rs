@@ -530,8 +530,9 @@ pub fn outcome_summary(outcomes: &[Outcome], dry_run: bool) -> String {
 /// decision is separate from the write below so a test can hold a fold to it
 /// without depending on the zone this machine happens to be in.
 fn capture_time_mtime(raw: &str, zone: &TimeZone) -> Option<filetime::FileTime> {
-    // The catalog's value may carry fractional seconds and an offset; the mtime
-    // is whole seconds of local wall clock, which is what the first 19 bytes are.
+    // `catalog` has already reduced the value to `YYYY-MM-DDTHH:MM:SS`
+    // (`catalog::normalise_timestamp`, `specs/modules/catalog.md`); the slice is
+    // defence against a caller handing over more, not a shape expected here.
     let trimmed = raw.get(..19).unwrap_or(raw);
     // Spelled out rather than the loose ISO parser, which reads a bare date as
     // midnight: a time of day the catalog did not record must not be invented.
@@ -618,6 +619,7 @@ pub fn below_floor(plan: &Plan) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::model::{CatalogImage, XmpMetadata};
     use crate::plan::Stats;
 
     /// One `AgHg` chunk, as the container writer would emit it.
@@ -919,11 +921,7 @@ mod tests {
 
     #[test]
     fn an_ambiguous_local_capture_time_drops_the_mtime_instead_of_guessing() {
-        // A POSIX transition rule rather than the machine's zone: the fold has to
-        // be the same one wherever the test runs. `EST5EDT` with the US rule
-        // falls back at 02:00 on 3 November and springs forward at 02:00 on 10
-        // March, so 2024 has one of each.
-        let zone = TimeZone::posix("EST5EDT,M3.2.0,M11.1.0").expect("a POSIX zone");
+        let zone = est5edt();
 
         // The fold: 01:30 on 3 November reads twice, at -04:00 and at -05:00.
         // Either instant is a guess about which one the photographer meant, and
@@ -943,9 +941,10 @@ mod tests {
             Some(filetime::FileTime::from_unix_time(1_710_052_200, 0))
         );
 
-        // What the catalog writes beyond whole seconds — a fraction, an offset —
-        // is truncated rather than reinterpreted; and a value that carries no
-        // time of day is a refusal as well, never midnight of the local zone.
+        // A value with no time of day is a refusal, never midnight of the local
+        // zone; and one carrying a fraction or an offset stays whole seconds, as
+        // the slice promises — though `catalog` normalises both away before a run
+        // reaches here, so this half is the defence rather than a real shape.
         assert_eq!(
             capture_time_mtime("2024-03-10T01:30:00.500+01:00", &zone),
             Some(filetime::FileTime::from_unix_time(1_710_052_200, 0))
@@ -955,7 +954,7 @@ mod tests {
 
     #[test]
     fn a_folded_capture_time_leaves_the_files_own_mtime_alone() {
-        let zone = TimeZone::posix("EST5EDT,M3.2.0,M11.1.0").expect("a POSIX zone");
+        let zone = est5edt();
         let dir = tempfile::tempdir().expect("temp dir");
         let output = dir.path().join("recovered.jpg");
         fs::write(&output, b"whatever the payload was").expect("write");
@@ -979,6 +978,82 @@ mod tests {
     fn mtime(path: &Path) -> filetime::FileTime {
         let metadata = fs::metadata(path).expect("metadata");
         filetime::FileTime::from_last_modification_time(&metadata)
+    }
+
+    /// The US eastern transition rule as a POSIX string: no tzdb, and 2024 has a
+    /// fold on 3 November and a gap on 10 March, so the ambiguity tests do not
+    /// depend on the zone the machine holding them is in.
+    fn est5edt() -> TimeZone {
+        TimeZone::posix("EST5EDT,M3.2.0,M11.1.0").expect("a POSIX zone")
+    }
+
+    #[test]
+    fn the_machine_s_own_zone_resolves_a_capture_time_rather_than_going_utc() {
+        // The production path is the one line no other test reaches, and it is the
+        // one that fails silently: when the platform's own zone cannot be found,
+        // jiff's `TimeZone::system()` answers `Etc/Unknown` — a whole UTC offset
+        // of wrong mtime, with no error anywhere. `try_system` is the same lookup
+        // reporting that failure instead of absorbing it.
+        let zone = TimeZone::try_system().expect("this machine's zone resolves to a real one");
+
+        let dir = tempfile::tempdir().expect("temp dir");
+        let output = dir.path().join("recovered.jpg");
+        fs::write(&output, b"whatever the payload was").expect("write");
+        let written = filetime::FileTime::from_unix_time(1_600_000_000, 0);
+        filetime::set_file_mtime(&output, written).expect("set mtime");
+
+        set_capture_time(&output, &item_with_capture_time("2024-07-01T12:00:00"));
+
+        // Noon local is noon minus the zone's own offset at that instant, so the
+        // mtime a UTC answer would write is a different number on every machine
+        // that is not at UTC.
+        let instant = zone
+            .to_zoned(
+                "2024-07-01T12:00:00"
+                    .parse::<jiff::civil::DateTime>()
+                    .expect("a civil datetime"),
+            )
+            .expect("an unambiguous instant");
+        assert_eq!(
+            mtime(&output),
+            filetime::FileTime::from_unix_time(instant.timestamp().as_second(), 0)
+        );
+    }
+
+    /// An item whose only interesting field is the catalog's capture time.
+    fn item_with_capture_time(raw: &str) -> PlanItem {
+        PlanItem {
+            status: Status::Recoverable,
+            image: Some(CatalogImage {
+                id_local: 1,
+                copy_name: None,
+                orientation: Orientation::Normal,
+                file_format: "JPEG".to_string(),
+                original_path: PathBuf::from("photo.jpg"),
+                root_folder: String::new(),
+                path_from_root: String::new(),
+                base_name: "photo".to_string(),
+                extension: "JPG".to_string(),
+                xmp: Some(XmpMetadata {
+                    capture_time: Some(raw.to_string()),
+                    ..XmpMetadata::default()
+                }),
+            }),
+            payload: None,
+            output: None,
+            width: None,
+            height: None,
+            color_profile: None,
+            quality: None,
+            orientation: Orientation::Normal,
+            effective_orientation: Orientation::Normal,
+            payload_metadata: exif::PayloadMetadata::default(),
+            tier: None,
+            declared: None,
+            smallest_level: None,
+            selected: true,
+            note: None,
+        }
     }
 
     #[test]

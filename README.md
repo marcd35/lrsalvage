@@ -575,7 +575,9 @@ successful write, and a dry run writes no report at all, so a dry run's notes ar
 not shown; check a real run's `extract.csv` when colour matters.
 
 Unless `--no-timestamps` is given, the file's modification time is set to the
-capture time; if that date is missing or unparseable, the mtime is left alone.
+capture time; if that date is missing, unparseable, or ambiguous in the machine's
+zone — a DST fold reads it twice, a spring-forward gap never — the mtime is left
+alone.
 
 The compressed image data is copied byte for byte. The only bytes added or
 replaced are metadata segments: EXIF and XMP APP1, ICC APP2. A payload's EXIF
