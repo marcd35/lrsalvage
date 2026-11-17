@@ -74,9 +74,10 @@ Evidence — what the release may claim:
       `synthetic`. Five of the nine read `unmeasured`, and the paragraph above the
       table said all of them did — it now states the split.
       **§5.11 publishes numbers no gate holds.** PR 87's row `M10h` pins the
-      state a discard leaves, and its own label says what that is worth: a
-      synthetic composition, so it pins the reader and not Adobe. The counts the
-      section publishes came from one real discard on one copy of the
+      state a discard leaves, and its own label says which half is which — the
+      state `verified §5.11`, the bytes `synthetic`, so it pins the reader and not
+      Adobe. The counts the section publishes came from one real discard on one
+      copy of the
       `Auto (3840px)` render, and no test reproduces them — the standing §5.4 had
       when its claim went false. §5.11 keeps them; the README cites that section
       for the mechanism, that a discard takes the companion too, and never for a
@@ -158,7 +159,8 @@ Artifact — what a stranger runs:
       to this release, and a CI runner is not the proof: it can check the hash,
       but quarantine attributes are set by the tool that downloads a file, so
       `xattr -d` there is a no-op that establishes nothing. The README says so in
-      its own words, and a `vNext` ticket tracks a real verification on a Mac. The
+      its own words, and [#93](https://github.com/marcd35/lrsalvage/issues/93)
+      tracks a real verification on a Mac. The
       alternative — leaving the box open until a Mac appears — would have held the
       tag behind hardware instead of behind a claim, which is the wrong trade for
       a route whose commands are the same shape as the two that passed.
@@ -219,8 +221,8 @@ Docs — what a reader trusts:
       `croppedWidth`/`croppedHeight`, which no reader path consults.
 - [x] `CONTEXT.md` matches the vocabulary the release actually uses. Audited
       2026-11-17: the **Preview layout** entry named the five cases in prose and
-      none of the words a script reads, so it now names all five — `legacy`,
-      `modern`, `mixed`, `none`, `unknown` — in the sense
+      two of the words a script reads (`legacy`, `modern`), so it now names all
+      five — `legacy`, `modern`, `mixed`, `none`, `unknown` — in the sense
       `specs/modules/previews-db.md` gives them, and says why the word is
       published.
 - [x] The README states the resume-identity limitation beside the resume
@@ -263,12 +265,13 @@ irreversible upload.
 - [x] `CHANGELOG.md`'s 0.2.0 section is the release body, verbatim. The published
       body's first and last lines are that section's, and the heading after it did
       not travel into the release.
-- [x] The tag is `v0.2.0`, annotated, on the merge commit of the pull request that
-      ticks the last box in this file — `8186ca6`, the merge of the close-out
-      pull request. That is the only commit whose tree makes every box above true,
-      and it is the tree published from: slice 4's packaging, slice 5's changelog
-      section and this list's final state all ride in it by construction, not by a
-      later check.
+- [x] The tag is `v0.2.0`, annotated, on `8186ca6` — the squash commit of PR 100,
+      the close-out that ticked the last box **above this heading**. That is the
+      tree published from, and it carries slice 4's packaging and slice 5's
+      changelog section by construction rather than by a later check. The boxes
+      under *After the tag* could only be earned once the tag and the publish
+      existed, so they are ticked in commits after it — which is what the section
+      below says they are.
 - [x] The release publishes the archives, `SHA256SUMS` and the changelog section —
       and nothing generated from `scan --report`, which describes a cache, not a
       release. The tag is the only trigger (`.github/workflows/release.yml`), so
@@ -297,6 +300,12 @@ Publish — the artifact's second route, and the one no dry run can prove:
       and nothing about it can be packaged beforehand. Published 2026-11-17 in
       that order, all three commands successful; both crates are live at `0.2.0`,
       one version each, and the cli's `default_version` is already `0.2.0`.
+      **Trusted publishing was cut rather than overlooked.** crates.io cannot
+      attach a trusted publisher to a name that does not exist yet, so both first
+      publishes had to go by hand with a scoped token; the OIDC half — a
+      `permissions: id-token: write` job, a trusted-publisher entry per crate and
+      no long-lived token at all — belongs to a release whose crates already
+      exist, and is not a gap in this one.
       **Two stop rules, decided before the attempt rather than after it.**
       If core lands and the cli publish fails, the fix is forward: correct the
       tree and publish `lrsalvage-cli 0.2.0`, because an index carrying core and
@@ -351,11 +360,12 @@ Docs and the record, once the publish has said what is true:
       [#70](https://github.com/marcd35/lrsalvage/issues/70), the `0.2.0`
       milestone and [#89](https://github.com/marcd35/lrsalvage/issues/89) are
       closed with the release link, and the two things this release deliberately
-      leaves undone are issues rather than paragraphs: the crates.io polish (a
-      crate README, the manifest metadata, and the six test files that import
-      `lrsalvage-fixtures`, which the published manifest strips so an auditor's
-      `cargo test` fails), and the real-Mac verification of the two macOS install
-      commands. Closed by this pull request's own `Closes` lines, which sit beside
+      leaves undone are issues rather than paragraphs: the crates.io polish
+      ([#96](https://github.com/marcd35/lrsalvage/issues/96) — a crate README, the
+      manifest metadata, and the six test files that import `lrsalvage-fixtures`,
+      which the published manifest strips so an auditor's `cargo test` fails), and
+      the real-Mac verification of the two macOS install commands
+      ([#93](https://github.com/marcd35/lrsalvage/issues/93)). Closed by this pull request's own `Closes` lines, which sit beside
       [the `v0.2.0` release](https://github.com/marcd35/lrsalvage/releases/tag/v0.2.0):
       `#70` by PR 87, `#54` and `#89` here, and the milestone empties as the last
       of its pull requests closes.

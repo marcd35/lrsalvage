@@ -101,14 +101,13 @@ _prune_ for a discard, which deletes the rows too.
 
 **Discard**:
 The explicit command over a selection — Lightroom's *Discard Standard and 1:1
-Previews*. It removes each preview pyramid's standard levels **and their rows**,
-rewrites that pyramid's recorded quality from `standard` to `bigThumbnail`, and
-takes its render companion with it. `quality` therefore describes the levels a
-pyramid currently holds rather than the build that wrote it. A pyramid shrinks
-rather than emptying: levels below the standard size survive, so a claimed
-pyramid never ends with no file at all, and nothing is lost that could still be
-salvaged. It is not a prune, because a prune leaves the rows as the only record
-and a discard leaves none.
+Previews*. It deletes a pyramid's rendered levels **together with their rows**,
+takes a render's companion pyramid with it, and leaves levels smaller than the
+standard size alone — so a pyramid shrinks rather than emptying, and nothing is
+lost that could still be salvaged. It rewrites `quality`, which is why that value
+describes the levels a pyramid currently holds and not the build that wrote it. It
+is not a prune, because a prune leaves the rows as the only record and a discard
+leaves none.
 _Avoid_: prune, purge, cleanup, trim — a discard deletes the claim, not only the
 bytes
 
