@@ -768,9 +768,12 @@ so coexistence was not observed); any conversion from a catalog newer than
 render measured here was of an image the catalog had never seen.
 
 Every state above that a fixture *can* construct has a row in
-`specs/fixtures.md`. Those rows are labelled `unmeasured` — `unverified` for
-M13, which §5.10 has since measured in the field — because a fixture proves how
-the reader behaves in a state and never that Adobe produces it:
+`specs/fixtures.md`, and each row carries the label that says what it is worth:
+`unmeasured` for the five states §5.10 never produced in the field, `verified
+§5.10` where a render did produce it, and `synthetic` where the row is a variant
+of a measured shape rather than the shape itself. The label matters because a
+fixture proves how the reader behaves in a state and never that Adobe produces
+it:
 
 | Unmeasured state | Row that pins the reader | What the row cannot show |
 |---|---|---|
