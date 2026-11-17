@@ -300,14 +300,33 @@ if [ "$#" -eq 0 ]; then
     set -- $all_gates
 fi
 
+# `set -e` aborts inside a gate, so the log ends in whatever cargo said last with
+# no line naming the gate that failed — and a green run leaves a reader counting
+# `==` headers, or running the whole thing again to prove it. The trap names the
+# failure; the last line names the success.
+gate_in_flight=''
+on_exit() {
+    status=$?
+    if [ "$status" -ne 0 ] && [ -n "$gate_in_flight" ]; then
+        printf 'gate failed: %s\n' "$gate_in_flight" >&2
+    fi
+    exit "$status"
+}
+trap on_exit EXIT
+
 for gate in "$@"; do
+    gate_in_flight=$gate
     case "$gate" in
         real-render) gate_real_render ;;
         real-1to1) gate_real_1to1 ;;
         fmt | shell | clippy | test | doc | build | package | typos | deny | msrv | real) "gate_$gate" ;;
         *)
+            # A usage error, not a gate that ran and failed.
+            gate_in_flight=''
             printf 'unknown gate: %s (one of: %s real real-render real-1to1)\n' "$gate" "$all_gates" >&2
             exit 1
             ;;
     esac
 done
+
+printf 'all gates green: %s\n' "$*"
