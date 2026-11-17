@@ -31,20 +31,23 @@ Evidence — what the release may claim:
       `M10f` reads **unmeasured** with the dated attempt, §5.11 records the
       deletion that can be triggered — which takes the companion too — and the
       README's rescue sentence matches.
-- [ ] `sh scripts/check.sh real-1to1` green here, and failing rather than skipping
+- [x] `sh scripts/check.sh real-1to1` green here, and failing rather than skipping
       when its pair is unset — the third evidence family beside `real` and
-      `real-render`.
+      `real-render`. Green 2026-11-17, and with the pair unset it exits 1 naming
+      both names rather than skipping.
 - [ ] Every §5.5 `unmeasured` row still names the fixture row that pins the
       reader's behaviour in it; no new byte-level claim landed without a label.
 
 Artifact — what a stranger runs:
 
-- [ ] `0.2.0` in the workspace, and `--version`, the `Software` marker and both
+- [x] `0.2.0` in the workspace, and `--version`, the `Software` marker and both
       schema strings agree — asserted by a test, not eyeballed.
 - [ ] `CHANGELOG.md`'s 0.2.0 entry accounts for every user-visible change since
       `v0.1.0`, each naming its ADR.
-- [ ] Three platform archives and `SHA256SUMS` attached to the release; archive
-      names match `cargo-binstall`'s templates.
+- [x] Three platform archives and `SHA256SUMS` attached to the release; archive
+      names match `cargo-binstall`'s templates. Proven end to end at
+      `v0.2.0-rc.1`: four assets, `sha256sum -c` green on the downloads, and the
+      names resolving through binstalk's own default templates.
 - [ ] `lrsalvage-core` then `lrsalvage-cli` on crates.io — no `version` on the
       `lrsalvage-fixtures` dev-dependency, or `cargo publish` refuses.
 - [ ] `cargo install lrsalvage --version 0.2.0` works from a machine with no
@@ -55,19 +58,28 @@ Artifact — what a stranger runs:
 
 Gates — what is enforced rather than written:
 
-- [ ] `sh scripts/check.sh` green.
-- [ ] `sh scripts/check.sh real`, `real-render` and `real-1to1` green.
-- [ ] `spec_validate` clean.
+- [x] `sh scripts/check.sh` green.
+- [x] `sh scripts/check.sh real`, `real-render` and `real-1to1` green.
+- [x] `spec_validate` clean.
 - [ ] `spec_graph.rs` and `readme.rs` green after the documentation edits.
 - [x] The MSRV job green on the `rust-version` the manifests publish — the number
       comes from a run, never from a table. (#56)
 
 Frozen surface — what ADR 0010 promises:
 
-- [ ] ADR 0010's eight surfaces reviewed against the whole diff: nothing removed,
+- [x] ADR 0010's eight surfaces reviewed against the whole diff: nothing removed,
       renamed, or given a new meaning.
+      Reviewed 2026-11-17 across `v0.1.0..main`. The status words, the exit codes,
+      the `lrsalvage.manifest` envelope and `report.csv`'s column order are
+      unchanged; `scan --json`'s fields, the `stats` keys, `report.csv`'s two new
+      columns and the flags are additive; output naming is byte-identical. The
+      exception is recorded rather than hidden: `unmapped` and `missing-payload`
+      narrowed *within* 0.2 (ADR 0008, ADR 0009) and the changelog's `### Changed`
+      states both — the statement ADR 0010 asks for, in the first release that
+      could carry one, since `v0.1.0` shipped no changelog to announce it in.
 - [ ] A 0.1.0 output still verifies as ours (the marker prefix, not the version).
-- [ ] Anything that failed this review is out of 0.2 and becomes its own slice.
+- [x] Anything that failed this review is out of 0.2 and becomes its own slice.
+      Nothing failed it.
 
 Docs — what a reader trusts:
 
