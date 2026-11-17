@@ -118,6 +118,10 @@ Docs — what a reader trusts:
 - [ ] `CONTEXT.md` matches the vocabulary the release actually uses.
 - [x] README's "What this repository is not" rewritten: it now *has* a release
       workflow, and a GUI is planned rather than ruled out.
+- [x] The compatibility contract is published in the README: one table, ADR 0010's
+      eight surfaces, each naming the section that states it and what holds it,
+      with the two tiers, the marker's prefix clause and the review-held rows
+      marked as such — `report.csv` among the gate-held ones. (#51)
 
 ## Making the tag
 
