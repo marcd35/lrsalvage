@@ -197,29 +197,41 @@ jobs:
           sha256sum --check --strict SHA256SUMS
           cat SHA256SUMS
 
-      # The body is `CHANGELOG.md`'s section for this version, verbatim — heading
-      # included, since that is what "the section" names. A missing or empty
-      # section fails here rather than shipping a release with no notes.
+      # The body is `CHANGELOG.md`'s section for the version being released, which
+      # is not always the tag's: a scratch pre-release of 0.2.0 documents
+      # `## [0.2.0]`, and the first tag ever cut proved that the hard way — it failed
+      # here with `no ## [0.2.0-rc.1] heading` after all three archives had built.
+      # So the tag's version wins when a changelog gives a pre-release its own
+      # section, and the suffix is stripped when it does not. A missing or empty
+      # section fails rather than shipping a release with no notes.
       - name: Take the release body from the changelog
         shell: bash
         run: |
           set -eu
           version="${GITHUB_REF_NAME#v}"
-          heading="## [$version]"
-          # The section runs from this heading to the next `## [` heading, or to the
-          # link-reference block a Keep a Changelog file keeps at the bottom. The
-          # heading is matched by prefix, so a dated heading — `## [0.2.0] -
-          # 2026-11-16`, which that format encourages — is this section rather than
-          # a missing one, and the date travels with it verbatim.
-          awk -v heading="$heading" '
-            inside && (/^## \[/ || /^\[[^]]*\]: /) { exit }
-            index($0, heading) == 1 { inside = 1 }
-            inside { print }
-          ' CHANGELOG.md > body.md
-          if [ ! -s body.md ]; then
-            printf 'CHANGELOG.md has no %s heading\n' "$heading" >&2
+          found=''
+          for candidate in "$version" "${version%%-*}"; do
+            heading="## [$candidate]"
+            # The section runs from this heading to the next `## [` heading, or to
+            # the link-reference block a Keep a Changelog file keeps at the bottom.
+            # The heading is matched by prefix, so a dated heading — `## [0.2.0] -
+            # 2026-11-16`, which that format encourages — is this section rather
+            # than a missing one, and the date travels with it verbatim.
+            awk -v heading="$heading" '
+              inside && (/^## \[/ || /^\[[^]]*\]: /) { exit }
+              index($0, heading) == 1 { inside = 1 }
+              inside { print }
+            ' CHANGELOG.md > body.md
+            if [ -s body.md ]; then
+              found="$candidate"
+              break
+            fi
+          done
+          if [ -z "$found" ]; then
+            printf 'CHANGELOG.md has no section for %s\n' "$version" >&2
             exit 1
           fi
+          printf 'body taken from ## [%s]\n' "$found"
           # A heading on its own is an empty section, and a release with no notes
           # is the failure this job exists to avoid: count the lines that say
           # something beyond the heading.
