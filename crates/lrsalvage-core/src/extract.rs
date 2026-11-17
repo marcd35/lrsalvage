@@ -19,6 +19,7 @@ use std::fs;
 use std::io::Write as _;
 use std::path::{Component, Path, PathBuf};
 
+use jiff::tz::TimeZone;
 use sha2::{Digest, Sha256};
 
 use crate::error::{Error, IoContext, Result};
@@ -518,14 +519,35 @@ pub fn outcome_summary(outcomes: &[Outcome], dry_run: bool) -> String {
     )
 }
 
+/// The modification time a capture-time string asks for, or `None` when it asks
+/// for nothing safe to write.
+///
+/// The catalog stores local wall-clock time with no zone, so `zone` is what
+/// turns it into an instant. `None` is the whole refusal: a value that does not
+/// parse, or one that `zone` makes ambiguous — a DST fold reads the same wall
+/// clock twice, and a spring-forward gap reads it never — because picking one of
+/// the two instants is a guess (`adr-0006-degrade-without-guessing`). The
+/// decision is separate from the write below so a test can hold a fold to it
+/// without depending on the zone this machine happens to be in.
+fn capture_time_mtime(raw: &str, zone: &TimeZone) -> Option<filetime::FileTime> {
+    // The catalog's value may carry fractional seconds and an offset; the mtime
+    // is whole seconds of local wall clock, which is what the first 19 bytes are.
+    let trimmed = raw.get(..19).unwrap_or(raw);
+    // Spelled out rather than the loose ISO parser, which reads a bare date as
+    // midnight: a time of day the catalog did not record must not be invented.
+    let civil = jiff::civil::DateTime::strptime("%Y-%m-%dT%H:%M:%S", trimmed).ok()?;
+    let zoned = zone.to_ambiguous_zoned(civil).unambiguous().ok()?;
+    Some(filetime::FileTime::from_unix_time(
+        zoned.timestamp().as_second(),
+        0,
+    ))
+}
+
 /// Set the file's modification time to the capture time, when known.
 ///
-/// The catalog stores local wall-clock time with no zone, so it is
-/// interpreted in the machine's local zone. Failure is not fatal: a wrong
-/// timestamp must never cost a recovered photo.
+/// The catalog's wall clock is interpreted in the machine's local zone. Failure
+/// is not fatal: a wrong timestamp must never cost a recovered photo.
 fn set_capture_time(output: &Path, item: &PlanItem) {
-    use chrono::{Local, NaiveDateTime, TimeZone};
-
     let Some(raw) = item
         .image
         .as_ref()
@@ -534,15 +556,19 @@ fn set_capture_time(output: &Path, item: &PlanItem) {
     else {
         return;
     };
-    let trimmed = raw.get(..19).unwrap_or(raw);
-    let Ok(naive) = NaiveDateTime::parse_from_str(trimmed, "%Y-%m-%dT%H:%M:%S") else {
+    apply_capture_time(output, raw, &TimeZone::system());
+}
+
+/// Write `raw` as `output`'s mtime in `zone`, or leave the mtime alone.
+///
+/// Every refusal — an unparseable value, an ambiguous local time — comes back as
+/// a no-op rather than an error, and the zone is a parameter so a test can put a
+/// fold in front of it without this machine's zone.
+fn apply_capture_time(output: &Path, raw: &str, zone: &TimeZone) {
+    let Some(mtime) = capture_time_mtime(raw, zone) else {
         return;
     };
-    let Some(local) = Local.from_local_datetime(&naive).single() else {
-        return;
-    };
-    let ft = filetime::FileTime::from_unix_time(local.timestamp(), 0);
-    let _ = filetime::set_file_mtime(output, ft);
+    let _ = filetime::set_file_mtime(output, mtime);
 }
 
 /// `report.csv` next to the extracted files, so a run is auditable.
@@ -889,6 +915,70 @@ mod tests {
             .collect::<String>();
         assert_eq!(outcomes[0].sha256.as_deref(), Some(expected.as_str()));
         assert_eq!(outcomes[0].bytes, on_disk.len() as u64);
+    }
+
+    #[test]
+    fn an_ambiguous_local_capture_time_drops_the_mtime_instead_of_guessing() {
+        // A POSIX transition rule rather than the machine's zone: the fold has to
+        // be the same one wherever the test runs. `EST5EDT` with the US rule
+        // falls back at 02:00 on 3 November and springs forward at 02:00 on 10
+        // March, so 2024 has one of each.
+        let zone = TimeZone::posix("EST5EDT,M3.2.0,M11.1.0").expect("a POSIX zone");
+
+        // The fold: 01:30 on 3 November reads twice, at -04:00 and at -05:00.
+        // Either instant is a guess about which one the photographer meant, and
+        // a wrong mtime is worth less than no mtime.
+        assert_eq!(capture_time_mtime("2024-11-03T01:30:00", &zone), None);
+        // The gap is the same refusal the other way round: 02:30 never happened.
+        assert_eq!(capture_time_mtime("2024-03-10T02:30:00", &zone), None);
+
+        // A nearby wall clock that is *not* ambiguous is resolved, so what the
+        // two refusals above rest on is the ambiguity and not the parse.
+        assert_eq!(
+            capture_time_mtime("2024-11-03T03:30:00", &zone),
+            Some(filetime::FileTime::from_unix_time(1_730_622_600, 0))
+        );
+        assert_eq!(
+            capture_time_mtime("2024-03-10T01:30:00", &zone),
+            Some(filetime::FileTime::from_unix_time(1_710_052_200, 0))
+        );
+
+        // What the catalog writes beyond whole seconds — a fraction, an offset —
+        // is truncated rather than reinterpreted; and a value that carries no
+        // time of day is a refusal as well, never midnight of the local zone.
+        assert_eq!(
+            capture_time_mtime("2024-03-10T01:30:00.500+01:00", &zone),
+            Some(filetime::FileTime::from_unix_time(1_710_052_200, 0))
+        );
+        assert_eq!(capture_time_mtime("2009-08-06", &zone), None);
+    }
+
+    #[test]
+    fn a_folded_capture_time_leaves_the_files_own_mtime_alone() {
+        let zone = TimeZone::posix("EST5EDT,M3.2.0,M11.1.0").expect("a POSIX zone");
+        let dir = tempfile::tempdir().expect("temp dir");
+        let output = dir.path().join("recovered.jpg");
+        fs::write(&output, b"whatever the payload was").expect("write");
+        let written = filetime::FileTime::from_unix_time(1_600_000_000, 0);
+        filetime::set_file_mtime(&output, written).expect("set mtime");
+
+        // The fold reaches the file as nothing at all: the mtime a recovery
+        // arrived with is what it leaves with.
+        apply_capture_time(&output, "2024-11-03T01:30:00", &zone);
+        assert_eq!(mtime(&output), written);
+
+        // The same file, a wall clock that is unambiguous: the mtime moves. So
+        // the assertion above rests on the refusal, not on a missing write path.
+        apply_capture_time(&output, "2024-11-03T03:30:00", &zone);
+        assert_eq!(
+            mtime(&output),
+            filetime::FileTime::from_unix_time(1_730_622_600, 0)
+        );
+    }
+
+    fn mtime(path: &Path) -> filetime::FileTime {
+        let metadata = fs::metadata(path).expect("metadata");
+        filetime::FileTime::from_last_modification_time(&metadata)
     }
 
     #[test]
