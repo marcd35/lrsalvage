@@ -88,11 +88,13 @@ One archive per platform, attached to the release for the tag alongside
 | macOS, Apple Silicon only | `lrsalvage-aarch64-apple-darwin-v0.2.0.tgz` |
 | checksums for all three | `SHA256SUMS` |
 
-Those four assets are already on the
+Those four assets are on the
+[`v0.2.0` release](https://github.com/marcd35/lrsalvage/releases/tag/v0.2.0), and
+the same four were proved first on the
 [`v0.2.0-rc.1` pre-release](https://github.com/marcd35/lrsalvage/releases/tag/v0.2.0-rc.1)
-under that tag's spelling (`…-v0.2.0-rc.1.tgz`); at `v0.2.0` the same four carry
-`v0.2.0`, because the tag is the version in every asset name. What builds,
-proves and publishes them is
+under that tag's spelling (`…-v0.2.0-rc.1.tgz`) — the tag is the version in every
+asset name, which is how one workflow builds both. What builds, proves and
+publishes them is
 [`.github/workflows/release.yml`](.github/workflows/release.yml) — its own step
 list is the description, and the cheapest proof it offers is that the archive you
 download was unpacked and run before it was attached. An archive holds the binary
@@ -140,11 +142,13 @@ xattr -d com.apple.quarantine ./lrsalvage
 ```
 
 Neither macOS command has been run on a Mac against a published artifact. The
-Linux and Windows routes were proved that way, against `v0.2.0-rc.1`, command by
-command; the macOS pair — `shasum -a 256 -c` above and this `xattr` line — were
-not, because no Mac was available to the release. They are what this page would
-run first on one, and `docs/release-0.2.md` records the gap instead of this file
-implying it is closed.
+Linux and Windows routes were proved that way, command by command, against
+`v0.2.0-rc.1`; at `v0.2.0` all three archives were downloaded and verified
+against `SHA256SUMS`, and the Linux archive unpacked and its contents listed, but
+no route was re-run end to end at the final tag. The macOS pair — `shasum -a 256
+-c` above and this `xattr` line — has never run, because no Mac was available to
+the release. They are what this page would run first on one, and
+`docs/release-0.2.md` records the gap instead of this file implying it is closed.
 
 **macOS is Apple Silicon only.** There is one macOS archive and its target is
 `aarch64-apple-darwin`; on an Intel Mac, build from source (a few lines below) or
@@ -157,28 +161,26 @@ cargo install lrsalvage-cli --version 0.2.0
 ```
 
 The package is `lrsalvage-cli`; the binary it installs is `lrsalvage`, so the
-command you run afterwards is still `lrsalvage`. Neither name is on crates.io yet
-([#54](https://github.com/marcd35/lrsalvage/issues/54)), so this route is not
-open today — until that lands, unpack an archive or build from source.
+command you run afterwards is still `lrsalvage`. Both names are on crates.io as
+0.2.0, and the route was proved by running that command on a machine with no
+checkout of this repository.
 
 ### cargo binstall
 
 [`cargo-binstall`](https://github.com/cargo-bins/cargo-binstall) downloads the
 platform archive instead of building it. It is a cargo subcommand you install
-once — `cargo install cargo-binstall` — and both of its forms wait on something
-0.2 does not have yet:
+once — `cargo install cargo-binstall`. Both forms work as of 0.2.0:
 
 ```console
 cargo binstall lrsalvage-cli
 cargo binstall --git https://github.com/marcd35/lrsalvage lrsalvage-cli
 ```
 
-The bare form resolves through the crates.io index, so it starts working at the
-publish. The `--git` form clones this tree and needs no registry entry, so it
-starts working at the tag instead. The dated attempt against `v0.2.0-rc.1` is in
-[the checklist](docs/release-0.2.md) rather than claimed here, and neither form
-changes the archives: they are already named to `cargo-binstall`'s own default
-template.
+The bare form resolves through the crates.io index; the `--git` form clones this
+tree and needs no registry entry. Both were run against `v0.2.0`, and both fetched
+the prebuilt archive rather than falling back to `cargo install` — seconds each.
+Neither form changes the archives: they are already named to `cargo-binstall`'s
+own default template.
 
 ### From source
 
