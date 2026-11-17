@@ -38,6 +38,13 @@ allow = [
 [bans]
 multiple-versions = "warn"
 wildcards = "deny"
+# One wildcard is permitted, and only this one: `lrsalvage-fixtures` is a path
+# dev-dependency that must carry **no** `version`, because Cargo publishes a
+# versioned dev-dependency to the index and `cargo publish` then refuses a
+# package crates.io does not have. A path is therefore the whole requirement.
+# The rule keeps its teeth where it was aimed: a registry requirement written as
+# `serde = "*"` still fails, because this option only forgives paths.
+allow-wildcard-paths = true
 # No async runtime, no TLS stack: this tool is a file reader, and both would be
 # pure attack surface.
 deny = [
