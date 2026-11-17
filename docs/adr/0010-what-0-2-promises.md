@@ -101,6 +101,10 @@ this record rather than a surprise later.
 - The whole 0.2 backlog is therefore prose, labels, gates and release machinery;
   the follow-ups that *do* add surface — shell completions, `--verify-source`,
   a free-space pre-flight — are 0.3 minors, decided after it.
+  **Amended 2026-11-17 by ADR 0011:** `0.3.0` is the trust minor and carries
+  `--verify-source` alone. Shell completions (#62) and the free-space pre-flight
+  (#64) move to a later minor, so this sentence reads "the next minor's
+  contents", not one release holding all three.
 - A contract item that loses its gate becomes a visible gap: the changelog's
   "changed" section and this list are reviewed together.
 - The pre-1.0 escape hatch is explicitly declined. A 0.x minor that breaks a

@@ -8,6 +8,7 @@ references:
   - format-notes
   - glossary
   - adr-0010-what-0-2-promises
+  - adr-0011-0-3-is-the-trust-minor
 ---
 
 # lrsalvage architecture
@@ -230,9 +231,11 @@ here: `adr-0001-parse-dont-carve`, `adr-0002-map-via-previews-db`,
 `adr-0005-discover-payloads-by-index`, `adr-0006-degrade-without-guessing`,
 `adr-0007-publish-a-verification-report`,
 `adr-0008-a-render-companion-is-not-an-orphan`,
-`adr-0009-rescue-an-image-from-its-companion`, and
+`adr-0009-rescue-an-image-from-its-companion`,
 `adr-0010-what-0-2-promises` (which declares the compatibility contract every
-other decision is a promise about).
+other decision is a promise about), and
+`adr-0011-0-3-is-the-trust-minor` (what the release after 0.2 is for, and the
+six issues it refuses).
 Byte-level facts about the formats, with an evidence label per claim, live in
 `format-notes`; the product vocabulary lives in `glossary`. A module spec links
 to those and carries only what is specific to its own boundary.
