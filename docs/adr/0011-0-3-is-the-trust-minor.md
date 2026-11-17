@@ -104,9 +104,11 @@ not in it, and neither is #93.
 ### D5 — #63 is in, and it is what makes this a minor rather than a patch
 
 `--verify-source` adds a flag and two report fields, which ADR 0010's additive
-tier permits in a minor. It is also the only user-visible change in the release:
-without it, every item left is packaging, a gate and a dependency swap, which
-ADR 0010's corollary says is a patch.
+tier permits in a minor. **Amended 2026-11-17:** the slice as it landed also adds
+an `options` member and exit code `5`, recorded in D13's dated correction and in
+ADR 0010's *added by 0.3.0* block. It is also the only user-visible change in the
+release: without it, every item left is packaging, a gate and a dependency swap,
+which ADR 0010's corollary says is a patch.
 
 Rules out: a `0.2.1` carrying this work; hashing by default (a second read pass
 over the catalog on every run); hashing the cache; and warning rather than failing
@@ -197,6 +199,18 @@ marker's version — not its identity — is the only other thing that changes.
 
 Rules out: a removal or rename riding along under a trust theme; and a patch
 claiming any part of this release.
+
+**Corrected 2026-11-17, while the slice landed.** D13's "one flag and two report
+fields" undercounted what #63 needed. The comparison is `source_sha256` against
+`snapshot_sha256` at acquisition — not before and after the run, which would fail
+a run whose copy was perfect whenever Lightroom saved the catalog midway — and a
+mismatch needs a code a script can branch on, so 0.3.0 also adds `options`
+member `verify_source` and exit code `5`. Both are additive under ADR 0010, the
+`0`–`4` rows keep their meanings, and the additions are recorded in that
+record's dated block rather than only here. The flag reaches `extract` as well as
+`scan`: the check is worth having on the run that writes, and on `extract` it
+publishes nothing, because `report.csv` and `manifest.json` are not surfaces for
+a digest.
 
 ## What this record does not decide
 

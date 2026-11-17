@@ -108,13 +108,35 @@ gate_build() {
 # measured: an unpacked crate whose `cargo test` cannot compile because
 # `lrsalvage-fixtures` is a `path`-only dev-dependency the published manifest drops.
 #
+# The cli's tarball is verified against the core tarball this run built, by a
+# `patch` on the command line. Its generated manifest names `lrsalvage-core` by
+# version, and that version is not on crates.io until the release after this one,
+# so without the patch verification resolves whatever core *was* published. That
+# passed only while the published copy still matched this tree: the first change
+# to the seam between the two crates — #63's `--verify-source`, which adds core
+# API the cli calls — made the gate verify an older core and fail on the new
+# tree. Aimed at the tarball beside it, the gate proves the pair a release
+# publishes rather than a pair nobody ships together.
+#
 # The slowest gate here (two builds and a test run), and it takes `--allow-dirty`
 # so it measures a working tree — which is exactly when it is worth running.
 # Name it while iterating, and let the no-argument run carry it at hand-off.
 gate_package() {
     printf '%s\n' '== package'
+    # Relative, so `cargo` and the shell read the same path on every platform:
+    # `/tmp` is bash's alone and `C:/...` is not.
+    staged=target/package/gate-unpacked
+    rm -rf "$staged"
+    core_root=''
     for crate in lrsalvage-core lrsalvage-cli; do
-        cargo package --allow-dirty -p "$crate"
+        patch=''
+        if [ -n "$core_root" ]; then
+            patch=$(native_path "$(pwd)/$core_root")
+            cargo package --allow-dirty -p "$crate" \
+                --config "patch.crates-io.lrsalvage-core.path=\"$patch\""
+        else
+            cargo package --allow-dirty -p "$crate"
+        fi
         listed=$(cargo package --list --allow-dirty -p "$crate")
         printf '%s\n' "$listed" | grep -qx 'README.md' || {
             printf '%s\n' "$crate: the package must carry the README.md its manifest points at" >&2
@@ -132,7 +154,8 @@ gate_package() {
             fi
         done
         archive=$(ls -t "target/package/$crate"-*.crate | head -1)
-        unpacked=$(mktemp -d)
+        unpacked="$staged/$crate"
+        mkdir -p "$unpacked"
         tar -xzf "$archive" -C "$unpacked"
         root="$unpacked/$(tar -tzf "$archive" | head -1 | cut -d/ -f1)"
         # `--all-targets` compiles test targets too, and core's lib test target
@@ -140,12 +163,15 @@ gate_package() {
         # `src/`, where no `exclude` reaches (#96's open half). Its tarball is
         # built, not tested, until those sites move; the CLI's is both.
         if [ "$crate" = lrsalvage-cli ]; then
-            (cd "$root" && cargo build --all-targets && cargo test)
+            (cd "$root" && cargo build --all-targets \
+                --config "patch.crates-io.lrsalvage-core.path=\"$patch\"" \
+                && cargo test --config "patch.crates-io.lrsalvage-core.path=\"$patch\"")
         else
+            core_root=$root
             (cd "$root" && cargo build)
         fi
-        rm -rf "$unpacked"
     done
+    rm -rf "$staged"
 }
 
 gate_typos() {
@@ -195,6 +221,18 @@ require() {
     if ! command -v "$1" >/dev/null 2>&1; then
         printf 'missing %s: %s\n' "$1" "$2" >&2
         exit 1
+    fi
+}
+
+# A path `cargo` can read when the shell's spelling is not the platform's: an
+# msys/git-bash path is `C:`-less, and `cygpath -m` is the one translation that
+# keeps forward slashes (a TOML string cannot carry a raw backslash). On every
+# other system the path already means what it says.
+native_path() {
+    if command -v cygpath >/dev/null 2>&1; then
+        cygpath -m "$1"
+    else
+        printf '%s' "$1"
     fi
 }
 

@@ -70,9 +70,17 @@ module spec.
 - **Nothing in the file identifies a cache or a payload.** The only place a name
   appears is a template with `<uuid…>`, `<digest>` and `<longedge>` placeholders.
   Path-freedom is enforced twice: the writer builds the report from a struct with
-  no path, leaf, uuid or digest field to fill, and a fixture row asserts the
-  written bytes contain none of the vault's absolute paths, uuids, digests, shard
+  no path, leaf, uuid or *payload* digest field to fill, and a fixture row asserts
+  the written bytes contain none of the vault's absolute paths, uuids, digests, shard
   folders or leaf names.
+  **Amended 2026-11-17 by #63.** The struct now carries one digest pair —
+  `source_sha256` and `snapshot_sha256`, the catalog's own hash and our private
+  copy's, measured by `snapshot` and printed as lowercase hex. It is not a
+  payload digest: no cache, uuid or leaf is derived from it, and hex carries no
+  path, so the property this record exists for is unchanged. The field set in
+  `report`'s spec stays frozen and adding a member is still a decision; the
+  curated set above is simply the set as of 0.3.0, and that spec is where the
+  list lives.
 - **`--json` does not change.** It stays the stdout surface, path-bearing by
   design, gaining only the fields ADRs 0004 and 0006 already promise. One job per
   surface: stdout for a human or a local script, a file for a stranger's issue.

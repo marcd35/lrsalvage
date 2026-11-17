@@ -46,6 +46,18 @@ pub enum Error {
     #[error("refusing to write inside the catalog or preview cache: {0}")]
     UnsafeDestination(PathBuf),
 
+    #[error(
+        "the catalog changed while it was being copied: {path}\n  \
+         sha256 of the catalog:  {source_sha256}\n  \
+         sha256 of our snapshot: {snapshot_sha256}\n  \
+         The copy is not the catalog, so nothing was planned from it. Retry, with Lightroom closed if it was open."
+    )]
+    SourceChanged {
+        path: PathBuf,
+        source_sha256: String,
+        snapshot_sha256: String,
+    },
+
     #[error("cannot use {path} as a destination: {source}")]
     Destination {
         path: PathBuf,

@@ -93,6 +93,31 @@ the output-naming rules are review-held, not gate-held** (`report.csv`'s columns
 are not among them: `readme.rs` asserts that header), and that gap is part of
 this record rather than a surprise later.
 
+### Added by 0.3.0 — 2026-11-17
+
+`0.3.0` is additive under the rule below, and it adds exactly this:
+
+- **The flag `--verify-source`**, on `scan` and `extract`: hash the catalog, copy
+  it, hash the copy, and fail when the pair disagrees (#63).
+- **Exit code `5`** — the catalog changed while it was being copied. Taken as
+  the decision this record says a sixth code must be, not as a bump: a script has
+  to be able to tell "your evidence moved under me" apart from a bad destination
+  (`4`) and from a partly-written extraction (`2`).
+- **Two verification-report fields**, `source_sha256` and `snapshot_sha256`, as
+  lowercase hex or `null` when the flag was not given, plus
+  `options.verify_source` — so the report is eleven members either way and two
+  strangers' files stay comparable (`report`'s spec holds the frozen set).
+
+No existing surface changes meaning: the exit-code table's `0`–`4` read exactly
+as they did, `--json`, `report.csv` and `manifest.json` gain nothing, and the
+`Software` marker is untouched. The gap this record listed — the exit-code table
+was review-held because nothing compared its meanings to `main.rs`'s mapping — is
+now **gate-held for the numbers and the arms**: that unit test asserts the six
+published codes and one case per code, and `exit_code_for` names every variant
+rather than defaulting, so a new variant does not compile until the mapping gives
+it one. Moving an existing variant to a different code, and the rows' prose,
+remain a reviewer's job.
+
 ## Consequences
 
 - `0.2.0` is `v0.1.0` plus the v2 work, and **`0.2.x` changes nothing a script

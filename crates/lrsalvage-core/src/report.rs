@@ -13,6 +13,7 @@ use crate::error::{IoContext, Result};
 use crate::model::Orientation;
 use crate::plan::{Options, Payload, Plan, PlanItem, Shapes, Stats, Tier};
 use crate::previews_db::{self, Layout};
+use crate::snapshot::SourceDigests;
 use crate::{jpeg, lrprev};
 
 /// The tag a consumer reads to know which facts a verification report holds.
@@ -495,10 +496,11 @@ pub fn shapes_json(shapes: &Shapes) -> Value {
 /// The verification report's contents, as a struct of its own.
 ///
 /// Not a filtered plan and not a filtered `--json` object: there is no field
-/// here a path, a leaf name, a uuid or a digest could be put in, so no module
-/// can hand this report one (`adr-0007-publish-a-verification-report`). The
-/// field set is frozen in this module's spec; adding one is a decision, not an
-/// edit.
+/// here a path, a leaf name, a uuid or a *payload* digest could be put in, so no
+/// module can hand this report one. The one digest pair it does carry is the
+/// catalog's, measured by `snapshot` and identifying no payload
+/// (`adr-0007-publish-a-verification-report`). The field set is frozen in this
+/// module's spec; adding one is a decision, not an edit.
 struct Verification<'a> {
     version: &'a str,
     layout: Layout,
@@ -509,6 +511,11 @@ struct Verification<'a> {
     options: &'a Options,
     stats: &'a Stats,
     shapes: Shapes,
+    /// The digest pair a verified acquisition proved, or `None` when the run
+    /// never asked for it. The flag measured and nothing else does, so its echo
+    /// in `options.verify_source` is this field's presence rather than a second
+    /// value that could disagree with it.
+    digests: Option<&'a SourceDigests>,
 }
 
 impl Verification<'_> {
@@ -521,10 +528,17 @@ impl Verification<'_> {
             "layout": self.layout.as_str(),
             "db_version": self.db_version,
             "crs_version": self.crs_version,
+            // The evidence the run never touched, as lowercase hex. Hex carries
+            // no path, and an unmeasured digest is `null`, so the key set is the
+            // same eleven members whether or not a run asked
+            // (`adr-0007-publish-a-verification-report`).
+            "source_sha256": self.digests.map(SourceDigests::source),
+            "snapshot_sha256": self.digests.map(SourceDigests::snapshot),
             "options": {
                 "min_long_edge": self.options.min_long_edge,
                 "all_levels": self.options.all_levels,
                 "include_present": self.options.include_present,
+                "verify_source": self.digests.is_some(),
             },
             "stats": verification_stats(self.stats),
             "shapes": verification_shapes(&self.shapes),
@@ -537,10 +551,12 @@ impl Verification<'_> {
 /// The file describes the plan, so it is worth writing for the degraded runs
 /// most worth handing over; *when* it is written is `cli`'s decision, what it
 /// says is this module's. `lrsalvage.manifest`'s envelope, a curated body: no
-/// `items`, no input paths, and nothing that names a payload.
+/// `items`, no input paths, and nothing that names a payload. `digests` is the
+/// pair a `--verify-source` run proved, or `None` when it did not ask.
 pub fn write_verification(
     plan: &Plan,
     options: &Options,
+    digests: Option<&SourceDigests>,
     path: &Path,
     version: &str,
 ) -> Result<()> {
@@ -552,6 +568,7 @@ pub fn write_verification(
         options,
         stats: &plan.stats,
         shapes: plan.cache.shapes,
+        digests,
     };
 
     let mut text = serde_json::to_string_pretty(&report.to_json()).map_err(|error| {
@@ -1654,12 +1671,12 @@ recovered"
             include_present: true,
         };
 
-        write_verification(&verification_plan(), &options, &path, "9.9.9").unwrap();
+        write_verification(&verification_plan(), &options, None, &path, "9.9.9").unwrap();
 
         let text = std::fs::read_to_string(&path).unwrap();
         let report: Value = serde_json::from_str(&text).unwrap();
 
-        // The envelope and the curated body, and no tenth member.
+        // The envelope and the curated body, and no twelfth member.
         let mut keys: Vec<&String> = report.as_object().unwrap().keys().collect();
         keys.sort();
         assert_eq!(
@@ -1672,6 +1689,8 @@ recovered"
                 "options",
                 "schema",
                 "shapes",
+                "snapshot_sha256",
+                "source_sha256",
                 "stats",
                 "version",
             ],
@@ -1686,6 +1705,13 @@ recovered"
         assert_eq!(report["layout"], "mixed");
         assert_eq!(report["db_version"], "1504001");
         assert_eq!(report["crs_version"], "18.0.0");
+
+        // A run that never asked for the proof carries both digests absent, and
+        // says so in the options echo: the key set does not change with a flag.
+        assert_eq!(report["source_sha256"], Value::Null);
+        assert_eq!(report["snapshot_sha256"], Value::Null);
+        assert_eq!(report["options"]["verify_source"], false);
+
         assert_eq!(report["options"]["min_long_edge"], 800);
         assert_eq!(report["options"]["all_levels"], true);
         assert_eq!(report["options"]["include_present"], true);
@@ -1733,6 +1759,45 @@ recovered"
     }
 
     #[test]
+    fn a_verified_acquisition_publishes_both_digests_and_echoes_the_flag() {
+        let dir = tempfile::tempdir().unwrap();
+        let catalog = dir.path().join("2023.lrcat");
+        std::fs::write(&catalog, b"the catalog as it was").unwrap();
+        let snapshot = crate::snapshot::CatalogSnapshot::capture_verified(&catalog).unwrap();
+        let path = dir.path().join("scan.json");
+
+        write_verification(
+            &verification_plan(),
+            &Options::default(),
+            snapshot.digests(),
+            &path,
+            "9.9.9",
+        )
+        .unwrap();
+
+        let text = std::fs::read_to_string(&path).unwrap();
+        let report: Value = serde_json::from_str(&text).unwrap();
+        let source = report["source_sha256"].as_str().expect("a digest");
+        assert_eq!(
+            source,
+            report["snapshot_sha256"].as_str().expect("a digest"),
+            "a verified acquisition publishes a pair that agrees\n{text}"
+        );
+        assert_eq!(source.len(), 64, "lowercase hex sha256: {source}");
+        assert!(
+            source
+                .chars()
+                .all(|c| c.is_ascii_digit() || ('a'..='f').contains(&c)),
+            "lowercase hex, never a path or a uuid: {source}"
+        );
+        assert_eq!(report["options"]["verify_source"], true);
+        assert!(
+            !text.contains(&catalog.to_string_lossy().into_owned()),
+            "the digest is hex; the path it came from stays out:\n{text}"
+        );
+    }
+
+    #[test]
     fn a_shape_class_the_cache_never_showed_carries_no_template() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("scan.json");
@@ -1747,7 +1812,8 @@ recovered"
             ..Plan::default()
         };
 
-        write_verification(&plan, &Options::default(), &path, "1").unwrap();
+        // A class the cache never showed reports `count: 0` and no template.
+        write_verification(&plan, &Options::default(), None, &path, "1").unwrap();
 
         let report: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
         assert_eq!(report["layout"], "none");

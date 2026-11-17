@@ -309,7 +309,7 @@ selected, so `extract` never starts. A vault of failures alone therefore reads a
 `manifest.json` and the verification report (R4). Neither is a status, a CSV column or an exit code: the count says
 what the cache held, not what any image became (`adr-0004-detect-layout-not-version`).
 
-## The verification report — nine rows
+## The verification report — eleven rows
 
 A report row is a property of a **run**, not of an image, so these are listed once
 here instead of being repeated in each vault's `Runs` table; each row names the
@@ -320,7 +320,7 @@ fails if a single path, uuid, digest, shard folder or leaf name reaches the file
 
 | # | Vault | Run | Exit | Asserts | Pins |
 |---|---|---|---|---|---|
-| R1 | `modern` | `scan --report <out>/scan.json` | 0 | count: the object's keys are exactly the frozen set (`schema`, `version`, `generated_unix`, `layout`, `db_version`, `crs_version`, `options`, `stats`, `shapes`); `layout modern`; `db_version 1504001`; `crs_version 18.0.0`; `options` echoes `640`, `false`, `false`; every `stats` member equals the vault's pinned totals; `shapes.level_file.count` equals the level files built, `suffix_matches_sof` exactly one lower — M5's `_1616` file measures 800×600 — and `container.count 0` with no template | the report describes the run, and its field set is a contract, not a snapshot of the plan |
+| R1 | `modern` | `scan --report <out>/scan.json` | 0 | count: the object's keys are exactly the frozen set (`schema`, `version`, `generated_unix`, `layout`, `db_version`, `crs_version`, `source_sha256`, `snapshot_sha256`, `options`, `stats`, `shapes`); `layout modern`; `db_version 1504001`; `crs_version 18.0.0`; both digests `null` and `options.verify_source false`; the other `options` echo `640`, `false`, `false`; every `stats` member equals the vault's pinned totals; `shapes.level_file.count` equals the level files built, `suffix_matches_sof` exactly one lower — M5's `_1616` file measures 800×600 — and `container.count 0` with no template | the report describes the run, and its field set is a contract, not a snapshot of the plan; a flag moves no member, only a value |
 | R2 | `modern` | the bytes R1 wrote | 0 | bytes: the file contains none of the vault's absolute paths (catalog, cache, output root), none of its uuids, none of its digests, none of its shard folder names and none of its leaf names | the regression the decision exists for: one leaked string fails the row. Compared against names the **builder** produced, never a hard-coded sample |
 | R3 | `mixed` | `scan --report` | 0 | count: `shapes.level_file.count` and `shapes.container.count` are both non-zero and each carries its own template; `stats.superseded 1` | a mixed cache publishes two grammars, which is why the template belongs to the class rather than to the cache |
 | R4 | `unrecognised` | `scan --report` | 3 | count: `layout unknown`; `stats.unrecognised 3`; `shapes.level_file.count 0` and `shapes.container.count 0`, both templates absent; the file exists although the run wrote nothing else, and the one hint still prints on stderr | an exit-3 run still hands over its report; the histogram has no bucket for "no shape" (ADR 0005 ¶6) |
@@ -329,6 +329,16 @@ fails if a single path, uuid, digest, shard folder or leaf name reaches the file
 | R7 | `modern` | `--report` naming a file that already exists | 0 | count+bytes: the run writes `scan (2).json`, says so on stderr, and the existing file is byte-identical afterwards | a claimed name, never an overwrite (`cli`) |
 | R8 | `modern` | `--report` whose parent is inside the cache | 4 | count: exit `4`, no file inside the cache and no file anywhere else | every named write obeys the destination rule, and a failed report write is a destination error rather than "nothing selected" |
 | R9 | `modern` | `scan --json --report` (and `--verbose`) | 0 | count: stdout parses as exactly one object with the `--json` field set, `--verbose` lines are on stderr, and the report file is written and path-free | the two surfaces do not mix: a file for a stranger, one object for a script |
+| R10 | `modern` | `scan --verify-source --report` | 0 | count: `source_sha256` and `snapshot_sha256` are lowercase hex and equal, `source_sha256` equals `snapshot::sha256_file` of **the vault's catalog** — the member's meaning, not its presence — and `options.verify_source true` | the promise this release exists for: the copy is the catalog, published as a number a stranger can compare |
+| R11 | `modern` | `extract --verify-source` | 0 | count: the run writes its JPEGs and exits `0`, says nothing about a digest on stderr, and neither `report.csv` nor `manifest.json` gains a member — no `source_sha256`, `snapshot_sha256` or `verify_source` | the flag proves the acquisition on the writing run without becoming a second report surface |
+
+The **mismatch** — a copy that is not the catalog — is not a run row. No test can
+make this binary change the user's catalog under itself without a test-only hook
+in production code, so it is asserted where it is reachable: `snapshot`'s
+`a_copy_that_is_not_the_catalog_fails_naming_both_digests` drives `verify_copy`
+with a tampered copy and asserts the error and its stated message, and `main.rs`'
+unit test pins that error's exit code to `5`. The gap is stated here rather than
+papered over by a row that would pass by never reaching the branch.
 
 ## Conventions
 

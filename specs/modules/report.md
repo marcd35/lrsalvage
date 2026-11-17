@@ -10,6 +10,7 @@ depends-on:
   - jpeg
   - model
   - previews-db
+  - snapshot
 references:
   - adr-0005-discover-payloads-by-index
   - adr-0006-degrade-without-guessing
@@ -29,7 +30,9 @@ sheet, and the path-free verification report `scan --report` writes.
 
 Reads a plan and, for the contact sheet, the payload files it needs. Writes to the
 path its caller named and invents no path of its own; the numbered-name rule for
-report files belongs to `cli`. It decides nothing and adds no metadata.
+report files belongs to `cli`. It decides nothing and adds no metadata. The
+digest pair a verified run proved is a value handed to it, not a fact it
+measures: no module here opens the catalog.
 
 The verification report is the one artifact here that leaves the machine, so it is
 built from a struct of its own — the curated fields below — rather than from a
@@ -125,10 +128,12 @@ struct a path.
   `scan --report <file>` writes one JSON object: `schema`
   `lrsalvage.verification`, the tool `version` that wrote it, `generated_unix`;
   then `layout`, `db_version` and `crs_version` (ADR 0004's five words and two
-  verbatim strings), `options` (`min_long_edge`, `all_levels`,
-  `include_present`), `stats`, and `shapes`. `options` echoes the knobs the run
-  applied, which the caller hands over with the plan: a plan records what the
-  run decided, not the options that shaped it. `stats` carries exactly `images`,
+  verbatim strings), `source_sha256` and `snapshot_sha256` (the digest pair a
+  `--verify-source` run proved, `null` for both when it did not), `options`
+  (`min_long_edge`, `all_levels`, `include_present`, `verify_source`), `stats`,
+  and `shapes`. `options` echoes the knobs the run applied, which the caller
+  hands over with the plan: a plan records what the run decided, not the options
+  that shaped it. `stats` carries exactly `images`,
   `recovered`, `suspect`, `missing_payload`, `no_cache_entry`, `unmapped`,
   `failed`, `original_present`, `below_floor`, `bytes`, `levels`,
   `selected_items`, `selected_images`, `tiers`, `superseded`, `deleted` and
@@ -140,9 +145,22 @@ struct a path.
 - **Nothing in the report identifies a cache, a folder or a payload.** Its only
   names are grammar templates with `<uuid…>`, `<digest>` and `<longedge>`
   placeholders. Two things enforce that instead of intending it: the writer's
-  struct has no path, leaf, uuid or digest field to fill, and the fixture matrix
-  asserts the written bytes contain none of a vault's absolute paths, uuids,
-  digests, shard folder names or leaf names (`adr-0007-publish-a-verification-report`).
+  struct has no path, leaf, uuid or payload-digest field to fill, and the fixture
+  matrix asserts the written bytes contain none of a vault's absolute paths,
+  uuids, digests, shard folder names or leaf names
+  (`adr-0007-publish-a-verification-report`).
+- **The two digests are the catalog's, never a payload's, and hex is what keeps
+  them path-free.** `source_sha256` and `snapshot_sha256` arrive as the snapshot's
+  own `SourceDigests` value: this module prints a pair another module measured and
+  never derives one from a path. They are the one deliberate exception to
+  "nothing here identifies a payload", and they identify the reverse — no cache,
+  no uuid, no leaf, and no filename field is derived from them. Both are `null`
+  when the flag was not given, so the object is the same eleven members on every
+  report and two strangers' files stay comparable; a reader reads `null` as "not
+  measured", never as zero. `options.verify_source` is the pair's presence
+  rather than a second value, because the flag is the only thing that measures,
+  and an echo that could disagree with the evidence beside it is a bug waiting
+  to be written.
 - **`shapes` counts the class each payload took, and carries that class's
   grammar.** `level_file` is `{"count", "suffix_matches_sof", "template"}`:
   its `count`, how many of those leaves name the long edge the `SOF` measured —
