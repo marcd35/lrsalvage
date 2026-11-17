@@ -251,22 +251,31 @@ verifies the outcome afterwards. Nothing under **After the tag** happens without
 its own separate go-ahead — one approval for "the release" is not one for an
 irreversible upload.
 
-- [ ] The tree the tag lands on is measured, not inherited: `sh scripts/check.sh`
+- [x] The tree the tag lands on is measured, not inherited: `sh scripts/check.sh`
       green on that commit — run after it is merged and before a tag exists —
       `cargo publish --dry-run -p lrsalvage-core` packaging and reaching
       `aborting upload due to dry run`, and the release body read from the
       extractor the workflow itself runs, its `awk` over the `## [0.2.0]` section,
-      rather than by eye.
-- [ ] `CHANGELOG.md`'s 0.2.0 section is the release body, verbatim.
-- [ ] The tag is `v0.2.0`, annotated, on the merge commit of the pull request that
-      ticks the last box in this file. That is the only commit whose tree makes
-      every box above true, and it is the tree published from: slice 4's
-      packaging, slice 5's changelog section and this list's final state all ride
-      in it by construction, not by a later check.
-- [ ] The release publishes the archives, `SHA256SUMS` and the changelog section —
+      rather than by eye. Measured 2026-11-17 on `8186ca6`: nine gates exit 0,
+      fifteen `test result: ok` suites, the dry run packaging 24 files and
+      compiling from `target/package/`, and 146 lines / 9 670 bytes of body
+      opening `## [0.2.0]` and ending at the section boundary.
+- [x] `CHANGELOG.md`'s 0.2.0 section is the release body, verbatim. The published
+      body's first and last lines are that section's, and the heading after it did
+      not travel into the release.
+- [x] The tag is `v0.2.0`, annotated, on the merge commit of the pull request that
+      ticks the last box in this file — `8186ca6`, the merge of the close-out
+      pull request. That is the only commit whose tree makes every box above true,
+      and it is the tree published from: slice 4's packaging, slice 5's changelog
+      section and this list's final state all ride in it by construction, not by a
+      later check.
+- [x] The release publishes the archives, `SHA256SUMS` and the changelog section —
       and nothing generated from `scan --report`, which describes a cache, not a
       release. The tag is the only trigger (`.github/workflows/release.yml`), so
-      this is the act that makes the release public rather than a draft.
+      this is the act that makes the release public rather than a draft. Published
+      2026-11-17 as a live release: three archives plus `SHA256SUMS`,
+      `sha256sum -c` green on all three downloads, and the Linux archive unpacked
+      to one binary and the two licence texts.
 
 ## After the tag (irreversible)
 
@@ -279,13 +288,15 @@ said what is true, not because it is irreversible.
 
 Publish — the artifact's second route, and the one no dry run can prove:
 
-- [ ] `lrsalvage-core` then `lrsalvage-cli` on crates.io, from a clean checkout of
+- [x] `lrsalvage-core` then `lrsalvage-cli` on crates.io, from a clean checkout of
       `v0.2.0` rather than from a working tree: `cargo publish -p lrsalvage-core`,
       then `cargo publish --dry-run -p lrsalvage-cli` — the first moment that
       command can run, and the only build the cli tarball gets before it ships —
       then `cargo publish -p lrsalvage-cli`. The order is not a preference: the
       cli resolves `lrsalvage-core 0.2.0` through the index, so it cannot go first
-      and nothing about it can be packaged beforehand.
+      and nothing about it can be packaged beforehand. Published 2026-11-17 in
+      that order, all three commands successful; both crates are live at `0.2.0`,
+      one version each, and the cli's `default_version` is already `0.2.0`.
       **Two stop rules, decided before the attempt rather than after it.**
       If core lands and the cli publish fails, the fix is forward: correct the
       tree and publish `lrsalvage-cli 0.2.0`, because an index carrying core and
@@ -296,33 +307,47 @@ Publish — the artifact's second route, and the one no dry run can prove:
       annotated tag and its own release body. Either way, **any sentence naming a
       version follows the published one**, in `README.md`, `CHANGELOG.md` and the
       release body.
-- [ ] `cargo install lrsalvage-cli --version 0.2.0` works from a machine with no
+- [x] `cargo install lrsalvage-cli --version 0.2.0` works from a machine with no
       checkout. The package is `lrsalvage-cli` and the binary it installs is
       `lrsalvage`, so the typed command keeps its `-cli`; the package name is
-      settled and not renamed.
-- [ ] `cargo binstall --git https://github.com/marcd35/lrsalvage lrsalvage-cli`
+      settled and not renamed. Proven 2026-11-17 by running it in an empty
+      directory: the build came from the registry, not from a working tree,
+      `lrsalvage --version` printed `lrsalvage 0.2.0`, and `~/.cargo/.crates.toml`
+      records `registry+https://github.com/rust-lang/crates.io-index` beside the
+      binary.
+- [x] `cargo binstall --git https://github.com/marcd35/lrsalvage lrsalvage-cli`
       tried once `v0.2.0` is tagged, with its stop rule: if it does not fetch the
       prebuilt, the README's binstall paragraph is corrected to say so instead of
-      being left as an expectation. Attempted 2026-11-17 against
-      `v0.2.0-rc.1` — it cloned the tree, resolved `lrsalvage-cli v0.2.0`, found
-      no `v0.2.0` asset to download and fell back to `cargo install`, which fails
-      while the crate is unpublished. That is the tag gap, not the route, so the
-      box stays open until a final tag exists to prove it either way. A draft
-      release was rejected as a way to answer it early: a draft's assets are not
-      fetchable, so the attempt would establish nothing.
+      being left as an expectation. Attempted 2026-11-17 against `v0.2.0-rc.1`
+      first — it cloned the tree, resolved `lrsalvage-cli v0.2.0`, found no
+      `v0.2.0` asset to download and fell back to `cargo install`, which fails
+      while the crate is unpublished; that was the tag gap, not the route. Against
+      the final tag both forms fetched the prebuilt archive instead of building:
+      the `--git` form in 4.3 s after cloning, the bare form in 2.8 s through the
+      index, each binary printing `lrsalvage 0.2.0`. The stop rule did not fire,
+      so the paragraph stands as written. A draft release was rejected as a way to
+      answer this early: a draft's assets are not fetchable, so the attempt would
+      establish nothing.
 
 Docs and the record, once the publish has said what is true:
 
-- [ ] The README's two crates.io sentences are corrected in a pull request merged
+- [x] The README's two crates.io sentences are corrected in a pull request merged
       after the publish: "Neither name is on crates.io yet ([#54]), so this route
       is not open today", under `### cargo install`, and the binstall paragraph's
       "both of its forms wait on something 0.2 does not have yet", whose "starts
       working at the publish" is the other half of the same claim. The page must
-      never describe a route that does not exist in either direction.
-- [ ] `rust-version` and `rust-toolchain.toml` are re-checked against the
+      never describe a route that does not exist in either direction. Done here:
+      `### cargo install` says both names are on crates.io as 0.2.0 and that the
+      route was proved, and the binstall paragraph says both forms work and what
+      they fetched. The archive-proof paragraph lost the same kind of staleness —
+      it now separates what was proved at `v0.2.0-rc.1` from what was re-verified
+      at the final tag.
+- [x] `rust-version` and `rust-toolchain.toml` are re-checked against the
       dependency tree, so the next release does not inherit a stale claim the way
-      0.1 did.
-- [ ] [#54](https://github.com/marcd35/lrsalvage/issues/54),
+      0.1 did. Re-checked 2026-11-17: `sh scripts/check.sh msrv` green, building
+      the workspace on 1.89.0 while `rust-toolchain.toml` pins 1.100.0 as the
+      build toolchain, and the published manifests carry `rust-version = "1.89"`.
+- [x] [#54](https://github.com/marcd35/lrsalvage/issues/54),
       [#70](https://github.com/marcd35/lrsalvage/issues/70), the `0.2.0`
       milestone and [#89](https://github.com/marcd35/lrsalvage/issues/89) are
       closed with the release link, and the two things this release deliberately
@@ -330,4 +355,12 @@ Docs and the record, once the publish has said what is true:
       crate README, the manifest metadata, and the six test files that import
       `lrsalvage-fixtures`, which the published manifest strips so an auditor's
       `cargo test` fails), and the real-Mac verification of the two macOS install
-      commands.
+      commands. Closed by this pull request's own `Closes` lines, which sit beside
+      [the `v0.2.0` release](https://github.com/marcd35/lrsalvage/releases/tag/v0.2.0):
+      `#70` by PR 87, `#54` and `#89` here, and the milestone empties as the last
+      of its pull requests closes.
+
+Shipped 2026-11-17: `v0.2.0` was tagged on `8186ca6`, published as
+[the 0.2.0 release](https://github.com/marcd35/lrsalvage/releases/tag/v0.2.0), and
+the two crates went to crates.io in the order above — every box on this page is
+ticked, and the work 0.2 left undone is in issues rather than in prose here.
