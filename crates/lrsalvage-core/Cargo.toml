@@ -36,11 +36,11 @@ homepage = "https://github.com/marcd35/lrsalvage"
 # carrying them fails `cargo test` for an auditor instead of proving anything.
 # `properties.rs` needs neither and travels.
 #
-# This list is not the whole story: five `#[cfg(test)]` sites inside `src/exif.rs`,
+# This list is not the whole story: the `#[cfg(test)]` modules in `src/exif.rs`,
 # `src/extract.rs` and `src/plan.rs` call the same fixtures crate, and a manifest
 # cannot drop code inside a source file. Measured 2026-11-17 by unpacking
 # `target/package/lrsalvage-core-0.2.0.crate` outside the repository and running
-# `cargo test`: five `unresolved module lrsalvage_fixtures` errors, no test run.
+# `cargo test`: `unresolved module lrsalvage_fixtures`, and no test run.
 # Making that green needs the fixture-dependent unit tests moved out of `src/` or
 # `lrsalvage-fixtures` published (ADR 0011 D6 refuses the second), so the published
 # crate is a library whose own suite is a repository gate, not a crate one.

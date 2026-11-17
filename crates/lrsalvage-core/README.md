@@ -17,10 +17,9 @@ It is the library behind the `lrsalvage` command line tool,
 ## The compatibility promise
 
 [ADR 0010](https://github.com/marcd35/lrsalvage/blob/main/docs/adr/0010-what-0-2-promises.md)
-lists the surfaces a script may lean on — the status words a catalog image can end
-in, the exit codes, the JSON and report shapes, the output naming — and sorts
-changes into the ones a minor may carry and the ones that need a new minor to
-deprecate them first. Read it before parsing anything this crate produces.
+lists the surfaces a script may lean on, and sorts changes into the ones a minor
+may carry and the ones that need a new minor to deprecate them first. Read it
+before parsing anything this crate produces.
 
 ## Install
 
