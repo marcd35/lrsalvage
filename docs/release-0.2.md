@@ -73,20 +73,27 @@ Evidence — what the release may claim:
       segments; synthetic for the payload's own orientation"; and `M10d`, `M10e`
       `synthetic`. Five of the nine read `unmeasured`, and the paragraph above the
       table said all of them did — it now states the split.
-      **§5.11 is the one published claim whose label rests on no gate.** It reads
-      `VERIFIED` for a dated one-off measurement on a copy of the `Auto (3840px)`
-      render, and no test holds it: the standing §5.4 had when its claim went
-      false. Its numbers live in §5.11 and nowhere else — the README cites that
-      section for the mechanism, that a discard takes the companion too, and
-      never for a count. A fourth evidence family (`LRSALVAGE_DISCARD_*`, a
-      `real-discard` gate) needs a fresh copy of that cache and a Lightroom
-      session; that is a slice, and it is
+      **§5.11 publishes numbers no gate holds.** PR 87's row `M10h` pins the
+      state a discard leaves, and its own label says what that is worth: a
+      synthetic composition, so it pins the reader and not Adobe. The counts the
+      section publishes came from one real discard on one copy of the
+      `Auto (3840px)` render, and no test reproduces them — the standing §5.4 had
+      when its claim went false. §5.11 keeps them; the README cites that section
+      for the mechanism, that a discard takes the companion too, and never for a
+      count. A fourth evidence family (`LRSALVAGE_DISCARD_*`, a `real-discard`
+      gate) needs a fresh copy of that cache and a Lightroom session; that is a
+      slice, and it is
       [#86](https://github.com/marcd35/lrsalvage/issues/86) in `vNext`, not
       something this release claims to have done.
-- [ ] [#70](https://github.com/marcd35/lrsalvage/issues/70)'s discarded-cache
-      fixture row is merged — PR 87, which adds row `M10h` — so the state a
-      Lightroom discard leaves is pinned by the reader rather than by prose.
-      Independent of the five slices; it only has to land before the tag.
+- [x] [#70](https://github.com/marcd35/lrsalvage/issues/70)'s discarded-cache
+      fixture row is merged — PR 87, row `M10h` of `specs/fixtures.md`, in
+      `5bd3b70` — so the state a Lightroom discard leaves is pinned by the reader
+      rather than by prose: `recovered` at the surviving 1920 × 1280 level, tier
+      `large`, `quality bigThumbnail` on a **claimed** pyramid, and `unmapped`,
+      `thumbnail_pyramids`, `missing_payload` and `below_floor` all 0. The row's
+      label is `verified §5.11`, and §5.11 says what that is worth: a synthetic
+      composition pins the reader and not Adobe, and the section's own counts
+      stay gate-less.
 
 Artifact — what a stranger runs:
 
@@ -105,7 +112,11 @@ Artifact — what a stranger runs:
       instead of an ADR because no ADR governs them: the MSRV move to 1.89
       (`scripts/check.sh msrv`) and the verification report form. Everything else
       in the range is a gate, a spec, evidence or our own release docs, which
-      ship no user-visible surface.
+      ship no user-visible surface. Nothing merged after the branch point adds a
+      user-visible change either: PR 95 corrects the README's resume and
+      `--force` paragraphs, PR 97 fixes this changelog's opening sentence (the
+      first of the two defects below), PR 87 adds a fixture row and its test, and
+      PR 98 and this one correct this list.
       Both defects the walk found are fixed rather than listed: the opening
       sentence promised "the first release a user can install rather than build"
       while the crates are still unpublished at the tag, and "a tag on today's
@@ -192,8 +203,8 @@ Frozen surface — what ADR 0010 promises:
 Docs — what a reader trusts:
 
 - [x] `format-notes` retirements landed; no dead `TODO` left behind.
-      Audited 2026-11-17: twelve live `TODO`s, beside the legend that defines the
-      label and one prose reference to it. The one #89 called dead was not: ADR
+      Audited 2026-11-17: thirteen live `TODO`s, beside the legend that defines
+      the label and one prose reference to it. The one #89 called dead was not: ADR
       0005's `(§5.7 TODO)` pointed at a `TODO` bullet living inside a section
       whose heading reads **VERIFIED**. That is a real defect and the opposite
       one, so the claim moved into §5.5's unmeasured list and the ADR cites it
@@ -203,8 +214,9 @@ Docs — what a reader trusts:
       published hexdump), padding contents, a `formatVersion` other than `3`, the
       three unexplained count gaps in §5.4, the `.lrcat-data` shard split, which
       orientation column wins when the two disagree, an orientation code outside
-      the four measured ones, and the source table's thread URLs, which were not
-      captured.
+      the four measured ones, the source table's thread URLs, which were not
+      captured, and what a discard leaves in the pyramid row's own
+      `croppedWidth`/`croppedHeight`, which no reader path consults.
 - [x] `CONTEXT.md` matches the vocabulary the release actually uses. Audited
       2026-11-17: the **Preview layout** entry named the five cases in prose and
       none of the words a script reads, so it now names all five — `legacy`,
@@ -239,11 +251,18 @@ verifies the outcome afterwards. Nothing under **After the tag** happens without
 its own separate go-ahead — one approval for "the release" is not one for an
 irreversible upload.
 
+- [ ] The tree the tag lands on is measured, not inherited: `sh scripts/check.sh`
+      green on that commit — run after it is merged and before a tag exists —
+      `cargo publish --dry-run -p lrsalvage-core` packaging and reaching
+      `aborting upload due to dry run`, and the release body read from the
+      extractor the workflow itself runs, its `awk` over the `## [0.2.0]` section,
+      rather than by eye.
 - [ ] `CHANGELOG.md`'s 0.2.0 section is the release body, verbatim.
-- [ ] The tag is `v0.2.0`, annotated, on the commit that merged the last of
-      slices 1–5 or PR 87, whichever lands last. That tree is the one published
-      from, so it carries slice 4's packaging and slice 5's changelog section by
-      construction, not by a later check.
+- [ ] The tag is `v0.2.0`, annotated, on the merge commit of the pull request that
+      ticks the last box in this file. That is the only commit whose tree makes
+      every box above true, and it is the tree published from: slice 4's
+      packaging, slice 5's changelog section and this list's final state all ride
+      in it by construction, not by a later check.
 - [ ] The release publishes the archives, `SHA256SUMS` and the changelog section —
       and nothing generated from `scan --report`, which describes a cache, not a
       release. The tag is the only trigger (`.github/workflows/release.yml`), so
