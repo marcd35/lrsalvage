@@ -61,12 +61,12 @@ not allowed.
 
 ## Verification
 
-- **`sh scripts/check.sh` is the one gate list.** It runs `fmt`, `shell`,
-  `clippy` (`--all-targets`), the workspace tests, `cargo doc`, the release
-  build, `typos` and `cargo deny`. Run it before a hand-off, or name one gate
-  (`sh scripts/check.sh clippy`). CI executes the Rust gates through the same
-  file, so a gate cannot be documented weaker here than it is enforced. A
-  missing tool fails rather than skipping: green must mean CI's green.
+- **`sh scripts/check.sh` is the one gate list.** Run it before a hand-off, or
+  name one gate (`sh scripts/check.sh clippy`); the file itself names the gates,
+  so its header is the list and this paragraph does not repeat it. CI executes
+  the Rust gates through the same file, so a gate cannot be documented weaker
+  here than it is enforced. A missing tool fails rather than skipping: green must
+  mean CI's green.
 - **`scripts/probe-cache.sh <cache.lrdata>` measures a cache, and is not a gate.**
   It walks every level file by its declared segment lengths and lines the walk up
   against `previews.db` — the series, the segments each file carries, and where a
@@ -143,7 +143,8 @@ exactly how §6.4 kept a false ICC claim after the render disproved it.
 
 - `CODING_STANDARDS.md` — the judgement calls a check cannot hold. Read it before
   reviewing a diff, and before writing a claim a stranger will act on.
-- `docs/agents/issue-tracker.md` — how to read a ticket before implementing it.
+- `docs/agents/issue-tracker.md` — read the ticket with this **before the first
+  design round**, not after the code disagrees with it.
 - `docs/agents/rendering-a-test-cache.md` — how to make a cache Lightroom
   *rendered* rather than converted, what a new catalog decides on its own, and the
   five facts that make driving its GUI reliable rather than a lottery.

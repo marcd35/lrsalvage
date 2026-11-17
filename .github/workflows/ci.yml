@@ -64,3 +64,25 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: EmbarkStudios/cargo-deny-action@v2
+
+  # The artifact: a tarball that builds from the manifest Cargo generates for it,
+  # with no checkout to lean on. Every other gate reads the tree, so a packaged
+  # tree the published metadata drops is invisible to all of them — #96's shape.
+  # The generated manifests and the file lists do not vary by OS, so one runner
+  # rather than the matrix.
+  package:
+    name: package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.100.0
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: The tarballs
+        run: sh scripts/check.sh package

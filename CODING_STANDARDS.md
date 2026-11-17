@@ -25,6 +25,11 @@ a commit message that says why.
 - **This repository's own machinery is a lookup, not a fact.** Point at
   `ci.yml`, `scripts/check.sh` or the workflow that runs it. A paraphrase of a
   trigger list or a gate set goes stale without anyone noticing.
+- **An inventory belongs to the command that prints it.** Prose names the command
+  — `cargo package --list`, `scripts/check.sh`, `lrsalvage scan --json` — and
+  never reprints the list. A sentence that says what a package, a gate set or a
+  flag set *contains* is a cache with no gate behind it, and the reader acts on
+  the day it goes stale.
 - **What we chose never becomes what Adobe does.** A fixture pins our behaviour
   in a state; say so in the row and in the prose, because the state is ours until
   a real cache is measured in it.
