@@ -582,6 +582,48 @@ payload is written unchanged and carries no marker. See
 and why. `3` is not an error — a catalog where every original is still on disk
 legitimately has nothing to salvage.
 
+## The compatibility contract
+
+[ADR 0010](docs/adr/0010-what-0-2-promises.md) is the list of surfaces this tool
+promises a script, across versions. The table below says where each one is stated
+in this file and what holds it: a **gate** is a test in this tree that fails when
+the page and the binary disagree, and **review** means a person compares them, so
+nothing fails when the prose drifts. The two are named apart wherever they part
+company.
+
+The table is a map, not a second copy. Every value — a status word, a field, a
+column, a flag — lives in the section the middle column names, and this page keeps
+no list of its own.
+
+| Surface | Where this README states it | Held by |
+|---|---|---|
+| The seven status words: six an image can end in, plus the state for a payload no image claims | [What the statuses mean](#what-the-statuses-mean) | Gate for the states — the vault matrix in `crates/lrsalvage-cli/tests/matrix.rs` asserts what each vault's images became. Review for the words: nothing compares `no-cache-entry` or `missing-payload` to this page. |
+| The exit codes `0`–`4` | [Exit codes](#exit-codes) | Review — the code a run returns is asserted per invocation, in `tests/matrix.rs` and `tests/cli.rs`, but nothing compares these meanings to `main.rs`'s mapping. |
+| `scan --json`'s field set, "these fields, and only these" | The field table under [Quick start](#quick-start) | Gate — `crates/lrsalvage-cli/tests/readme.rs` compares the table to the object the binary prints, field for field. |
+| The verification report's key set under `lrsalvage.verification`, and `lrsalvage.manifest`'s envelope | The `--report` paragraph under [Quick start](#quick-start), and [What lands on disk](#what-lands-on-disk) | Gate — the report rows in `tests/matrix.rs` assert the object's exact nine keys and `report.rs`'s own tests hold the manifest's; both schema strings are asserted as literals, and each file's `version` against `CARGO_PKG_VERSION`, so a bump that misses a surface fails. |
+| `report.csv` and `extract.csv`: their columns, in order | [What lands on disk](#what-lands-on-disk) | Gate for `report.csv` — `tests/readme.rs` asserts its header and `tests/matrix.rs` its columns and order. Review for `extract.csv`: no test asserts its five columns. |
+| Output naming: the tree, an extra level's suffix, a virtual copy's name, a report name already taken | [What lands on disk](#what-lands-on-disk) | Review — `model.rs`'s tests pin the naming code and `tests/matrix.rs` pins the numbered `--report` name, but nothing reads these rules off the page. |
+| The flags, and which command takes each | The flag table under [Quick start](#quick-start) | Gate that a flag exists — `tests/readme.rs` fails when the table names one no command has. Review for which command takes it: `--help` is read from all three at once, so a `scan` only flag listed under `extract` would pass. |
+| The `Software` marker `lrsalvage <version>`, and that only its prefix is compared | The *Resumable* bullet under [Safety](#safety), and [Metadata restored](#metadata-restored) | Gate — `extract`'s `a_preexisting_verified_file_is_skipped_and_its_bytes_untouched` marks a destination `lrsalvage 0.1.0` while the binary under test is `0.2.0`, and expects it skipped. |
+
+Two tiers govern what may change. **Additive** changes — a new field, stat, flag,
+status word or exit code, provided no existing one changes meaning — may land in a
+minor release. **A removal, a rename or a changed meaning** needs a new minor
+preceded by a deprecation stated in the release before it, and never arrives in a
+patch: a patch changes nothing in this list.
+
+The version inside the marker is not part of the contract, which is what the
+prefix rule buys: resume compares `lrsalvage ` and stops there, so a later release
+keeps the files an earlier one wrote instead of reporting a whole library as
+somebody else's. The schema strings are identities rather than versions for the
+same reason — `lrsalvage.verification` and `lrsalvage.manifest` do not move when
+the tool's version does.
+
+A review-held row is a gap stated rather than hidden: those are the promises the
+frozen-surface review in [the 0.2 checklist](docs/release-0.2.md) reads by hand,
+because no test can. Where a row says gate, the test it names is the authority and
+this page is the summary.
+
 ## What this cannot do
 
 - **Recover originals.** No tool can. A preview is a derivative, and the RAW is
