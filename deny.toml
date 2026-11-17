@@ -10,6 +10,13 @@ version = 2
 # A yanked crate is a warning, not a failure: it can still be a sound
 # dependency, and it may be pinned by something we cannot change yet.
 yanked = "warn"
+# An `ignore` is a debt with a date on it: it says an advisory applies to us now
+# and we accept it. When the crate it names leaves the tree the entry matches
+# nothing, and cargo-deny only *warns* about that — so an ignore can outlive the
+# fix it was waiting for and sit over the crate that replaced it, which is what
+# ADR 0011 D8 refuses. An unused entry is a failure here instead of a line in a
+# log nobody reads.
+unused-ignored-advisory = "deny"
 
 [licenses]
 version = 2
