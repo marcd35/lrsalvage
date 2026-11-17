@@ -199,13 +199,17 @@ Docs — what a reader trusts:
       `modern`, `mixed`, `none`, `unknown` — in the sense
       `specs/modules/previews-db.md` gives them, and says why the word is
       published.
-- [ ] The README states the resume-identity limitation in one sentence, beside
-      the `--force` row and the resume paragraph: a destination is ours on the
-      marker prefix, a complete JPEG and matching dimensions, so a different
-      photograph of the same size under the same name is skipped as already
-      recovered. Slice 3, and the whole of
-      [#60](https://github.com/marcd35/lrsalvage/issues/60) that 0.2 takes —
-      decision 2 puts the sentence in this release, decision 3 forbids changing
+- [x] The README states the resume-identity limitation beside the resume
+      paragraph: identity is the marker, the JPEG and the size rather than the
+      photograph, so a different image that derives the same output name at the
+      same dimensions is skipped as already recovered. The measurement behind the
+      wording narrowed it further than #60 assumed: the skip happens **before**
+      the force check in `extract_one`, so `--force` cannot replace a collided
+      destination either — it only replaces a file that does not verify as ours.
+      The flag table says so now, and the remedy is one destination per catalog
+      or deleting the collided file. That is the whole of
+      [#60](https://github.com/marcd35/lrsalvage/issues/60) that 0.2 takes:
+      decision 2 put the sentence in this release, decision 3 forbids changing
       the identity here, and the fixture row and its test stay with #60 in
       `vNext`.
 - [x] README's "What this repository is not" rewritten: it now *has* a release
