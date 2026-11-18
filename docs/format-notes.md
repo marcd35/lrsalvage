@@ -1203,9 +1203,9 @@ difference between a winner rule and a filter applied after one.
 | Run | Exit | What it reported |
 |---|---|---|
 | `scan --include-present --max-long-edge 1920` | 0 | `layout modern`, `images 10`, `recovered 10`, `thumbnail_pyramids 0`, `unmapped 0`, `missing_payload 0`, `failed 0`, `below_floor 0`, `above_cap 0` |
-| `scan --report <file> --max-long-edge 1920` | 0 | `options.max_long_edge 1920`, `levels 10`, `selected_images 10`, `selected_items 10` |
+| `scan --include-present --report <file> --max-long-edge 1920` | 0 | `options.max_long_edge 1920`, `levels 10`, `selected_images 10`, `selected_items 10` |
 | `scan --include-present --all-levels --max-long-edge 1920` | 0 | `shapes.level_file 40`, `below_floor 10`, `above_cap 18` |
-| `scan --report <file> --all-levels --max-long-edge 1920` | 0 | `selected_images 10`, `selected_items 12` |
+| `scan --include-present --report <file> --all-levels --max-long-edge 1920` | 0 | `selected_images 10`, `selected_items 12` |
 | `extract --include-present --max-long-edge 1920` | 0 | ten files written, one per image; each one's own `SOF` is 1,024 (×7), 1,200 (×1) or 1,500 (×2), and the ten payloads total 885,493 bytes |
 | `extract --include-present --max-long-edge 200` | 3 | nothing written — the empty window, not a failure: a run with a failed level exits `2` |
 | `scan --include-present --all-levels` (uncapped) | 0 | `above_cap 0`, `below_floor 10` — §5.10's numbers, unmoved |
@@ -1235,10 +1235,11 @@ which was synthetic, now has a measured cache behind it.
 **What it does not measure.** A cap over a container — `L7` ranks a container's
 decoded levels by area, and every container measured here is a legacy cache, so
 that arm's capped judgement against its own row is still synthetic. A cap naming a
-level the cache actually holds: §5.10's catalog A steps `320, 960, 1920, 3840`, so
-a 1,920 cap would choose a level equal to it, but no run here capped A, so that
-boundary rests on `M16`'s vault. And a cap over a *converted* cache, where the
-ladder is §5.9's rather than a render's.
+level the cache actually holds: C's own steps are reachable — `--max-long-edge
+1024` would choose the 1,024 level rather than the 750 beneath it — but no run
+here capped it at a held level, so that boundary is `M16`'s vault alone for now.
+And a cap over a *converted* cache, where the ladder is §5.9's rather than a
+render's.
 
 `sh scripts/check.sh real-1to1` asserts this section against the cache itself
 (`crates/lrsalvage-cli/tests/one_to_one.rs`,

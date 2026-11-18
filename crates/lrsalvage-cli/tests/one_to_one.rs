@@ -198,6 +198,17 @@ fn a_cap_chooses_the_largest_level_at_or_below_it() {
     );
     assert_eq!(json["above_cap"], 0, "nothing is reported above the cap");
     assert_eq!(json["failed"], 0, "a cap never fails an image");
+    // An option value never reclassifies a cache's shape (`adr-0008`), and these
+    // are the rows §5.12 publishes: a capped run still sees one pyramid per
+    // image, no companion and no payload without its row.
+    assert_eq!(json["layout"], "modern");
+    assert_eq!(json["thumbnail_pyramids"], 0);
+    assert_eq!(json["unmapped"], 0);
+    assert_eq!(json["missing_payload"], 0);
+    assert_eq!(
+        json["bytes"], 885_493,
+        "the ten chosen payloads, which is what §5.12 publishes"
+    );
 
     // Selection is the verification report's: `scan --json` carries no
     // `selected_items`, and the report echoes the cap the run used (ADR 0013).
@@ -249,6 +260,10 @@ fn a_cap_chooses_the_largest_level_at_or_below_it() {
         "750 ×2, 1,024 ×7, 1,200 ×1, 1,500 ×2 — the two 6,000 px ladders hold two steps each"
     );
     assert_eq!(
+        all_report["stats"]["selected_images"], 10,
+        "twelve items over ten images: a cap never splits one image's output"
+    );
+    assert_eq!(
         all_json["above_cap"].as_u64().unwrap_or_default()
             + all_json["below_floor"].as_u64().unwrap_or_default()
             + all_report["stats"]["selected_items"]
@@ -279,10 +294,17 @@ fn a_cap_chooses_the_largest_level_at_or_below_it() {
     // A cap no level clears is an empty window rather than a failure: exit 3,
     // nothing written, and no image given a new status — M17's state, here on a
     // ladder the cap steps through instead of one level it misses.
-    let (code, empty) = support::extract_code(&catalog, &previews, &["--max-long-edge", "200"]);
+    let (code, empty) = support::extract_exit(&catalog, &previews, &["--max-long-edge", "200"]);
     assert_eq!(code, 3, "an empty window is not a failure");
     assert!(
         support::jpeg_long_edges(empty.path()).is_empty(),
         "nothing is written under a cap no level clears"
+    );
+    assert_eq!(
+        std::fs::read_dir(empty.path())
+            .expect("the output root")
+            .count(),
+        0,
+        "an empty run writes no JPEG, no report.csv and no manifest.json"
     );
 }

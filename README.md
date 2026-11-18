@@ -280,11 +280,11 @@ What those rows mean in practice:
   Lightroom had **discarded** was measured as well (section 5.11): it removes the
   standard-size and 1:1 levels and the image's thumbnail pyramid, keeps the levels
   below the standard size, and every image still came back `recovered` — at
-  1920 px in that cache. The cap was then set against that 1:1 build (section
-  5.12): with `--max-long-edge 1920` it writes the 1,024, 1,200 and 1,500 px
-  levels those ladders hold, never the 2,048, 3,000, 4,096 or 6,000 above them,
-  and a cap no level clears exits `3` without failing an image. What none of
-  these runs covers: a re-render of an image the catalog already holds.
+  1920 px in that cache. The cap was then set against the 1:1 cache of section
+  5.10 (section 5.12): with `--max-long-edge 1920` it writes the 1,024, 1,200 and
+  1,500 px levels those ladders hold, never the 2,048, 3,000, 4,096 or 6,000
+  above them, and a cap no level clears exits `3` without failing an image. What
+  none of these runs covers: a re-render of an image the catalog already holds.
 - **Same reader, untested**: 4 – 10, 12 and 13.0 – 13.2 use the `.lrprev`
   pyramid this tool parses. Nothing known stops them working; nobody has run it
   on one.
