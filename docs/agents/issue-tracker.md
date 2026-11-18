@@ -22,7 +22,7 @@ sentence would have decided the wrong problem. Check the mechanism against the
 code before the first design round, and correct the ticket in the round where it
 first matters — a wrong cause quietly sets the stakes for every choice after it.
 
-A branch names the issue it works — `<type>/<issue>-<slug>`, with
-`.github/branch-policy.json` holding the pattern and `AGENTS.md` saying to rename
-the harness default before the first commit — so read the ticket's number before
-the first commit, not after the code disagrees with it.
+A branch cut after #134 names the issue it works, so read that number before the
+first commit rather than after the code disagrees with it;
+`.github/branch-policy.json` holds the shape, and `AGENTS.md` says to rename the
+harness default.
