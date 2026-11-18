@@ -1885,13 +1885,13 @@ fn an_unreadable_index_is_an_empty_one() {
 }
 
 // ---------------------------------------------------------------------------
-// M15–M17, L7: `--max-long-edge`
+// M16–M18, L7: `--max-long-edge`
 //
 // The cap is the floor's counterpart, so its rows read the same way: a bound
-// that chooses a level, never a status. ADR 0011 is the reasoning.
+// that chooses a level, never a status. ADR 0013 is the reasoning.
 // ---------------------------------------------------------------------------
 
-/// M15–M17's pyramid: four level files, one row each, from 320 to 3840 — the
+/// M16–M18's pyramid: four level files, one row each, from 320 to 3840 — the
 /// doubling ladder §5.7 measured a 1:1 build writing.
 fn capped() -> Vault {
     let pyramid = uuid(31);
@@ -1912,29 +1912,29 @@ fn capped() -> Vault {
 }
 
 #[test]
-fn m15_a_cap_chooses_the_largest_level_at_or_below_it() {
+fn m16_a_cap_chooses_the_largest_level_at_or_below_it() {
     let vault = capped();
     let plan = vault.plan(&Options {
         max_long_edge: 1920,
         ..Options::default()
     });
 
-    let m15 = item_for(&plan, 31);
-    assert_eq!(m15.status, Status::Recoverable);
+    let m16 = item_for(&plan, 31);
+    assert_eq!(m16.status, Status::Recoverable);
     assert_eq!(
-        (m15.width, m15.height),
+        (m16.width, m16.height),
         (Some(1920), Some(1280)),
         "the winner is the 1920 level, not the 3840 present beside it"
     );
-    assert!(m15.selected, "a level that clears the cap is written");
+    assert!(m16.selected, "a level that clears the cap is written");
     assert_eq!(
-        m15.declared,
+        m16.declared,
         Some((1920, 1280)),
         "the chosen level is judged against its own row"
     );
     let expected = level_path(vault.previews(), &uuid(31), 1920);
     assert_eq!(
-        slashed(m15.payload.as_ref().expect("payload").path()),
+        slashed(m16.payload.as_ref().expect("payload").path()),
         slashed(&expected)
     );
     assert_eq!(
@@ -1955,7 +1955,7 @@ fn m15_a_cap_chooses_the_largest_level_at_or_below_it() {
 }
 
 #[test]
-fn m16_a_cap_no_level_clears_writes_nothing_and_is_not_a_failure() {
+fn m17_a_cap_no_level_clears_writes_nothing_and_is_not_a_failure() {
     let pyramid = uuid(32);
     let vault = Vault::modern()
         .image(ImageRow::new(32, "IMG_0032").cache(&pyramid))
@@ -1968,16 +1968,16 @@ fn m16_a_cap_no_level_clears_writes_nothing_and_is_not_a_failure() {
         ..Options::default()
     });
 
-    let m16 = item_for(&plan, 32);
+    let m17 = item_for(&plan, 32);
     assert_eq!(
-        m16.status,
+        m17.status,
         Status::Recoverable,
         "a cap leaves an image unwritten, never failed: the payload is a good photograph"
     );
-    assert_eq!((m16.width, m16.height), (Some(3840), Some(2560)));
-    assert_eq!(m16.tier, Some(Tier::Large));
+    assert_eq!((m17.width, m17.height), (Some(3840), Some(2560)));
+    assert_eq!(m17.tier, Some(Tier::Large));
     assert!(
-        !m16.selected,
+        !m17.selected,
         "above the cap: counted and named, not written"
     );
     assert_eq!(plan.stats.above_cap, 1);
@@ -1990,7 +1990,7 @@ fn m16_a_cap_no_level_clears_writes_nothing_and_is_not_a_failure() {
 }
 
 #[test]
-fn m17_all_levels_bounds_both_ends_of_the_ladder() {
+fn m18_all_levels_bounds_both_ends_of_the_ladder() {
     let vault = capped();
     let plan = vault.plan(&Options {
         min_long_edge: 640,

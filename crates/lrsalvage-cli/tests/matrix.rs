@@ -684,7 +684,7 @@ fn capped() -> Vault {
 }
 
 #[test]
-fn m15_a_cap_writes_the_largest_level_under_it() {
+fn m16_a_cap_writes_the_largest_level_under_it() {
     let vault = capped();
 
     extract(&vault)
@@ -707,7 +707,7 @@ fn m15_a_cap_writes_the_largest_level_under_it() {
 }
 
 #[test]
-fn m16_a_cap_no_level_clears_exits_three_and_writes_nothing() {
+fn m17_a_cap_no_level_clears_exits_three_and_writes_nothing() {
     let pyramid = uuid(32);
     let vault = Vault::modern()
         .image(ImageRow::new(32, "IMG_0032").cache(&pyramid))
@@ -740,7 +740,7 @@ fn m16_a_cap_no_level_clears_exits_three_and_writes_nothing() {
 }
 
 #[test]
-fn m17_all_levels_reports_the_levels_the_cap_left_behind() {
+fn m18_all_levels_reports_the_levels_the_cap_left_behind() {
     let vault = capped();
 
     extract(&vault)

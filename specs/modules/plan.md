@@ -4,8 +4,23 @@ type: module-design
 title: "plan: decisions without writes"
 status: draft
 parent: architecture
-depends-on: [catalog, previews-db, lrprev, jpeg, exif, model]
-references: [adr-0001-parse-dont-carve, adr-0002-map-via-previews-db, adr-0005-discover-payloads-by-index, adr-0006-degrade-without-guessing, adr-0007-publish-a-verification-report, adr-0008-a-render-companion-is-not-an-orphan, adr-0009-rescue-an-image-from-its-companion, glossary, adr-0013-a-cap-demotes-the-level]
+depends-on:
+  - catalog
+  - previews-db
+  - lrprev
+  - jpeg
+  - exif
+  - model
+references:
+  - adr-0001-parse-dont-carve
+  - adr-0002-map-via-previews-db
+  - adr-0005-discover-payloads-by-index
+  - adr-0006-degrade-without-guessing
+  - adr-0007-publish-a-verification-report
+  - adr-0008-a-render-companion-is-not-an-orphan
+  - adr-0009-rescue-an-image-from-its-companion
+  - adr-0013-a-cap-demotes-the-level
+  - glossary
 ---
 
 # plan
