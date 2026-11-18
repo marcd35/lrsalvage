@@ -30,6 +30,12 @@ a commit message that says why.
   never reprints the list. A sentence that says what a package, a gate set or a
   flag set *contains* is a cache with no gate behind it, and the reader acts on
   the day it goes stale.
+- **A universal claim is a claim about a search.** "No suite keeps a private
+  fixture", "every file", "nothing else in the tree" assert the result of
+  looking. Name the counterexample you checked, or write the bounded claim — "no
+  *new* writer", "apart from the pair that pins…". An unsearched universal reads
+  as fact, and it is the claim class reviewers find most often because the tree
+  contradicts it in one line.
 - **What we chose never becomes what Adobe does.** A fixture pins our behaviour
   in a state; say so in the row and in the prose, because the state is ours until
   a real cache is measured in it.

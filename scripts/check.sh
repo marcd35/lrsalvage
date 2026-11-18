@@ -32,6 +32,13 @@ set -eu
 
 cd "$(dirname "$0")/.."
 
+# A gate log names the tree it measured. Two full runs over different trees read
+# alike, and a report's claim is about a tree rather than a date — so printing the
+# commit and the dirty count here is what lets a reader tell them apart.
+measured_tree="$(git rev-parse --short HEAD 2>/dev/null || printf 'unknown') plus $(git status --porcelain 2>/dev/null | wc -l | tr -d ' ') changed"
+printf 'tree %s
+' "$measured_tree"
+
 # A gitignored `.env` may name LRSALVAGE_TEST_CATALOG/LRSALVAGE_TEST_PREVIEWS
 # (a converted cache), LRSALVAGE_RENDER_CATALOG/LRSALVAGE_RENDER_PREVIEWS (a
 # rendered one), LRSALVAGE_ONE_TO_ONE_CATALOG/LRSALVAGE_ONE_TO_ONE_PREVIEWS (a
@@ -367,4 +374,4 @@ for gate in "$@"; do
     esac
 done
 
-printf 'all gates green: %s\n' "$*"
+printf 'all gates green: %s (tree %s)\n' "$*" "$measured_tree"

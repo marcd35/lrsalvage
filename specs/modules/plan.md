@@ -44,6 +44,12 @@ A plan records what the run decided, not the knobs that shaped it: the `Options`
 the caller passed stay the caller's, so a surface that echoes them takes them
 from the run rather than from the plan.
 
+How a level is ranked, and what declares its size: `adr-0005-discover-payloads-by-index`
+¶3–¶5 and `format-notes` §5.2. Read them before changing `level_file_levels`,
+`container_levels`, or the cap's winner rule — a level file's `_<n>` leaf can
+stand in for a row it lacks, a container's `level_N` chunk cannot, and which one
+applies decides whether a disagreement is `suspect`.
+
 ## Decisions
 
 - **One status per catalog image, and the statuses are a partition.** Every image
