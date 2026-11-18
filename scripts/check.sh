@@ -131,15 +131,20 @@ gate_build() {
 # hand-off.
 gate_package() {
     printf '%s\n' '== package'
-    # Relative, so `cargo` and the shell read the same path on every platform:
-    # `/tmp` is bash's alone and `C:/...` is not.
-    staged=target/package/gate-unpacked
-    rm -rf "$staged"
+    # Outside the checkout, because that is what an auditor has: unpacked in this
+    # tree, a shipped test could walk up to `specs/` or to another member and the
+    # gate would still pass while theirs failed. `mktemp -d` is the shell's; the
+    # one EXIT trap removes whatever is left of it, pass or fail.
+    staged=$(mktemp -d)
+    staged_dir=$staged
     core_root=''
     for crate in lrsalvage-core lrsalvage-cli; do
         patch=''
         if [ -n "$core_root" ]; then
-            patch=$(native_path "$(pwd)/$core_root")
+            # `native_path` translates the shell's spelling into one `cargo` reads:
+            # the staged tree is no longer under the repository, so it is absolute
+            # and, on msys, `C:`-less until cygpath rewrites it.
+            patch=$(native_path "$core_root")
             cargo package --allow-dirty -p "$crate" \
                 --config "patch.crates-io.lrsalvage-core.path=\"$patch\""
         else
@@ -181,6 +186,7 @@ gate_package() {
         fi
     done
     rm -rf "$staged"
+    staged_dir=''
 }
 
 gate_typos() {
@@ -328,8 +334,14 @@ fi
 # `==` headers, or running the whole thing again to prove it. The trap names the
 # failure; the last line names the success.
 gate_in_flight=''
+# A gate that stages files outside the checkout registers its directory here, so
+# this one trap removes it whether the gate passed, failed or aborted.
+staged_dir=''
 on_exit() {
     status=$?
+    if [ -n "$staged_dir" ]; then
+        rm -rf "$staged_dir"
+    fi
     if [ "$status" -ne 0 ] && [ -n "$gate_in_flight" ]; then
         printf 'gate failed: %s\n' "$gate_in_flight" >&2
     fi
