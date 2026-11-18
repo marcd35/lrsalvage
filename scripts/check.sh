@@ -135,8 +135,7 @@ gate_package() {
     # tree, a shipped test could walk up to `specs/` or to another member and the
     # gate would still pass while theirs failed. `mktemp -d` is the shell's; the
     # one EXIT trap removes whatever is left of it, pass or fail.
-    staged=$(mktemp -d)
-    staged_dir=$staged
+    staged_dir=$(mktemp -d)
     core_root=''
     for crate in lrsalvage-core lrsalvage-cli; do
         patch=''
@@ -167,7 +166,7 @@ gate_package() {
             fi
         done
         archive=$(ls -t "target/package/$crate"-*.crate | head -1)
-        unpacked="$staged/$crate"
+        unpacked="$staged_dir/$crate"
         mkdir -p "$unpacked"
         tar -xzf "$archive" -C "$unpacked"
         root="$unpacked/$(tar -tzf "$archive" | head -1 | cut -d/ -f1)"
@@ -185,7 +184,10 @@ gate_package() {
             (cd "$root" && cargo build --all-targets && cargo test)
         fi
     done
-    rm -rf "$staged"
+    # Removed on the success path too, so a full gate run does not carry two
+    # target directories to the end; clearing the name leaves the trap nothing to
+    # do here.
+    rm -rf "$staged_dir"
     staged_dir=''
 }
 
