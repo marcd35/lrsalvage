@@ -118,7 +118,10 @@ landing first fails a test that is telling the truth.
       alternative core's manifest names to publishing that crate. Carrying that as a
       ticket rather than as this paragraph was **After the tag**'s own obligation,
       and it is now [#123](https://github.com/marcd35/lrsalvage/issues/123) — on the
-      `0.4.0` milestone, with this box's measurement in its body.
+      `0.4.0` milestone, with this box's measurement in its body. *Since this cut:*
+      #123 moved those modules into `tests/` and made `scripts/check.sh package`
+      test the unpacked core tarball, so the two sentences above describe the gate
+      as it stood for 0.3.0.
 - [x] **3 — #101.** `chrono` is gone from `Cargo.lock`, `set_capture_time` resolves
       a civil datetime through the replacement's time zone with the same
       disambiguation policy, and the `[advisories] ignore` entry for

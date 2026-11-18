@@ -120,21 +120,28 @@ needs a fourth ad-hoc writer. `level_files()` and `containers()` report what
 `write()` actually put on disk, so a vault's `shapes` counts are derived from the
 composition rather than copied into a test.
 
-### Absorbing the three copies
+### Absorbing the three copies, and where a test lives
 
-The builder replaces all three existing implementations of the same bytes, in the
-same change that adopts it:
+The builder replaced all three implementations of the same bytes: the
+`chunk`/`jpeg` helpers that `crates/lrsalvage-core/tests/pipeline.rs`,
+`crates/lrsalvage-cli/tests/cli.rs` and `crates/lrsalvage-core/src/plan.rs`'s
+`#[cfg(test)]` module each carried are gone, and no suite keeps a private fixture
+beside the builder. The plan's own tests came last: they now live in
+`crates/lrsalvage-core/tests/plan.rs` on a `Vault`, next to `tests/extract.rs` and
+`tests/exif.rs`, whose subjects are the writer and the metadata reader. The
+matrix itself is asserted from two files — `crates/lrsalvage-core/tests/matrix.rs`
+(rows whose medium is the plan) and `crates/lrsalvage-cli/tests/matrix.rs` (runs:
+exit codes, report files, output bytes) — so the existing suites stay about their
+own seams.
 
-- `crates/lrsalvage-core/tests/pipeline.rs` — `chunk` `:744`, `jpeg` `:766`;
-- `crates/lrsalvage-cli/tests/cli.rs` — `chunk` `:52`, `jpeg` `:70`, `jpeg_files`
-  `:219`;
-- `crates/lrsalvage-core/src/plan.rs` (test module) — `chunk` `:896`, `jpeg` `:912`.
-
-`pipeline.rs` and `cli.rs` migrate onto the builder; they do not keep private
-fixtures beside it. The matrix itself is asserted from two new files —
-`crates/lrsalvage-core/tests/matrix.rs` (rows whose medium is the plan) and
-`crates/lrsalvage-cli/tests/matrix.rs` (runs: exit codes, report files, output
-bytes) — so the existing suites stay about their own seams.
+**A test that needs the builder lives in `tests/`, never in a `#[cfg(test)]`
+module inside `src/`.** `lrsalvage-fixtures` is `publish = false`, so the
+published manifest drops the dev-dependency, and `[package] exclude` reaches
+`tests/` and nothing else: a `src/` module that imported it would leave an
+unpacked crate failing to compile instead of running the suite it carries
+(#123, and `architecture`'s *artifact carries a suite it can run*). Which files
+ship is `cargo package --list`'s answer, and `scripts/check.sh package` runs the
+tarball's suite where it lands.
 
 ### OS neutrality
 
@@ -418,6 +425,9 @@ which medium proves each promise, and where the bytes come from.
 
 - `goal-and-requirements` — a Verification statement: every promise is proved by a
   synthetic vault from one shared builder.
+- `architecture` — an invariant: the published artifact carries a suite it can
+  run, so a test that needs the builder lives in `tests/` and never in a
+  `#[cfg(test)]` module inside `src/`.
 - `plan` — the `deleted` stat, named and counted per `missing-payload` item whose
   pyramid carries a `DeletedPyramid` row.
 - `report` — where `deleted` and `unrecognised` surface (a summary line when

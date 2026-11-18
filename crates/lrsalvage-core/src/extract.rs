@@ -761,24 +761,6 @@ mod tests {
     }
 
     #[test]
-    fn a_preexisting_verified_file_is_skipped_and_its_bytes_untouched() {
-        let fixture = Fixture::new();
-        fs::create_dir_all(fixture.output.parent().unwrap()).expect("create output dir");
-        // Same dimensions, different bytes: verification is about the file being
-        // one of ours — the marker, completeness and the frame — not about
-        // matching a payload byte for byte. The fixture writes the marker in the
-        // other byte order, which is exactly the case a reader must accept.
-        let ours = lrsalvage_fixtures::bytes::our_output(1600, 1200, "0.1.0");
-        fs::write(&fixture.output, &ours).expect("pre-existing extraction");
-
-        let outcomes = fixture.run(true);
-
-        assert_eq!(outcomes[0].status, OutcomeStatus::Skipped);
-        assert!(outcomes[0].sha256.is_none(), "a skip has no digest");
-        assert_eq!(fs::read(&fixture.output).unwrap(), ours);
-    }
-
-    #[test]
     fn a_same_size_foreign_jpeg_is_not_ours() {
         let fixture = Fixture::new();
         fs::create_dir_all(fixture.output.parent().unwrap()).expect("create output dir");
