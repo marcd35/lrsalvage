@@ -90,6 +90,12 @@ bytes.**
    own name. `missing-payload` therefore means no pyramid of that image holds a
    file. Rescuing from any other sibling stays out: that would be a mapping
    invented from a shared uuid, which ADR 0002 forbids.
+   **Amended 2026-11-18 by ADR 0013:** *one file per image: the largest level that
+   exists* becomes the largest level present that clears `--max-long-edge`. The
+   ranking is unchanged; the bound chooses the winner from it rather than excluding
+   the image afterwards. A container's chosen chunk is certified against the row
+   that declares *its* size rather than the pyramid's best row — the row is still
+   the claim and the bytes still the verdict, at the level the run writes.
 6. **Disagreement has three outcomes, kept apart.** A file that parses but whose
    name carries a different digest from its row is an orphan — only the pair maps
    (ADR 0002). A file that is payload-like but not the right shape — wrong shard,

@@ -101,7 +101,7 @@ field.
 | `catalog::Catalog::open` | convenience | `capture` + `from_snapshot` in one call |
 | `catalog::Catalog::image_count` | convenience | a count without materialising `images()`; no in-tree caller |
 | `previews_db::open`, `Opened`, `IndexProblem` | seam | the only way in degrades with a reason, and a front-end must hold the index `Plan::build` takes |
-| `previews_db::PreviewIndex` (+ fields, `pyramid`, `levels`, `best_level`, `deletion`, `candidates`, `payload_path`) | seam | the index a front-end builds and hands to the plan |
+| `previews_db::PreviewIndex` (+ fields, `pyramid`, `levels`, `best_level`, `deletion`, `candidates`, `row_for_size`, `payload_path`) | seam | the index a front-end builds and hands to the plan |
 | `previews_db::PyramidKey` (+ `new`, `of`, `uuid`, `digest`), `Candidate` (+ `path`, `row`, `long_edge`) | seam | the key and the candidate a seam lookup is expressed in |
 | `previews_db::Layout` (+ `as_str`), `INDEX_FILE`, `CONTAINER_GRAMMAR`, `LEVEL_FILE_GRAMMAR` | seam | the layout word reaches `scan --json`, and the two templates are the only form of a payload path that may leave the machine (`adr-0007-publish-a-verification-report`) |
 | `previews_db::sweep`, `CacheSweep`, `PyramidOnDisk`, `LevelOnDisk` | not supported | one walk, owed to the plan and called by `Plan::build`; a second caller would be a second answer. The CLI's and the core's tests are the outside callers |
@@ -111,8 +111,7 @@ field.
 | `extract::ensure_safe_destination_pending`, `ensure_safe_destination_create`, `ensure_create_outside` | seam | the refusal that must happen before the first write, on the destination and on `.lrcat-data` |
 | `extract::ensure_safe_destination` | convenience | its own doc points at `ensure_safe_destination_create`, which supersedes it |
 | `extract::DESTINATION_NOT_OURS` | not supported | the note text a refusal writes; no caller outside the module |
-| `report::summary_with_floor`, `item_lines`, `write_csv`, `write_json`, `write_verification`, `write_contact_sheet`, `tiers_json`, `shapes_json` | seam | the surfaces a second front-end prints instead of inventing: the summary, the CSV, the manifest, the verification report and the sheet |
-| `report::summary` | convenience | `summary_with_floor` at the default 640 px floor |
+| `report::summary`, `item_lines`, `write_csv`, `write_json`, `write_verification`, `write_contact_sheet`, `tiers_json`, `shapes_json` | seam | the surfaces a second front-end prints instead of inventing: the summary, the CSV, the manifest, the verification report and the sheet. The summary takes the run's `Options`, so the bounds it names are the ones the caller applied |
 | `report::escape_csv` | not supported | public so `extract`'s per-file CSV quotes by the same rules, as `report`'s own spec says |
 | `masks::Mask` (+ fields), `decode_dat`, `to_png`, `list` | seam | the third command's whole surface: decode a layer, encode it, find the layers |
 | `model::CatalogImage` (+ fields, `output_stem`, `root_display_name`, `relative_output_path`, `relative_output_path_with_suffix`), `CacheEntry`, `Pyramid`, `PyramidLevel`, `XmpMetadata`, `Orientation` (+ `from_catalog_code`, `from_exif`, `exif_value`, `degrees`, `is_upright`) | seam | the data every other seam type is made of |

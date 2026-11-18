@@ -53,14 +53,18 @@ which are stale, and what to do about either is `plan`'s decision.
   a file only the bounded read of that pyramid's folder found — together with the
   long edge its leaf names, which is what ranks a file that has no row. The row
   travels with the file because it is the claim `plan` compares `suspect`
-  against; that is the one place it can be attached without a second matcher
-  (`adr-0005-discover-payloads-by-index` ¶2–3).
+  against, so a level file needs no second matcher to be judged
+  (`adr-0005-discover-payloads-by-index` ¶2–3). A container is the other case and
+  the one `row_for_size` exists for: its chunks arrive with no row at all, so the
+  chunk a cap chooses is matched to the row that declares *its* size, in either
+  orientation, and a size no row declares has nothing to disagree with.
 - **A pyramid is keyed by its pair, and a store may hold two for one uuid.**
   `PyramidKey` is `(uuid, digest)` — the identity ADR 0005 ¶1 gives a pyramid —
   and `pyramids`, `levels` and `deleted` are keyed by it behind `pyramid`,
-  `levels`, `best_level`, `deletion`, `candidates` and `payload_path`. A render
-  keeps a `standard` pyramid and a `thumbnail` pyramid for the same image, and
-  only the first is claimed by an `ImageCacheEntry` (`format-notes` §5.10), so a
+  `levels`, `best_level`, `deletion`, `candidates`, `row_for_size` and
+  `payload_path`. A render keeps a `standard` pyramid and a `thumbnail` pyramid
+  for the same image, and only the first is claimed by an `ImageCacheEntry`
+  (`format-notes` §5.10), so a
   lookup by uuid alone returns whichever `Pyramid` row the database wrote last
   and mixes both pyramids' levels into one list. `PyramidLevel`'s own `digest`
   column is read for the same reason: without it a level row of the image's

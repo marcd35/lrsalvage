@@ -105,11 +105,14 @@ from the run rather than from the plan.
   unselected, exactly like a claimed level of that size (M12), and
   `--min-long-edge 0` writes it under the image's own name
   (`adr-0009-rescue-an-image-from-its-companion`). The cap reaches this path too,
-  because a companion's levels are ranked by the same level-file rule, and it can
-  never bind there: a classified companion's every level measures inside the
-  `thumbnail` tier, which no cap above the floor reaches. The cache count is unchanged:
-  `thumbnail_pyramids` describes the cache, not what the plan did with one
-  pyramid.
+  because a companion's levels are ranked by the same level-file rule: one rule
+  for a level, whichever pyramid held it. It binds there only under a floor
+  lowered below the thumbnail tier, because a classified companion's every level
+  measures under 640 px — so with the default floor no cap reaches one, and with
+  `--min-long-edge 0 --max-long-edge 200` a 320 px companion level is `above_cap`
+  and unselected, exactly as a claimed level of that size would be. The cache
+  count is unchanged: `thumbnail_pyramids` describes the cache, not what the plan
+  did with one pyramid.
 - **`superseded` is a cache stat, not a status, and it cannot move the exit code.**
   It counts claimed pyramids with **both** representations — at least one level
   file and at least one legacy `.lrprev` — whose level files are the pyramid and
@@ -179,8 +182,8 @@ from the run rather than from the plan.
   `SOF`, never from the name.
 - **The floor and the cap bound which level is written; neither fails an image.**
   Items below `--min-long-edge` (640 by default, `0` disables) are counted as
-  `below_floor`, items above `--max-long-edge` (no default, `0` disables) are
-  counted as `above_cap`, and both are left unselected. A level judged `failed`
+  `below_floor`, items above `--max-long-edge` (default `0`, which disables it)
+  are counted as `above_cap`, and both are left unselected. A level judged `failed`
   is still an item the run evaluates: it is reported with its reason and writes
   nothing, so a cache with a broken payload exits partial instead of claiming a
   clean success (`goal-and-requirements` ¶5). A cap is a winner rule rather than
@@ -190,7 +193,8 @@ from the run rather than from the plan.
   `recovered`, unselected, counted — exactly as an image below the floor does,
   and never becomes `failed` (`adr-0013-a-cap-demotes-the-level`).
   `--all-levels` makes every level above the cap an item too; without it the cap
-  is invisible unless it binds, which is the floor's behaviour as well.
+  is invisible unless it binds, which is the floor's behaviour as well. Neither
+  bound reaches `superseded`: that counts pyramids held twice, not levels.
 - **`original-present` short-circuits everything else**, and the `stat` behind it
   is skipped when `--include-present` is set, so the opt-in run costs nothing per
   image.

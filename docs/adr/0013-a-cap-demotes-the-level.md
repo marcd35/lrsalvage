@@ -49,14 +49,15 @@ about.
 
 **A cap chooses a level. It never turns an image into nothing.**
 
-The winner is the largest level present that measures at or below the cap. That
-level is still an item — `selected: false`, counted as `above_cap`, unwritten —
-exactly as a level below the floor is an item today; `--all-levels` makes every
-level above the cap an item as well, and without it the cap is invisible unless it
-binds, which is how the floor already behaves. An image all of whose levels
-exceed the cap is not `failed` and has no new status: it recovers nothing, the
-way an image whose only level is below the floor recovers nothing, and the
-existing rule already names that run (`3` when nothing at all was selected).
+The winner is the largest level present that measures at or below the cap. A
+level above it is still an item — `selected: false`, counted as `above_cap`,
+unwritten — exactly as a level below the floor is an item today; `--all-levels`
+makes every level above the cap an item as well, and without it the cap is
+invisible unless it binds, which is how the floor already behaves. An image all of
+whose levels exceed the cap is not `failed` and has no new status: it recovers
+nothing, the way an image whose only level is below the floor recovers nothing,
+and the existing rule already names that run (`3` when nothing at all was
+selected).
 
 The cap is applied wherever a level is chosen to be written — the level-file rank
 (and so the companion rescue that reuses it) and the container rank — and
@@ -99,8 +100,9 @@ is `above_cap`, beside `below_floor`.
   is now one too, so a cache whose only payload is oversized exits `3` with the
   bytes named rather than reported as an empty cache.
 - This is additive surface under `adr-0010`, which is why it is a **0.4.0** minor.
-  `0.3.0` shipped without it, as its own records describe, and #67 moves to the
-  `0.4.0` milestone.
+  `0.3.0` shipped without it, as its own records describe, and
+  `adr-0012-two-release-lines` D7 has #67 close when this merges rather than move
+  to a milestone, and it is already closed: what it declined stays on the issue.
 
 ## Considered options
 
@@ -119,6 +121,8 @@ is `above_cap`, beside `below_floor`.
 - **Exempt the rescue path** because a companion's level is usually a 320
   thumbnail the cap cannot bind. Cheap, and wrong for the reason `adr-0009` gives
   for applying the floor to a rescued level: one rule for a level, whichever
-  pyramid held it. The cap cannot bind there anyway — a classified companion's
-  every level measures inside the `thumbnail` tier — so the exemption would buy
-  nothing and cost a second rule.
+  pyramid held it. Exempting it would buy almost nothing — a classified
+  companion's every level measures under 640 px, so no cap at or above the
+  default floor reaches one — while a floor lowered with `--min-long-edge 0`
+  leaves a cap that does bind, and the exemption would then be a second rule for
+  the one case it was written for.

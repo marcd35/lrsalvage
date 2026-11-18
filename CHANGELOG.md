@@ -14,9 +14,11 @@ minor saying so here before one is removed, renamed or given a different meaning
 
 - **`--max-long-edge`, a cap on the level written.** `scan` and `extract` both
   take it, default `0` (no cap). A cache that built 1:1 previews holds a doubling
-  ladder ending at each original's own long edge, so until now salvage wrote the
-  largest level it found; with a cap it writes the largest level at or below the
-  cap and counts the rest as `above_cap`. That count joins the terminal summary,
+  ladder ending at each original's own long edge (`docs/format-notes.md` §5.7), so
+  until now salvage wrote the largest level it found; with a cap it writes the
+  largest level at or below the cap, and the levels it passed over are `above_cap`
+  items — every one of them under `--all-levels`, and otherwise the image's own
+  level when nothing cleared the cap. `above_cap` joins the terminal summary,
   `scan --json` and the verification report's `stats`, and the report's `options`
   echo `max_long_edge`. The cap chooses a level rather than excluding the image:
   an image whose every level is above it is counted, reported and left unwritten,

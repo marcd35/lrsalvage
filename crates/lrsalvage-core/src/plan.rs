@@ -835,6 +835,25 @@ fn candidate_long_edge(candidate: &Candidate<'_>, measured: &Measurements) -> u3
         .unwrap_or(candidate.long_edge)
 }
 
+/// The index of the level a run writes: the last one that clears the cap, or the
+/// last present when the cap is `0` or nothing clears it.
+///
+/// The cap chooses the winner rather than filtering after the ranking, so a bound
+/// nothing clears still leaves the largest level as the item that carries the
+/// image's status — the shape an image below the floor already has — and a bound
+/// that binds leaves the demoted level as an item too, `selected: false`
+/// (`adr-0013-a-cap-demotes-the-level`). Both ranks that write a level call this,
+/// so the two cannot drift apart.
+fn capped_winner(len: usize, cap: u32, long_edge_at: impl Fn(usize) -> u32) -> usize {
+    let last = len - 1;
+    match cap {
+        0 => last,
+        cap => (0..len)
+            .rposition(|index| long_edge_at(index) <= cap)
+            .unwrap_or(last),
+    }
+}
+
 /// A pyramid's level files, ranked by the claim and then certified.
 ///
 /// Only the winner is read unless `--all-levels` asked for every one: the rank
@@ -858,18 +877,9 @@ fn level_file_levels(
     });
 
     let smallest_level = ranked.first().map(|candidate| candidate.path.clone());
-    // The cap chooses the level, so it is a winner here rather than a filter
-    // afterwards: the last candidate that clears it is what owns the image's
-    // name. When nothing clears it no candidate is written, and the largest is
-    // still the item that carries the image's status — the same shape as an
-    // image below the floor (`adr-0013-a-cap-demotes-the-level`).
-    let winner = match options.max_long_edge {
-        0 => ranked.len() - 1,
-        cap => ranked
-            .iter()
-            .rposition(|candidate| candidate_long_edge(candidate, measured) <= cap)
-            .unwrap_or(ranked.len() - 1),
-    };
+    let winner = capped_winner(ranked.len(), options.max_long_edge, |index| {
+        candidate_long_edge(&ranked[index], measured)
+    });
     let chosen: Vec<usize> = if options.all_levels {
         (0..ranked.len()).collect()
     } else {
@@ -993,16 +1003,10 @@ fn container_levels(
     }
 
     let last = measured.len() - 1;
-    let winner = match options.max_long_edge {
-        0 => last,
-        cap => measured
-            .iter()
-            .rposition(|(_, certified)| {
-                let (width, height) = certified.dimensions;
-                width.max(height) <= cap
-            })
-            .unwrap_or(last),
-    };
+    let winner = capped_winner(measured.len(), options.max_long_edge, |index| {
+        let (width, height) = measured[index].1.dimensions;
+        width.max(height)
+    });
     let chosen: Vec<usize> = if options.all_levels {
         (0..measured.len()).collect()
     } else {

@@ -161,15 +161,17 @@ run: it exits 3 for "nothing recognised", never 1.
 
 ## Rows
 
-Rows are per-image variations inside one vault — M15 is the one row whose state
-needs two, and it says so. `Assertion` is `count` (a plan or
-report field: status, stats, `declared`, `payload_metadata`, CSV column, manifest
-member), `bytes` (the bytes of a written file), or `both` (the item's fields and
-the file it produced). `Evidence` uses `format-notes`' labels plus `synthetic` for
-a state this process has never observed. A row that composes a state a run *did*
-observe carries both, as `verified §5.11 (state); synthetic (bytes)`: the label on
-the left is what the measurement holds, the one on the right is what the vault
-builds.
+Rows are per-image variations inside one vault, unless the row composes a state
+that vault cannot hold — a row that builds its own vault says so in its prose, and
+the section's pinned totals then describe the base vault rather than it. M15 is
+the one row whose state needs two catalogs, and it says so. `Assertion` is `count`
+(a plan or report field: status, stats, `declared`, `payload_metadata`, CSV
+column, manifest member), `bytes` (the bytes of a written file), or `both` (the
+item's fields and the file it produced). `Evidence` uses `format-notes`' labels
+plus `synthetic` for a state this process has never observed. A row that composes
+a state a run *did* observe carries both, as `verified §5.11 (state); synthetic
+(bytes)`: the label on the left is what the measurement holds, the one on the
+right is what the vault builds.
 
 ### `modern` — 14 images, 2 unclaimed pyramids
 
@@ -212,9 +214,12 @@ is a row of its own if anyone wants it |
 **No cap row appears in the run table below, and that is a decision.** Every run
 there is uncapped, so none of its numbers moved; the cap's claim is what lands on
 disk, and M16–M18 pin it with their own vaults. The cap also reaches the
-companion rescue (M10f) and can never bind on it: a classified companion's every
-level measures inside the `thumbnail` tier (ADR 0008, third clause), so no cap
-whose window is non-empty can exclude one.
+companion rescue (M10f): one rule for a level, whichever pyramid held it. With
+the default floor it cannot bind on a companion, because a classified companion's
+every level measures under 640 px (ADR 0008, third clause) — but a floor lowered
+with `--min-long-edge 0` leaves a cap that does, so a 320 px companion level under
+`--max-long-edge 200` is `above_cap` and unselected, exactly as a claimed level of
+that size would be.
 
 **Runs on `modern`.**
 
@@ -258,7 +263,7 @@ Totals: `images 5`, `recovered 2`, `suspect 1`, `missing_payload 1`,
 | L4 | `missing-payload` | row, no `.lrprev` on disk | `missing-payload` | `missing_payload +1` | `scan` | 0 | count | ADR 0006 ¶5 | |
 | L5 | no index row | image, no row | `no-cache-entry` | `no_cache_entry +1` | `scan` | 0 | count | — | |
 | L6 | unclaimed container | `.lrprev` no image claims | `unmapped` | `unmapped +1` | `scan` | 0 | count | ADR 0005 ¶8 | an unclaimed container is one orphan pyramid |
-| L7 | a cap over a container | `container([101, 808, 1616])`, a row for each; `--max-long-edge 1000` | `recovered` at 808×539 | `above_cap 0`, `suspect 0` | `extract` | 0 | bytes | synthetic; ADR 0013 | the container is ranked by decoded area, and the chunk a cap chooses is judged against the row that declares its size — not the pyramid's best row, which would flag an ordinary level `suspect` |
+| L7 | a cap over a container | `container([101, 808, 1616])`, a row for each; `--max-long-edge 1000` | `recovered` at 808×539 | `above_cap 0`, `suspect 0` | `extract` | 0 | bytes | synthetic; ADR 0013 | the container is ranked by decoded area, and the chunk a cap chooses is judged against the row that declares its size — not the pyramid's best row, which would flag an ordinary level `suspect`. The row builds its own vault, so the totals above describe the base one |
 
 Container framing failures (a chunk length running past EOF) are **not** a row:
 `failed` is already pinned three ways in `damaged`, and the byte walk is

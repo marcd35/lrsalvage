@@ -417,7 +417,7 @@ with `scan`; the table names which command each flag belongs to:
 | Flag | Effect |
 |---|---|
 | `--min-long-edge 640` | Ignore levels below this long edge (default 640; `0` disables the floor). |
-| `--max-long-edge 0` | Write the largest level at or below this long edge instead of the largest present (default `0`, no cap). A 1:1 cache with `--max-long-edge 1920` writes the 1,920 px level and nothing bigger; the levels above it are counted as `above_cap`. An image whose every level is larger keeps its size in the plan, is reported, and is not written — it is never failed. `0` disables the cap, and a cap below the floor is an empty window rather than an error: nothing is selected and the run exits `3`. |
+| `--max-long-edge 0` | Write the largest level at or below this long edge instead of the largest present (default `0`, no cap). A 1:1 cache with `--max-long-edge 1920` writes the 1,920 px level and nothing bigger. An image whose every level is larger keeps its size in the plan, is reported, and is not written — it is never failed. `0` disables the cap, and a cap below the floor is an empty window rather than an error: nothing is selected and the run exits `3`. The cap chooses a level rather than excluding one, so the levels it passed over are items only with `--all-levels`; without it the only level counted is the one the image is reported at, so `above_cap` is non-zero exactly when nothing cleared the cap. |
 | `--all-levels` | Export every intermediate level, not just the best one. |
 | `--include-present` | Also include images whose original file still exists on disk. |
 | `--verbose` | `scan` only: print one line per plan item instead of only totals. |
@@ -694,7 +694,7 @@ this page is the summary.
 - **Filter by rating, folder, or anything else.** No flag narrows which images
   are salvaged; every salvageable image gets a plan. That is a decision, not a
   gap: `manifest.json` and `report.csv` already carry every fact a filter would
-  use — star rating, capture time, original path, dimensions — so a script can
+  use — [What lands on disk](#what-lands-on-disk) names them — so a script can
   select from the manifest instead of the tool growing a flag per question.
 - **Rename or re-folder the output.** Output names come from the catalog: the
   mirrored tree, the original's own name, the virtual copy's copy name. A rename
