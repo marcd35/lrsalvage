@@ -660,11 +660,11 @@ picture upright without touching a pixel (ADR 0003).
 > Delivery: [issue #2](https://github.com/marcd35/lrsalvage/issues/2).
 
 Lightroom Classic 13.3 changed preview storage. Sections 5.1–5.4, 5.7 and 5.9 are
-**verified** on an upgraded catalog, 5.10 on three caches rendered from scratch
-and 5.11 on a copy of one of them that Lightroom discarded; sections 5.5 and 5.8
-say which of their claims the renders settled and which they did not, which is
-not the same as untested software. The tool must still detect the layout rather
-than assume either one.
+**verified** on an upgraded catalog, 5.10 on three caches rendered from scratch,
+5.11 on a copy of one of them that Lightroom discarded, and 5.12 on a capped run
+of our own against that 1:1 build; sections 5.5 and 5.8 say which of their claims
+the renders settled and which they did not, which is not the same as untested
+software. The tool must still detect the layout rather than assume either one.
 
 ### 5.1 What was measured
 
@@ -1084,6 +1084,7 @@ The rendered-cache gate `scripts/check.sh real-render` asserts it against the
 column above against the 1:1 build — ten images with `recovered 10`,
 `thumbnail_pyramids 0` and `unmapped 0`, forty metadata-bearing level files, and
 no `standard` or `thumbnail` row (`crates/lrsalvage-cli/tests/one_to_one.rs`).
+§5.12 then caps a run against the same cache.
 
 **What this does not measure.** A render of an image the catalog already holds (a
 re-render, or a preview rebuilt after pruning), what `14.0+` does when it prunes
@@ -1183,6 +1184,66 @@ a level-file pyramid, so `M10h` composes the pre-discard value and claims nothin
 about it. Reading those two columns off a discarded copy would settle it, and is
 the first thing to check if the container arm ever needs that column for a
 demoted pyramid.
+
+### 5.12 The build from this tree, run against the 1:1 cache — VERIFIED
+
+On 2026-11-18 the binary built from this tree — `0.3.0` plus the
+`--max-long-edge` work in `[Unreleased]` — was run against §5.10's catalog C and
+its cache, read-only, with every write under a scratch root outside both trees. No
+path appears below: the numbers are the runs' own output and the `--report` file,
+which is path-free by construction.
+
+The ladders they are counted against are §5.10's: `320, 1024, 2048, 4096` for the
+seven 4,096-wide images, `320, 750, 1500, 3000, 6000` for the two 6,000-wide ones,
+and `320, 1200` for the 1,200 × 800 one. **No level in this cache measures
+1,920 px**, and that is what makes it the cache for this question: a cap at 1,920
+has to choose a smaller step than the number it names, which is the whole
+difference between a winner rule and a filter applied after one.
+
+| Run | Exit | What it reported |
+|---|---|---|
+| `scan --include-present --max-long-edge 1920` | 0 | `layout modern`, `images 10`, `recovered 10`, `thumbnail_pyramids 0`, `unmapped 0`, `missing_payload 0`, `failed 0`, `below_floor 0`, `above_cap 0` |
+| `scan --report <file> --max-long-edge 1920` | 0 | `options.max_long_edge 1920`, `levels 10`, `selected_images 10`, `selected_items 10` |
+| `scan --include-present --all-levels --max-long-edge 1920` | 0 | `shapes.level_file 40`, `below_floor 10`, `above_cap 18` |
+| `scan --report <file> --all-levels --max-long-edge 1920` | 0 | `selected_images 10`, `selected_items 12` |
+| `extract --include-present --max-long-edge 1920` | 0 | ten files written, one per image; each one's own `SOF` is 1,024 (×7), 1,200 (×1) or 1,500 (×2), and the ten payloads total 885,493 bytes |
+| `extract --include-present --max-long-edge 200` | 3 | nothing written — the empty window, not a failure: a run with a failed level exits `2` |
+| `scan --include-present --all-levels` (uncapped) | 0 | `above_cap 0`, `below_floor 10` — §5.10's numbers, unmoved |
+
+**The forty level files partition, and that is the claim.** Eighteen are above
+the cap (`2,048` seven times, `3,000` twice, `4,096` seven times, `6,000`
+twice), twelve are inside the window (`750` twice, `1,024` seven times, `1,200`
+once, `1,500` twice) and ten are under the 640 px floor (the ten `320` steps) —
+18 + 12 + 10 = the `40` level files §5.10 counted, with no file in two buckets
+and no level file uncounted.
+
+Two of those numbers read as negatives and are the decision's shape rather than
+an absence of work. `above_cap 0` on the capped run without `--all-levels` is
+right while a level above the cap sits in every one of the ten ladders: without
+`--all-levels` the only level counted is the one an image is reported at, so the
+count is non-zero exactly when nothing cleared the cap
+(`adr-0013-a-cap-demotes-the-level`). And the empty window exits `3` without
+failing an image, which is the state `M17` composes — reached here on ladders
+whose every step is above the cap, rather than on an image holding one oversized
+level.
+
+**What it establishes.** The winner rule is not a filter after one: the run writes
+1,024, 1,200 and 1,500 px files where the same ladders hold 2,048, 3,000, 4,096
+and 6,000, and it writes them rather than excluding the ten images. `M16`'s claim,
+which was synthetic, now has a measured cache behind it.
+
+**What it does not measure.** A cap over a container — `L7` ranks a container's
+decoded levels by area, and every container measured here is a legacy cache, so
+that arm's capped judgement against its own row is still synthetic. A cap naming a
+level the cache actually holds: §5.10's catalog A steps `320, 960, 1920, 3840`, so
+a 1,920 cap would choose a level equal to it, but no run here capped A, so that
+boundary rests on `M16`'s vault. And a cap over a *converted* cache, where the
+ladder is §5.9's rather than a render's.
+
+`sh scripts/check.sh real-1to1` asserts this section against the cache itself
+(`crates/lrsalvage-cli/tests/one_to_one.rs`,
+`a_cap_chooses_the_largest_level_at_or_below_it`), and fails rather than skipping
+when the pair is unset.
 
 
 ---
