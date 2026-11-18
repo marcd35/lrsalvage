@@ -1,17 +1,15 @@
 //! `plan`'s decisions about paths, statuses and stats, driven from a vault.
 //!
 //! Every catalog, cache and payload here comes from `lrsalvage-fixtures`, so
-//! this suite keeps no byte layout of its own. It lives in `tests/` because the
-//! published crate's manifest drops that dev-dependency: a test that imports it
-//! must sit in a file `[package] exclude` drops with it, or an unpacked tarball
-//! fails to compile instead of running its suite.
+//! this suite keeps no byte layout of its own; `specs/fixtures.md` says why a
+//! test that needs it lives in `tests/` rather than in `src/plan.rs`.
 //!
 //! The medium is a `legacy` vault: every payload is an `.lrprev` container, whose
 //! chunks carry no size of their own and are therefore judged against the
 //! `PyramidLevel` row. That is what lets a row and a chunk disagree, which the
 //! suspect and per-level stats below are about.
 
-use std::path::{Component, Path, PathBuf};
+use std::path::{Component, Path};
 
 use lrsalvage_core::plan::{Options, Plan, PlanItem, Status};
 use lrsalvage_fixtures::vault::{ImageRow, Level, PyramidRow, Vault, digest_of};
@@ -56,12 +54,6 @@ fn slashed(path: &Path) -> String {
     path.to_string_lossy().replace('\\', "/")
 }
 
-/// The output path of a vault's first image, under the root folder's label —
-/// `originals` for a vault that never renamed it.
-fn expected_output(vault: &Vault, file_name: &str) -> PathBuf {
-    vault.out().join("originals").join(file_name)
-}
-
 #[test]
 fn a_hostile_path_from_root_cannot_write_outside_the_output_root() {
     // The catalog stores the folder path verbatim; `..` must not survive the
@@ -88,7 +80,7 @@ fn a_hostile_path_from_root_cannot_write_outside_the_output_root() {
     );
     assert_eq!(
         slashed(output),
-        slashed(&expected_output(&vault, "escaped/IMG_0001.jpg"))
+        slashed(&vault.out().join("originals/escaped/IMG_0001.jpg"))
     );
     assert!(
         !output

@@ -1,9 +1,8 @@
 //! `extract`'s resume verification, driven from a synthetic vault.
 //!
-//! The payload and the pre-existing destination come from `lrsalvage-fixtures`,
-//! which is why this lives here rather than in `src/extract.rs`: the published
-//! crate's manifest drops that dev-dependency, and a test that imports it must
-//! sit in a file `[package] exclude` drops with it.
+//! The payload and the pre-existing destination come from `lrsalvage-fixtures`;
+//! `specs/fixtures.md` says why a test that needs it lives here, not in
+//! `src/extract.rs`.
 
 use std::fs;
 

@@ -3,9 +3,8 @@
 //! A payload's own metadata is untrusted input from a dead drive, and a
 //! destination may be one an older build wrote; both arrive in byte orders and
 //! segment layouts this writer never emits. `lrsalvage-fixtures` builds those
-//! bytes, which is why these live here rather than in `src/exif.rs`: the
-//! published crate's manifest drops the fixtures dev-dependency, so a test that
-//! imports it must be in a file `[package] exclude` drops with it.
+//! bytes; `specs/fixtures.md` says why such a test lives here, not in
+//! `src/exif.rs`.
 
 use lrsalvage_core::Orientation;
 use lrsalvage_core::exif;

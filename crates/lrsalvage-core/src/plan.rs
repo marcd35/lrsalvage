@@ -1275,12 +1275,9 @@ fn confined_output(output_root: &Path, relative: &Path) -> std::result::Result<P
 mod tests {
     use super::*;
 
-    // The plan's own fixture-dependent tests live in `tests/plan.rs` and compose
-    // a `Vault`: the published crate's manifest drops the fixtures
-    // dev-dependency, so a test that imports it must be in a file
-    // `[package] exclude` drops with it. What stays here reaches a private
-    // helper and needs no bytes — it travels in the package and still runs where
-    // the crate lands.
+    // The plan's fixture-dependent tests live in `tests/plan.rs` and compose a
+    // `Vault` (`specs/fixtures.md`). What stays here reaches a private helper and
+    // needs no bytes, so it travels in the package and runs where the crate lands.
 
     #[test]
     fn a_relative_output_path_that_escapes_the_output_root_is_refused() {
