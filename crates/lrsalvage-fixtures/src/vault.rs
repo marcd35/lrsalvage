@@ -694,9 +694,9 @@ impl Vault {
 
     /// A file already sitting at `relative` inside the output tree.
     #[must_use]
-    pub fn preoccupied_destination(mut self, relative: &str, bytes: &[u8]) -> Self {
+    pub fn preoccupied_destination(mut self, relative: impl AsRef<Path>, bytes: &[u8]) -> Self {
         self.preoccupied
-            .push((PathBuf::from(relative), bytes.to_vec()));
+            .push((relative.as_ref().to_path_buf(), bytes.to_vec()));
         self
     }
 
@@ -841,9 +841,6 @@ impl Vault {
         for image in self.images.iter().filter(|image| image.has_file_row) {
             let next = 10 + folders.len() as i64;
             folders.entry(image.path_from_root.as_str()).or_insert(next);
-        }
-        if folders.is_empty() {
-            folders.insert("", 10);
         }
         for (path_from_root, id) in &folders {
             conn.execute(
