@@ -42,8 +42,8 @@ one says it once, in advance, instead.
    [format-notes](format-notes.md) a *verified* section rather than a synthetic
    vault's claim. The tracker's slice table says "my reading, to be grilled"
    above itself, and this page is that grilling: it **keeps the order** and
-   records what is no longer in it. The executable remainder is three slices, not
-   six.
+   records what is no longer in it. The executable remainder is four rows, not
+   six: this file's own merge, then #64, #62 and the bump.
 
 2. **The tracker's gate sentence and #62's own done-when disagree, and the gate
    wins.** #125 says "no new gate enters, except #123's change to `package`";
@@ -102,7 +102,7 @@ moves, plus the two rows that have already moved:
 | Slice | What it changes | Closes |
 |---|---|---|
 | 1 | This file, and the two Dependabot majors merged into the tree | — |
-| 2 | **landed** `dc5a8ad`: the cap — flag, `above_cap`, the report's `options` echo, `docs/adr/0013`, and the two README non-goals #67's decision 2 promised | #88, #67 |
+| 2 | **landed** `dc5a8ad`: the cap — flag, `above_cap`, the report's `options` echo, `docs/adr/0013`, and the two README non-goals #88 landed | #88, #67 |
 | 3 | **landed** #129 and #131: the five fixture-dependent `#[cfg(test)]` modules moved out of `src/`, and `scripts/check.sh package` testing core's tarball rather than only building it | #123 |
 | 4 | #64: the free-space refusal reusing exit `4`, the `--dry-run` verdict, the README's exit-code row, and one seam the suite can drive | #64 |
 | 5 | #62: four completion scripts and one man page, generated, the `completions` gate, the release's upload list, one README line | #62 |
@@ -161,12 +161,15 @@ reader closing the tracker can check coverage without re-deriving it:
       fixed before it is built. **The mechanism, once:** the run compares the
       plan's byte total against free space on its destination and refuses with
       exit `4` before the first write.
-      - **The refusal is checked after the plan exists and before the first
-        write.** It sits with the destination checks `extract` already makes
-        (`crates/lrsalvage-core/src/extract.rs`, beside `probe_writable`), so a
-        rejected destination never leaves a directory behind — the rule the
-        function above it states — and no JPEG, no `extract.csv`, no
-        `manifest.json` and no report exists when it fires.
+      - **The check is `extract`'s, and it runs once the plan exists.** It sits
+        with the destination validation in
+        `crates/lrsalvage-core/src/extract.rs`, because that module owns
+        destination safety and because the byte total it needs is the plan's;
+        `plan` stays I/O-free and contributes `stats.bytes` and nothing else. It
+        runs before the first file is written, so no JPEG, no `extract.csv`, no
+        `manifest.json` and no report exists when it fires. The output root may
+        already exist — today's unwritable-destination refusal runs after
+        `create_dir_all` — and this box does not claim otherwise.
       - **The number is the plan's, not the catalog's.** `--min-long-edge`,
         `--max-long-edge` and `--all-levels` move it, because it is what this run
         would write at these options. A run that would write nothing is the empty
@@ -180,14 +183,17 @@ reader closing the tracker can check coverage without re-deriving it:
         prints where a user sees it, and the box names the exact wording in the
         slice's pull request, because a warning nobody reads is not a check.
       - **`--dry-run` runs the same check and prints the same verdict**, writing
-        nothing — #64's decision 4, and the reason the check lives on the plan
-        rather than on the writer.
+        nothing — #64's decision 4, and the reason the check sits with the
+        destination validation rather than inside the per-file write loop, where
+        `--dry-run` would never reach it.
       - **Free bytes arrive through one function the suite substitutes.** This is
         the seam the grilling chose: no CI runner can be made nearly full, so
         without it the refusal would rest on one hand measurement and no gate. A
-        workspace test drives the whole path to exit `4`; `specs/fixtures.md`
-        gains a row whose **cannot show** text records that a short disk is not a
-        vault state a fixture can compose.
+        workspace test drives planning to the refusal and asserts the error
+        variant; `main.rs`'s mapping test already pins that variant to `4`, so
+        the exit code is held by the pair rather than by the seam alone. The
+        fixture matrix gains a row whose **cannot show** text records that a
+        short disk is not a vault state a fixture can compose.
       - **The surface is exactly one widened trigger.** The README's exit-`4` row
         gains the free-space clause, the flag table gains nothing, `readme.rs`
         passes, and `specs/modules/extract.md` records the check and its place in
@@ -211,11 +217,10 @@ reader closing the tracker can check coverage without re-deriving it:
         section has **one source**, named in the generator. A hand-typed second
         table there is the `readme.rs` drift again; if the codes come from
         `main.rs`'s mapping, the box says which test holds the two together.
-      - **`release.yml` uploads the five files by explicit path, not a glob**, and
-        the release carries nine assets: three archives, `SHA256SUMS`, the four
-        completions and the man page. A `dist/*.tgz`-shaped addition would sweep a
-        completion script into the archive set, which is why the box names the
-        list rather than the directory.
+      - **`release.yml` uploads the five files by explicit path, not a glob.** A
+        `dist/*.tgz`-shaped addition would sweep a completion script into the
+        archive set; the asset list itself is written once, in the Artifact box
+        below, and this slice adds five files to it.
       - **The archive names do not move.** `release.yml`'s own comment explains
         why: the name is a promise to `cargo-binstall`, a tool this project does
         not control.
@@ -292,10 +297,12 @@ holds.
       this with a `--config patch`, and the reason is the script's own: a version
       that is not yet on the index would otherwise be verified as the previous
       one.
-- [ ] The tag produces **nine assets** on the release: the three platform
-      archives and `SHA256SUMS` that `release.yml` already builds, plus the four
-      completion scripts and the man page #62 attaches. The archive names stay the
-      shape `release.yml`'s comment explains they must keep.
+- [ ] The tag produces the release's assets: the three platform archives and
+      `SHA256SUMS` that `release.yml` already builds, plus the four completion
+      scripts and the man page #62 attaches. **This is the one place the list is
+      written** — the tag, binstall and changelog boxes point here rather than
+      recounting it — and the archive names stay the shape `release.yml`'s comment
+      explains they must keep.
 
 ### Gates — the ones a script can run
 
@@ -340,11 +347,11 @@ holds.
 
 - [ ] ADR 0010's eight surfaces reviewed against the release's whole diff: nothing
       removed, renamed or given a different meaning, and the additions are exactly
-      the flag, the stat, the `options` member and the free-space trigger on exit
-      `4`, each named in ADR 0010's dated *added by 0.4.0* block. The review names
-      what it searched — the `#[arg]` sites for flags, the exit-code constants and
-      their mapping, and the frozen `stats` list in `specs/modules/report.md` —
-      because "nothing else moved" is a claim about a search.
+      the four the introduction names, each of them in ADR 0010's dated *added by
+      0.4.0* block. The review names what it searched — the `#[arg]` sites for
+      flags, the exit-code constants and their mapping, and the frozen `stats`
+      list in `specs/modules/report.md` — because "nothing else moved" is a claim
+      about a search.
 - [ ] The frozen `stats` list's growth is the decision ADR 0013 records, not a
       field that appeared: that record is the one home for how many names it holds
       before and after, and this page points at it rather than counting.
@@ -366,10 +373,6 @@ stated with it**: `docs/release-0.2.md`, `docs/release-0.3.md` and the ADRs'
 dated history keep their `0.3.0` references, because they are records of what was
 true then. This is a sweep of what a reader takes as the present, not a rename.
 
-- [ ] The README's version paragraph names 0.4.0 and points at this checklist
-      rather than the 0.3 one, with the publish's own facts — the sentence 0.3.0
-      needed a post-publish pull request for, and this box's evidence is that pull
-      request.
 - [ ] The six sentences that name the 0.3 checklist — five in `README.md`, one in
       `release.yml` — are re-read and repointed where they describe *this* release,
       and kept where they describe 0.3.0's own measurement. *Measured 2026-11-18,
@@ -405,7 +408,8 @@ true then. This is a sweep of what a reader takes as the present, not a rename.
       **Changed** — the `Software` marker names `0.4.0`, as 0.3.0's body carried
       its own line;
       **Packaging** — #123's tarball running its own suite, the two dependency
-      majors, and the five generated files if they are attached.
+      majors if both re-runs are green, and the five generated files if they are
+      attached.
 - [ ] `[Unreleased]` is a heading three files name, and the bump renames it.
       *Measured 2026-11-18:* `format-notes.md` §5.12 names it in the present tense
       and moves; ADR 0012 D5's two references are a dated record of where the wait
@@ -435,8 +439,9 @@ upload.
 - [ ] The tag is `v0.4.0`, annotated, on the merge commit of the close-out pull
       request — the tree published from, which carries the bump, the changelog and
       the upload list by construction rather than by a later check.
-- [ ] The release publishes the nine assets and **nothing generated from `scan`**
-      — a report describes a cache, not a release.
+- [ ] The release publishes exactly the assets the Artifact box enumerates, and
+      **nothing generated from `scan`** — a report describes a cache, not a
+      release.
 
 ## After the tag (irreversible)
 
@@ -471,11 +476,13 @@ what is now known.
 - [ ] `cargo binstall lrsalvage-cli` is tried once against the tag, and its stop
       rule is the README's: if it does not fetch the prebuilt, the paragraph says
       so rather than keeping an expectation. It is re-run this release because the
-      release's asset list changed — nine assets beside the archives is exactly
-      the shape that could disturb the template match — and because 0.3.0's run
+      asset list grew — by the five files the Artifact box names — which is exactly
+      the shape that could disturb the template match, and because 0.3.0's run
       proved the bare form, not this asset set.
 - [ ] The post-publish docs pull request: the README's install, archive and
-      version sentences name 0.4.0 and only what was proved of each route, and
+      version sentences name 0.4.0 and only what was proved of each route, its
+      version paragraph points at this checklist rather than the 0.3 one — the
+      sentence 0.3.0 needed a post-publish pull request for — and
       `docs/versions.md`'s *verified at* line, current-release sentence and
       support example follow the publish. Nothing here says a route exists that
       was not run, and the macOS pair stays unproved with #93 still open.
