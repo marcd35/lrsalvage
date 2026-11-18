@@ -154,6 +154,10 @@ exactly how §6.4 kept a false ICC claim after the render disproved it.
 - `docs/versions.md` — what a version number promises on each of the two release
   lines, and which capabilities each artifact currently has. It is the only place
   the two-line structure is explained, so a change to it is a change to a promise.
+- `docs/app-distribution.md` — the non-Lightroom facts the app's distribution
+  rests on: signing costs, SmartScreen, browser API support, toolkit accessibility
+  and how peers ship a CLI beside a GUI. Every row carries a source and a read
+  date, so re-checking one is a lookup rather than a research project.
 - `docs/adr/` — decisions and their consequences; read before changing a seam.
 - `specs/` — the spec graph: the product goal, the architecture and its
   invariants, and one spec per module. It is the ground truth for what a module
