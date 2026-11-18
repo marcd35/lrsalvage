@@ -174,9 +174,9 @@ the run this time, which the first one did not:
    deletes, which is what happened to §5.11's first one.
 5. **Name it and run the gate.** `sh scripts/check.sh real-discard`
    (`crates/lrsalvage-cli/tests/discard.rs`) holds §5.11's counts to it, the
-   demoted `quality` among them. The byte total is the one number the gate does
-   **not** assert: §5.11's came from a different build, so measure it here and
-   add the assertion with the measurement rather than before it.
+   demoted `quality` and the payload byte total among them. It asserts the
+   *payload* total, not the bytes on disk: the difference is the metadata segments
+   `extract` adds, which are ours and can change.
 
 ## What not to do
 

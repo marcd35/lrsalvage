@@ -23,15 +23,23 @@
 //! demoted pyramid is still a recoverable image, written under its own name, with
 //! its own quality — which is the promise the state is worth to a user.
 //!
-//! **One number is deliberately not asserted here: the byte total.** §5.11
-//! publishes one, but from a build this one is not, so a total inherited from it
-//! would be a memory rather than a measurement — the TODO at the end of the test
-//! says what turns it into an assertion. Everything else §5.11 publishes about
-//! this state is held here, the demoted `quality` included.
+//! **Two totals, and only one of them is a cache fact.** `stats.bytes` is the sum
+//! of the payloads the run writes — Adobe's bytes, 2 731 955 of them on this copy
+//! — and it is asserted here. The files on disk are larger by the ten metadata
+//! segments `extract` adds, so §5.11's `2.6 MiB` rounds to the same figure; that
+//! on-disk total is not asserted, because its size is ours to change.
 
 use std::collections::BTreeMap;
 
 mod support;
+
+/// The payload bytes this cache writes: the sum of the ten surviving levels' own
+/// bytes, and the number §5.11 publishes.
+///
+/// The files on disk total more, because each carries a metadata segment ours
+/// adds; that difference is our arithmetic, not the cache's, so the row holds the
+/// payload total and leaves the on-disk one to the notes.
+const PAYLOADS: u64 = 2_731_955;
 
 /// `format-notes` §5.11: ten images, ten claimed pyramids — nine demoted to
 /// `bigThumbnail`, one left `final` — twenty-nine level files, no companion.
@@ -103,6 +111,10 @@ fn a_discarded_cache_reports_a_shrunk_pyramid_per_image_and_still_writes_ten() {
         report["shapes"]["suffix_matches_sof"], 29,
         "every surviving leaf still names its own measured long edge"
     );
+    assert_eq!(
+        report["bytes"], PAYLOADS,
+        "the plan's byte total, re-measured on the rebuilt copy (§5.11)"
+    );
 
     // The human surface too: `--json` replaces the summary rather than rendering
     // it, so the object's run says nothing about the command a person types.
@@ -172,13 +184,16 @@ fn a_discarded_cache_reports_a_shrunk_pyramid_per_image_and_still_writes_ten() {
          `final`"
     );
 
-    // TODO — the byte total, and why it is not asserted yet.
+    // The byte total, re-measured on the rebuilt copy rather than inherited.
     //
-    // §5.11 publishes `2.6 MiB` for this run, measured by an `0.1.0` build whose
-    // verification report echoed `options.min_long_edge: 640`: a number about a
-    // tree this one is not, so asserting it would be inheriting a measurement
-    // rather than holding one. When the copy is rebuilt and re-measured at the
-    // current version, the total — the sum of these same rows' bytes, and the
-    // `stats.bytes` the scan reports — becomes a strict `assert_eq!` here, and
-    // §5.11's paragraph stops being the only place the number lives.
+    // `stats.bytes` is the sum of the payloads this run writes, and it is the
+    // number §5.11 publishes: 2 731 955 bytes — the same value the `0.1.0` build
+    // reported before the first copy was discarded. That agreement is what makes
+    // it a fact about Adobe's payloads and not about our metadata; the ten files
+    // on disk are larger by the ten metadata segments ours adds, which is why
+    // §5.11's `2.6 MiB` is the same figure for either count.
+    assert_eq!(
+        manifest["stats"]["bytes"], PAYLOADS,
+        "the ten surviving payloads write 2 731 955 bytes (§5.11, re-measured)"
+    );
 }
