@@ -121,7 +121,7 @@ render looks like the conversion" retires a doubt just as well as "it does not".
 
 Once such a cache exists on the machine, the numbers stop being prose: put its two
 halves in `LRSALVAGE_RENDER_CATALOG` and `LRSALVAGE_RENDER_PREVIEWS` (same file as
-the real pair, `.env.example` names all three pairs) and run
+the real pair, `.env.example` names all four pairs) and run
 
 ```console
 sh scripts/check.sh real-render
@@ -137,11 +137,46 @@ that was then built 1:1 is the third family, `LRSALVAGE_ONE_TO_ONE_CATALOG` and
 because the caches are different evidence and a machine may hold one without the
 other; each gate runs only its own tests.
 
+A discarded cache is the fourth family — `LRSALVAGE_DISCARD_CATALOG` and
+`LRSALVAGE_DISCARD_PREVIEWS` with `sh scripts/check.sh real-discard` — and the
+section below is how it is made.
+
 **Where the evidence caches live is not in this repo.** Catalog paths are not a
 repo artefact, so the machine's `real.env` is the index: read it before searching
-the disk, and let either gate's failure message name the file to edit. A rendered
+the disk, and let each gate's failure message name the file to edit. A rendered
 cache that exists but is missing from `real.env` is the one case worth a minute of
 `find` — and then a line in that file, so the next run starts from it.
+
+## Discarding a copy
+
+`format-notes` §5.11 is the output of applying `Library > Previews > Discard
+Standard and 1:1 Previews` to the `Auto (3840px)` render: every preview pyramid
+shrank instead of emptying, the companion went, and `quality` was rewritten. It is
+reproducible on any machine that holds that render — but the copy has to outlive
+the run this time, which the first one did not:
+
+1. **Copy the pair whole** — `<name>.lrcat` and `<name> Previews.lrdata`
+   together — onto an evidence root, never into a scratch folder. Look at it once
+   from outside Lightroom first and record what it is: the catalog's and
+   `previews.db`'s SHA-256, and a manifest of every level file with its size and
+   hash. That manifest is what proves the survivors are the render's bytes.
+2. **Open the copy, select all ten, and discard.** The dialog asks before it does
+   anything and names the photo count; §5.11 records its wording on the run that
+   measured the state, so read it against that sentence rather than pressing the
+   default button. Then quit Lightroom so the index settles — a running app leaves
+   a `-wal` beside `previews.db` and the numbers will not be the settled ones.
+3. **Re-hash the survivors and compare.** Every remaining level file must hash to
+   the render's own value for that leaf: a discard deletes, it never rewrites a
+   payload.
+4. **Write `EVIDENCE.md` beside the copy** — the render it was cut from, the date
+   and the dialog's wording, and the two hash lists that show the survivors are
+   that render's bytes. A copy no document identifies is a copy a tidy-up
+   deletes, which is what happened to §5.11's first one.
+5. **Name it and run the gate.** `sh scripts/check.sh real-discard`
+   (`crates/lrsalvage-cli/tests/discard.rs`) holds §5.11's counts to it, the
+   demoted `quality` and the payload byte total among them. It asserts the
+   *payload* total, not the bytes on disk: the difference is the metadata segments
+   `extract` adds, which are ours and can change.
 
 ## What not to do
 

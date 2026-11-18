@@ -93,12 +93,13 @@ names, row by row, the byte shape, the status, the statistic, the exit code and
 the regression each row pins, so a status or a statistic arrives with its row.
 
 Real catalogs are evidence, not fixtures: they are reached only from `#[ignore]`d
-tests, in the three evidence families `scripts/check.sh` gates by name — a
-converted cache, a cache Lightroom rendered from scratch, and a cache it built
-1:1 previews for — and no real catalog byte is ever committed. A byte fact
-learned from a real file is recorded in `format-notes` with its evidence label
-before a fixture builds on it; a shape nobody has observed is labelled `synthetic`
-in the matrix and never presented as Adobe's.
+tests, in the four evidence families `scripts/check.sh` gates by name — a
+converted cache, a cache Lightroom rendered from scratch, a cache it built 1:1
+previews for, and a cache it discarded the standard and 1:1 previews of — and no
+real catalog byte is ever committed. A byte fact learned from a real file is
+recorded in `format-notes` with its evidence label before a fixture builds on
+it; a shape nobody has observed is labelled `synthetic` in the matrix and never
+presented as Adobe's.
 
 ## Non-goals
 

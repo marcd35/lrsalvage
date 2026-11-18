@@ -10,13 +10,14 @@
 #   scripts/check.sh clippy fmt   only those, in the order given
 #   scripts/check.sh real         the #[ignore]d tests, against real catalogs
 #   scripts/check.sh real-render  the #[ignore]d tests, against a rendered cache
-#   scripts/check.sh real-1to1    the #[ignore]d tests, against a 1:1 cache
+#   scripts/check.sh real-1to1     the #[ignore]d tests, against a 1:1 cache
+#   scripts/check.sh real-discard  the #[ignore]d tests, against a discarded cache
 #
-# Those last three are three evidence families, not one: a machine can hold a
-# converted cache without a rendered one, or a rendered one without a 1:1 build,
-# and each gate fails rather than skipping when its own pair is unset. Each runs
-# only its own tests, so adding a family cannot reach into another's and break
-# it.
+# Those last four are four evidence families, not one: a machine can hold a
+# converted cache without a rendered one, a rendered one without a 1:1 build, or
+# no copy of a discard at all, and each gate fails rather than skipping when its
+# own pair is unset. Each runs only its own tests, so adding a family cannot reach
+# into another's and break it.
 #
 # `package` is the slow one — two builds and a test run — so name it while
 # iterating and let the no-argument run carry it at hand-off.
@@ -33,10 +34,12 @@ cd "$(dirname "$0")/.."
 
 # A gitignored `.env` may name LRSALVAGE_TEST_CATALOG/LRSALVAGE_TEST_PREVIEWS
 # (a converted cache), LRSALVAGE_RENDER_CATALOG/LRSALVAGE_RENDER_PREVIEWS (a
-# rendered one) and LRSALVAGE_ONE_TO_ONE_CATALOG/LRSALVAGE_ONE_TO_ONE_PREVIEWS (a
-# cache Lightroom built 1:1 previews for) so the real-cache tests can be run on
-# the machine that holds them. It is never committed: real catalog paths are not
-# a repo artefact.
+# rendered one), LRSALVAGE_ONE_TO_ONE_CATALOG/LRSALVAGE_ONE_TO_ONE_PREVIEWS (a
+# cache Lightroom built 1:1 previews for) and
+# LRSALVAGE_DISCARD_CATALOG/LRSALVAGE_DISCARD_PREVIEWS (one it discarded the
+# standard and 1:1 previews of) so the real-cache tests can be run on the machine
+# that holds them. It is never committed: real catalog paths are not a repo
+# artefact.
 #
 # A worktree's own `.env` wins, and the machine's one file is the fallback — the
 # only gate that verifies a byte-level claim must not be unreachable from a fresh
@@ -237,7 +240,7 @@ native_path() {
 }
 
 # A family whose own pair is unset fails and names it, rather than skipping or
-# borrowing another family's evidence. One guard for all three families, so a fix
+# borrowing another family's evidence. One guard for all four families, so a fix
 # to this message cannot leave one gate telling a user a different path.
 #
 #   require_pair <catalog name> <previews name> <what the cache is>
@@ -290,8 +293,22 @@ gate_real_1to1() {
     load_env
     require_pair LRSALVAGE_ONE_TO_ONE_CATALOG LRSALVAGE_ONE_TO_ONE_PREVIEWS \
         'a cache Lightroom built 1:1 previews for' || exit 1
-    # Scoped to the 1:1 row, for the same reason the other two gates are scoped.
+    # Scoped to the 1:1 row, for the same reason the other three gates are scoped.
     cargo test -p lrsalvage-cli --test one_to_one -- --ignored
+}
+
+# A cache Lightroom discarded the standard and 1:1 previews of: §5.11's state,
+# where every preview pyramid shrank rather than emptied, no companion is left,
+# and `Pyramid.quality` was rewritten to describe the levels a pyramid now holds.
+# Its own pair of names, because it is its own evidence — and the only family
+# whose copy Lightroom wrote a deletion into.
+gate_real_discard() {
+    printf '%s\n' '== discarded cache'
+    load_env
+    require_pair LRSALVAGE_DISCARD_CATALOG LRSALVAGE_DISCARD_PREVIEWS \
+        'a cache Lightroom discarded the standard and 1:1 previews of' || exit 1
+    # Scoped to the discard row, for the same reason the other gates are scoped.
+    cargo test -p lrsalvage-cli --test discard -- --ignored
 }
 
 all_gates='fmt shell clippy test doc build package typos deny msrv'
@@ -319,11 +336,12 @@ for gate in "$@"; do
     case "$gate" in
         real-render) gate_real_render ;;
         real-1to1) gate_real_1to1 ;;
+        real-discard) gate_real_discard ;;
         fmt | shell | clippy | test | doc | build | package | typos | deny | msrv | real) "gate_$gate" ;;
         *)
             # A usage error, not a gate that ran and failed.
             gate_in_flight=''
-            printf 'unknown gate: %s (one of: %s real real-render real-1to1)\n' "$gate" "$all_gates" >&2
+            printf 'unknown gate: %s (one of: %s real real-render real-1to1 real-discard)\n' "$gate" "$all_gates" >&2
             exit 1
             ;;
     esac

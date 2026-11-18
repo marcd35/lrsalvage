@@ -78,7 +78,7 @@ landing first fails a test that is telling the truth.
 | 3 | `chrono` replaced in `extract::set_capture_time`, and `deny.toml`'s dated advisory ignore deleted in the same pull request | #101 |
 | 4 | The `specs/fixtures.md` row for two catalogs writing one destination, and the test that fails if the marker-prefix or dimension check weakens | #60 |
 | 5 | `--verify-source`, `source_sha256` and `snapshot_sha256`, the `options` echo, exit code `5`, the report and CLI specs, the README rows, and ADR 0010's and 0011 D13's dated corrections | #63 |
-| 6 | `LRSALVAGE_DISCARD_*`, the `real-discard` arm, `tests/discard.rs`, the rebuilt copy and its `EVIDENCE.md`, and all six restatements of the family | #86 |
+| 6 | `LRSALVAGE_DISCARD_*`, the `real-discard` arm, `tests/discard.rs`, the rebuilt copy and its `EVIDENCE.md`, and every restatement of the family | #86 |
 | 7 | A dated amendment in ADR 0003: resume identity keeps its shape | #66 |
 | 8 | The trusted-publisher workflow job, `0.3.0` in the workspace and in the cli's `lrsalvage-core` pin, and `CHANGELOG.md`'s `[0.3.0]` section | — |
 
@@ -137,23 +137,29 @@ landing first fails a test that is telling the truth.
       and the gate was therefore verifying the previous one; and `ADR 0007` gains
       a dated amendment for the digest pair its path-freedom argument did not
       anticipate.
-- [ ] **6 — #86.** A discarded cache rebuilt by the recipe below, on an evidence
-      root that is not a scratch tree, with an `EVIDENCE.md` beside it recording
-      what it is, when the discard ran and the source render's hashes — because the
-      first copy was lost to a tidy-up and nothing asked. `LRSALVAGE_DISCARD_CATALOG`
-      / `LRSALVAGE_DISCARD_PREVIEWS` name it, and `sh scripts/check.sh real-discard`
-      fails rather than skipping when they are unset, exactly as the other three
-      families do. `crates/lrsalvage-cli/tests/discard.rs` asserts `scan --json`
-      (`layout modern`, `images 10`, `recovered 10`, tiers `large 9` / `standard 1`,
+- [x] **6 — #86.** `LRSALVAGE_DISCARD_CATALOG` / `LRSALVAGE_DISCARD_PREVIEWS` name
+      a discarded cache, and `sh scripts/check.sh real-discard` fails rather than
+      skipping when they are unset, exactly as the other three families do.
+      `crates/lrsalvage-cli/tests/discard.rs` asserts `scan --json` (`layout modern`,
+      `images 10`, `recovered 10`, tiers `large 9` / `standard 1`,
       `thumbnail_pyramids 0`, `unmapped 0`, `missing_payload 0`, `below_floor 0`,
       `superseded 0`, **`deleted 0`** — the capture that said `1` was wrong),
       `scan` exit 0, and an `extract --min-long-edge 0 --include-present` writing
-      ten with `failed 0`, the byte total re-measured at `0.3.0` and
-      `quality bigThumbnail` on the demoted pyramid. The six restatements ride in
-      this pull request: `.env.example`, `scripts/check.sh` (usage line,
-      `require_pair` comment, `case` arm), `AGENTS.md`'s gate list and its
-      evidence-family paragraph, `docs/agents/rendering-a-test-cache.md`'s "names
-      all three pairs", `format-notes` §5.11, and this page.
+      ten with `failed 0`, `quality bigThumbnail` on the demoted pyramid and the
+      2 731 955-byte payload total. The copy behind it was rebuilt by hand on
+      2026-11-17 — the render's pair copied whole, `Library > Previews > Discard
+      Standard and 1:1 Previews` applied to all ten, the result on an evidence
+      root that is not a scratch tree with an `EVIDENCE.md` recording the render
+      it was cut from, the dialog's wording and the hashes that prove the 29
+      survivors are the render's bytes. The gate is green on that copy, and the
+      payload total is the number the `0.1.0` build also reported, which is what
+      makes it a fact about Adobe's payloads. The restatements ride in this pull
+      request: `.env.example`, `scripts/check.sh` (usage line, `require_pair`
+      comment, `case` arm), `AGENTS.md`'s gate list and its evidence-family
+      paragraph, `docs/agents/rendering-a-test-cache.md`'s "names all three pairs"
+      sentence and its new discard steps, `format-notes` §5.11, and this page —
+      plus the copies a grep found outside that list, and one wrong sentence in
+      `CODING_STANDARDS.md`.
 - [ ] **7 — #66.** ADR 0003 gains a dated amendment: resume identity stays marker
       prefix + completeness + `SOF` dimensions, one destination per catalog is the
       documented rule, and strengthening it waits for a report of the failure it
@@ -177,17 +183,17 @@ landing first fails a test that is telling the truth.
       `sh scripts/check.sh real`, `real-render`, `real-1to1` and `real-discard`.
       Each fails rather than skipping when its own pair is unset, and none is
       borrowed from another.
-- [ ] §5.11's numbers are re-measured at `0.3.0` against the rebuilt copy. The
-      capture they currently rest on came from an `0.1.0` build whose report echoes
-      `min_long_edge 640`, so neither the byte total nor the report's own members
-      are inherited.
-- [ ] The rebuild's provenance is recorded where the copy is: the render it was cut
+- [x] §5.11's numbers are re-measured against the rebuilt copy. The capture they
+      rested on came from an `0.1.0` build whose report echoes `min_long_edge 640`,
+      so neither the byte total nor the report's own members were inherited: the
+      rebuilt copy gives the same `stats.bytes`, 2 731 955, and the row asserts it.
+- [x] The rebuild's provenance is recorded where the copy is: the render it was cut
       from, the discard's own wording in the confirmation dialog, and the hashes
       that show the surviving files are the render's bytes.
-- [ ] `format-notes` §5.11 still says `VERIFIED`, and now says in one sentence that
-      the copy it names was rebuilt after the first was deleted, with the date.
-      Nothing in it is downgraded to prose: the gate holds the counts, and the
-      section says which gate.
+- [x] `format-notes` §5.11 still says `VERIFIED`, and says in one sentence that the
+      copy it names was rebuilt after the first was deleted, with the date.
+      Nothing in it is downgraded to prose: the gate holds the counts and the
+      payload total, and the section says which gate.
 - [ ] Where a byte-level claim has no gate behind it, the release says so in the
       notes rather than in a checklist nobody reads twice.
 
@@ -336,9 +342,9 @@ leaves, and it is reproducible on a machine with Lightroom Classic and a rendere
 cache: take the render's catalog and previews as a pair, apply the discard to all
 ten images, confirm the dialog that names the photo count, quit Lightroom so the
 index settles, and measure before and after by declared segment lengths. The GUI
-steps and the five facts that make driving them reliable are in
-[rendering a test cache](agents/rendering-a-test-cache.md); the discard's own
-section records the confirmation dialog's wording, which is what a driver keys on.
+steps, the five facts that make driving them reliable and the discard's own steps
+are in [rendering a test cache](agents/rendering-a-test-cache.md); §5.11 records
+the confirmation dialog's wording, which is what a driver keys on.
 
 Two things the first copy did not survive, and this rebuild does: the copy lives
 outside any scratch directory, and the hashes that tie it to the render it came

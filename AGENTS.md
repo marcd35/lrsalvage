@@ -107,7 +107,8 @@ not allowed.
   is the only thing that can: §5.4 carried a false claim for months because
   nothing checked it. Editing a byte-level claim means running the gate that
   measured it, not re-reading the claim: `sh scripts/check.sh real` for the
-  converted cache, `real-render` or `real-1to1` for a §5.10 one.
+  converted cache, `real-render` or `real-1to1` for a §5.10 one, `real-discard`
+  for §5.11's.
 - Byte-level facts learned from real files must be recorded in
   `docs/format-notes.md` with an evidence label (**verified**, **reported**,
   **unverified**, or **TODO**) before they are built on. Unlabelled claims are
@@ -121,17 +122,18 @@ directory. The output root — and a contact sheet's parent directory — is rej
 if it lands inside either tree.
 
 Tests run against synthetic fixtures. Real catalogs are reached only from
-`#[ignore]`d tests in three evidence families, each with its own pair of names —
+`#[ignore]`d tests in four evidence families, each with its own pair of names —
 `LRSALVAGE_TEST_*` (a converted cache), `LRSALVAGE_RENDER_*` (a cache Lightroom
-rendered from scratch) and `LRSALVAGE_ONE_TO_ONE_*` (a cache it built 1:1
-previews for) — and real catalog bytes are never committed to the repo. To run
+rendered from scratch), `LRSALVAGE_ONE_TO_ONE_*` (a cache it built 1:1 previews
+for) and `LRSALVAGE_DISCARD_*` (a cache it discarded the standard and 1:1
+previews of) — and real catalog bytes are never committed to the repo. To run
 them where such catalogs exist, copy `.env.example` to a gitignored `.env` — or,
 so that every worktree on the machine can reach the gates that verify a
 byte-level claim, put those names in `~/.config/lrsalvage/real.env` (or the file
 named by `git config lrsalvage.realEnvFile`) — and run `sh scripts/check.sh real`,
-`real-render` or `real-1to1`. Each family fails rather than skipping when its own
-pair is unset; `real` is the route to the evidence `README.md`'s compatibility
-table calls verified.
+`real-render`, `real-1to1` or `real-discard`. Each family fails rather than
+skipping when its own pair is unset; `real` is the route to the evidence
+`README.md`'s compatibility table calls verified.
 
 ## Docs
 
