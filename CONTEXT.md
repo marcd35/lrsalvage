@@ -190,14 +190,31 @@ _Avoid_: public API, output format, interface
 **Verification report**:
 The object a run can write about the cache it read and the plan it built — the
 layout, the version strings, the options applied, the counts, the filename
-shapes, and, when it was asked for, the digests that prove the catalog was only
-ever read — with every path replaced by a template, so a result can leave the
-machine without carrying one of the user's.
+shapes and, when `--verify-source` asked for them, the source and snapshot
+digests — with every path replaced by a template, so a result can leave the
+machine without carrying one of the user's. The path-free argument has two
+halves, and the digests are the second: a template names the *shape* of a path
+where the path stood, and a SHA-256 names no path at all, so a report carrying
+both digests is publishable for the same reason its counts are.
 _Avoid_: scan report, summary, log
 
 **Source digest**:
-The SHA-256 of the catalog this run read, published together with the digest of
-the copy the run worked from, so a stranger can see the two agree. `--verify-source`
-asks for the pair; a run that does not ask has no digest to show and says so with
-an absent value rather than a made-up one.
+The SHA-256 of the catalog file this run read, taken before it was copied, and
+published only beside the snapshot digest so the pair can be seen to agree.
+`--verify-source` asks for the pair; a run that does not ask carries an absent
+value rather than a made-up one. It is not the `digest` Adobe writes into
+`previews.db`: that value is part of a payload's *name* rather than a hash of its
+bytes, and in a converted store it is shared store-wide, so it identifies no
+single payload at all (`format-notes` §2.4 and §5.2, where the measurement lives);
+this one identifies a catalog file and is written by nobody.
 _Avoid_: checksum, fingerprint, hash of the cache
+
+**Snapshot digest**:
+The SHA-256 of the private copy of the catalog the run then worked from, taken as
+the copy was made rather than after any later rewrite of it — which is what makes
+it comparable with the source digest at all. A disagreement stops the run with an
+error instead of a warning, and the code it maps to is `cli`'s to state. Like the
+source digest it is not Adobe's `digest` (`format-notes` §2.4): it names no
+preview, no level file and no cache, and nothing in either digest is derived from
+the preview cache.
+_Avoid_: checksum, copy hash
