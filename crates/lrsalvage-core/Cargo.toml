@@ -48,6 +48,7 @@ exclude = [
     "tests/exif.rs",
     "tests/extract.rs",
     "tests/matrix.rs",
+    "tests/package_tree.rs",
     "tests/pipeline.rs",
     "tests/plan.rs",
     "tests/spec_graph.rs",
