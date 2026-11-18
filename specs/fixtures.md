@@ -98,6 +98,12 @@ Vault::level_file(level)            a level file at its derived leaf, or with ra
 Vault::row_without_file(level)      a PyramidLevel row whose file is absent (pruned)
 Vault::file_without_row(level)      a level file the widened glob must find
 Vault::tombstone(timestamp)         a DeletedPyramid row
+Vault::cache_entry_without_image(uuid)  an ImageCacheEntry row whose imageId names no
+                                    image: the dead row a deleted image leaves behind,
+                                    whose payload is therefore an orphan. ImageRow's own
+                                    `path_from_root` sets AgLibraryFolder.pathFromRoot,
+                                    so an image's folder tree — a hostile `..` included —
+                                    reaches the catalog as Lightroom stored it
 Vault::unclaimed(levels)            a pyramid no image claims
 Vault::superseded(levels)           level files plus a deliberately unreadable .lrprev
 Vault::unrecognised_file(shape)     payload-like, wrong shard / no suffix / bad uuid
