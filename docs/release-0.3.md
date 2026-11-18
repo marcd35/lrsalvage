@@ -78,7 +78,7 @@ landing first fails a test that is telling the truth.
 | 3 | `chrono` replaced in `extract::set_capture_time`, and `deny.toml`'s dated advisory ignore deleted in the same pull request | #101 |
 | 4 | The `specs/fixtures.md` row for two catalogs writing one destination, and the test that fails if the marker-prefix or dimension check weakens | #60 |
 | 5 | `--verify-source`, `source_sha256` and `snapshot_sha256`, the `options` echo, exit code `5`, the report and CLI specs, the README rows, and ADR 0010's and 0011 D13's dated corrections | #63 |
-| 6 | `LRSALVAGE_DISCARD_*`, the `real-discard` arm, `tests/discard.rs`, the rebuilt copy and its `EVIDENCE.md`, and all six restatements of the family | #86 |
+| 6 | `LRSALVAGE_DISCARD_*`, the `real-discard` arm, `tests/discard.rs`, the rebuilt copy and its `EVIDENCE.md`, and every restatement of the family | #86 |
 | 7 | A dated amendment in ADR 0003: resume identity keeps its shape | #66 |
 | 8 | The trusted-publisher workflow job, `0.3.0` in the workspace and in the cli's `lrsalvage-core` pin, and `CHANGELOG.md`'s `[0.3.0]` section | — |
 
@@ -152,18 +152,19 @@ landing first fails a test that is telling the truth.
       Previews` applied to all ten, the result landed on an evidence root that is
       not a scratch tree with an `EVIDENCE.md` recording the render it was cut
       from, the dialog's wording and the hashes that prove the survivors are the
-      render's bytes. Only then can two numbers be *measured* rather than carried
-      over: the byte total (§5.11 publishes `2.6 MiB` from an `0.1.0` build whose
-      report echoed `min_long_edge 640`) and the demoted pyramid's `quality`.
-      `discard.rs` says so in a TODO rather than asserting a number nobody
-      measured at this version, and §5.11 labels the byte total **TODO**. The six
-      restatements ride in this pull request: `.env.example`, `scripts/check.sh`
-      (usage line, `require_pair` comment, `case` arm), `AGENTS.md`'s gate list and
-      its evidence-family paragraph, `docs/agents/rendering-a-test-cache.md`'s
-      "names all three pairs" sentence and its new discard steps, `format-notes`
-      §5.11, and this page — plus the five copies the grep found outside that
-      list: `README.md`, `specs/fixtures.md`, `specs/goal-and-requirements.md`,
-      `crates/lrsalvage-cli/Cargo.toml`'s `exclude` comment and `tests/support`.
+      render's bytes. Only then is the one number the row does **not** assert
+      measured rather than inherited: the byte total (§5.11 publishes `2.6 MiB`
+      from an `0.1.0` build whose report echoed `min_long_edge 640`). The demoted
+      `quality` the row does assert is §5.11's own column, and the rebuild is what
+      confirms or corrects it. `discard.rs` says so in a TODO rather than
+      asserting a number nobody measured at this version, and §5.11 labels the
+      byte total **TODO**. The restatements ride in this pull request:
+      `.env.example`, `scripts/check.sh` (usage line, `require_pair` comment,
+      `case` arm), `AGENTS.md`'s gate list and its evidence-family paragraph,
+      `docs/agents/rendering-a-test-cache.md`'s "names all three pairs" sentence
+      and its new discard steps, `format-notes` §5.11, and this page — plus the
+      copies a grep found outside that list, and one wrong sentence in
+      `CODING_STANDARDS.md`.
 - [ ] **7 — #66.** ADR 0003 gains a dated amendment: resume identity stays marker
       prefix + completeness + `SOF` dimensions, one destination per catalog is the
       documented rule, and strengthening it waits for a report of the failure it

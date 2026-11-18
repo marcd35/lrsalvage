@@ -141,6 +141,12 @@ A discarded cache is the fourth family — `LRSALVAGE_DISCARD_CATALOG` and
 `LRSALVAGE_DISCARD_PREVIEWS` with `sh scripts/check.sh real-discard` — and the
 section below is how it is made.
 
+**Where the evidence caches live is not in this repo.** Catalog paths are not a
+repo artefact, so the machine's `real.env` is the index: read it before searching
+the disk, and let each gate's failure message name the file to edit. A rendered
+cache that exists but is missing from `real.env` is the one case worth a minute of
+`find` — and then a line in that file, so the next run starts from it.
+
 ## Discarding a copy
 
 `format-notes` §5.11 is the output of applying `Library > Previews > Discard
@@ -167,15 +173,10 @@ the run this time, which the first one did not:
    that render's bytes. A copy no document identifies is a copy a tidy-up
    deletes, which is what happened to §5.11's first one.
 5. **Name it and run the gate.** `sh scripts/check.sh real-discard`
-   (`crates/lrsalvage-cli/tests/discard.rs`) holds §5.11's counts to it. Two
-   numbers are *measured*, never carried over from the first copy: the byte total
-   and the demoted pyramids' `quality`.
-
-**Where the evidence caches live is not in this repo.** Catalog paths are not a
-repo artefact, so the machine's `real.env` is the index: read it before searching
-the disk, and let either gate's failure message name the file to edit. A rendered
-cache that exists but is missing from `real.env` is the one case worth a minute of
-`find` — and then a line in that file, so the next run starts from it.
+   (`crates/lrsalvage-cli/tests/discard.rs`) holds §5.11's counts to it, the
+   demoted `quality` among them. The byte total is the one number the gate does
+   **not** assert: §5.11's came from a different build, so measure it here and
+   add the assertion with the measurement rather than before it.
 
 ## What not to do
 

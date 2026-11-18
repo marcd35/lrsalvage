@@ -1145,24 +1145,27 @@ What the reader then reports, on the same cache: `scan --json` gives `layout
 modern`, `images 10`, `recovered 10` (tier `large` 9, `standard` 1),
 `thumbnail_pyramids 0`, `unmapped 0`, `missing_payload 0`, `below_floor 0`,
 `superseded 0`, `deleted 0` and exit 0. `extract --min-long-edge 0
---include-present` writes ten JPEGs totalling 2.6 MiB, exits 0, and its manifest
-reports the demoted `quality`. A discard is a cache-size event, not a loss: the
-largest surviving level in this cache was 1920 px, and no image needed a rescue.
+--include-present` writes ten JPEGs totalling 2.6 MiB — a total this tree has not
+re-measured, see below — exits 0, and its manifest reports the demoted `quality`.
+A discard is a cache-size event, not a loss: the largest surviving level in this
+cache was 1920 px, and no image needed a rescue.
 
-**The counts are held by a gate now.** `sh scripts/check.sh real-discard`
-(`crates/lrsalvage-cli/tests/discard.rs`) asserts that object — the tier split,
-the six zeroes and the 29-file shape — plus `scan` exit 0, the ten written and
-the `bigThumbnail` quality, against a discarded copy named by
-`LRSALVAGE_DISCARD_CATALOG` and `LRSALVAGE_DISCARD_PREVIEWS`. The copy measured
-here was deleted with the scratch tree it lived in, so the gate runs against its
-rebuild: cut from the same `Auto (3840px)` render by the recipe in [rendering a
-test cache](agents/rendering-a-test-cache.md), and kept on an evidence root with
+**A gate holds the counts, and it is red until the copy is rebuilt.**
+`sh scripts/check.sh real-discard` (`crates/lrsalvage-cli/tests/discard.rs`)
+asserts the object above — the tier split, the six zeroes, the 29-file shape, the
+ten written and the demoted `quality` — against a discarded copy named by
+`LRSALVAGE_DISCARD_CATALOG` and `LRSALVAGE_DISCARD_PREVIEWS`, and fails rather
+than skipping when they are unset. The copy measured here was deleted with the
+scratch tree it lived in, so nothing asserts these numbers today: the gate reads
+its rebuild, cut from the same `Auto (3840px)` render by the recipe in [rendering
+a test cache](agents/rendering-a-test-cache.md) and kept on an evidence root with
 its `EVIDENCE.md` beside it.
 
 **The byte total is TODO.** `2.6 MiB` came from an `0.1.0` build whose
 verification report echoed `options.min_long_edge: 640`, so it is a measurement of
 a tree this one is not: the rebuild re-measures it, and the gate asserts it only
-once that has happened.
+once that has happened. It is the only number this section publishes that the gate
+does not hold.
 
 **The state has a fixture row now.** `M10h` of `specs/fixtures.md` composes a
 claimed pyramid holding only 320, 960 and 1920 px, typed `bigThumbnail`, with no

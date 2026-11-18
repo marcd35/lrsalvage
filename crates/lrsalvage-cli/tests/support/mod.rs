@@ -26,6 +26,31 @@ pub fn pair(catalog: &str, previews: &str, gate: &str) -> (PathBuf, PathBuf) {
     (read(catalog), read(previews))
 }
 
+/// A `scan` run against one pair, as its raw output.
+///
+/// `--json` is the only difference between the two surfaces, so the invocation
+/// lives here once: a fix to how a row points the binary at a cache cannot land
+/// in the object's run and leave the human one stale.
+fn scan_output(
+    catalog: &Path,
+    previews: &Path,
+    extra: &[&str],
+    json: bool,
+) -> std::process::Output {
+    let mut command = Command::cargo_bin("lrsalvage").expect("the binary");
+    command
+        .arg("scan")
+        .arg("--catalog")
+        .arg(catalog)
+        .arg("--previews")
+        .arg(previews)
+        .args(extra);
+    if json {
+        command.arg("--json");
+    }
+    command.output().expect("run scan")
+}
+
 /// A plain `scan` — the human surface rather than `--json` — as its exit code
 /// and the summary it printed to stdout.
 ///
@@ -39,16 +64,7 @@ pub fn pair(catalog: &str, previews: &str, gate: &str) -> (PathBuf, PathBuf) {
 /// orphaned rather than a lint to silence.
 #[allow(dead_code)]
 pub fn scan_text(catalog: &Path, previews: &Path, extra: &[&str]) -> (i32, String) {
-    let output = Command::cargo_bin("lrsalvage")
-        .expect("the binary")
-        .arg("scan")
-        .arg("--catalog")
-        .arg(catalog)
-        .arg("--previews")
-        .arg(previews)
-        .args(extra)
-        .output()
-        .expect("run scan");
+    let output = scan_output(catalog, previews, extra, false);
     (
         output.status.code().unwrap_or(-1),
         String::from_utf8_lossy(&output.stdout).into_owned(),
@@ -57,17 +73,7 @@ pub fn scan_text(catalog: &Path, previews: &Path, extra: &[&str]) -> (i32, Strin
 
 /// `scan --json`, as its exit code and the object it printed.
 pub fn scan(catalog: &Path, previews: &Path, extra: &[&str]) -> (i32, Value) {
-    let output = Command::cargo_bin("lrsalvage")
-        .expect("the binary")
-        .arg("scan")
-        .arg("--catalog")
-        .arg(catalog)
-        .arg("--previews")
-        .arg(previews)
-        .arg("--json")
-        .args(extra)
-        .output()
-        .expect("run scan --json");
+    let output = scan_output(catalog, previews, extra, true);
     let json: Value = serde_json::from_slice(&output.stdout)
         .unwrap_or_else(|why| panic!("scan --json printed no object ({why}): {output:?}"));
     (output.status.code().unwrap_or(-1), json)
@@ -111,17 +117,25 @@ pub fn extract(catalog: &Path, previews: &Path, extra: &[&str]) -> (tempfile::Te
 /// happened to each selected item rather than what the plan expected of it — as
 /// `(status, bytes written)` per row.
 ///
-/// Not a CSV parser: the two fields a row is judged by are the first two, and an
-/// `output` path that needs quoting comes after them, so splitting on the first
-/// two commas cannot be fooled by the rest of the line. Per-target dead code is
-/// the same fact `scan_text` allows for.
+/// The two fields this reads are the first two, and an `output` path that needs
+/// quoting comes after them, so splitting on the first two commas cannot be
+/// fooled by the rest of the line. `extract::write_outcomes_csv` owns that order,
+/// so the header is asserted rather than assumed: a change there must fail here
+/// instead of silently reading a different field. Per-target dead code is the
+/// same fact `scan_text` allows for.
 #[allow(dead_code)]
 pub fn outcomes(root: &Path) -> Vec<(String, u64)> {
     let path = root.join("extract.csv");
     let text =
         std::fs::read_to_string(&path).unwrap_or_else(|why| panic!("{}: {why}", path.display()));
-    text.lines()
-        .skip(1)
+    let mut lines = text.lines();
+    assert_eq!(
+        lines.next(),
+        Some("status,bytes,sha256,output,note"),
+        "{}: the outcome columns this reads moved",
+        path.display()
+    );
+    lines
         .filter(|line| !line.is_empty())
         .map(|line| {
             let mut fields = line.split(',');
