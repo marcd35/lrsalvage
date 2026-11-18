@@ -5,6 +5,7 @@
 //! `src/extract.rs`.
 
 use std::fs;
+use std::path::{Path, PathBuf};
 
 use lrsalvage_core::extract::{self, ExtractOptions, OutcomeStatus};
 use lrsalvage_core::plan::Options;
@@ -14,8 +15,11 @@ use lrsalvage_fixtures::vault::{ImageRow, Level, PyramidRow, Vault};
 const UUID: &str = "AAAA0001-1111-4111-8111-000000000001";
 
 /// The output path a vault's one image derives: its root folder's last segment,
-/// then the image's own name.
-const RELATIVE_OUTPUT: &str = "originals/IMG_0001.jpg";
+/// then the image's own name. Built the way the fixture convention asks — with
+/// `Path::join`, so no row depends on a separator spelling.
+fn relative_output() -> PathBuf {
+    Path::new("originals").join("IMG_0001.jpg")
+}
 
 fn vault() -> Vault {
     let ours = bytes::our_output(1600, 1200, "0.1.0");
@@ -23,7 +27,7 @@ fn vault() -> Vault {
         .image(ImageRow::new(1, "IMG_0001").cache(UUID))
         .pyramid(PyramidRow::new(UUID).level(1600, 1200))
         .level_file(Level::sized(UUID, 1600, 1200))
-        .preoccupied_destination(RELATIVE_OUTPUT, &ours)
+        .preoccupied_destination(relative_output(), &ours)
         .write()
 }
 
@@ -41,7 +45,7 @@ fn options(vault: &Vault) -> ExtractOptions {
 #[test]
 fn a_preexisting_verified_file_is_skipped_and_its_bytes_untouched() {
     let vault = vault();
-    let already_there = vault.out().join(RELATIVE_OUTPUT);
+    let already_there = vault.out().join(relative_output());
     let before = fs::read(&already_there).expect("the pre-existing destination");
 
     let plan = vault.plan(&Options::default());

@@ -4,10 +4,12 @@
 //! this suite keeps no byte layout of its own; `specs/fixtures.md` says why a
 //! test that needs it lives in `tests/` rather than in `src/plan.rs`.
 //!
-//! The medium is a `legacy` vault: every payload is an `.lrprev` container, whose
-//! chunks carry no size of their own and are therefore judged against the
-//! `PyramidLevel` row. That is what lets a row and a chunk disagree, which the
-//! suspect and per-level stats below are about.
+//! The medium is a `legacy` vault: every payload is an `.lrprev` container, so a
+//! level's only declaration is the `PyramidLevel` row that names it. A level file
+//! can instead be ranked by the `_<n>` in its own leaf when no row explains it
+//! (`adr-0005-discover-payloads-by-index` ¶3, ¶5) — which is why a container is
+//! the medium where a row and a payload can be made to disagree, and the suspect
+//! and per-level stats below are about exactly that.
 
 use std::path::{Component, Path};
 
@@ -80,7 +82,13 @@ fn a_hostile_path_from_root_cannot_write_outside_the_output_root() {
     );
     assert_eq!(
         slashed(output),
-        slashed(&vault.out().join("originals/escaped/IMG_0001.jpg"))
+        slashed(
+            &vault
+                .out()
+                .join("originals")
+                .join("escaped")
+                .join("IMG_0001.jpg")
+        )
     );
     assert!(
         !output
