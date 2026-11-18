@@ -22,12 +22,12 @@ jobs:
   # except that `binstalk`'s resolve pass also tries the crate's lone binary name
   # against the same template — and `lrsalvage-cli` has exactly one binary, called
   # `lrsalvage`. Both spellings therefore resolve; this file ships the one a user
-  # types. `SHA256SUMS` is the only integrity claim 0.2 makes: no signing, no
+  # types. `SHA256SUMS` is the only integrity claim this release makes: no signing, no
   # notarisation, no attestations.
   # Nothing here runs a gate and nothing here restates one: the gate list is
   # `scripts/check.sh` and `ci.yml` is what runs it. So this job trusts the tag to
   # be cut on a commit that reached `main` through that workflow — the checklist in
-  # `docs/release-0.2.md` is where the tag's commit is chosen — and a tag on a
+  # `docs/release-0.3.md` is where the tag's commit is chosen — and a tag on a
   # commit that never did is not caught here.
   build:
     name: ${{ matrix.target }}
@@ -48,7 +48,7 @@ jobs:
             archive: zip
           # `macos-latest` is Apple Silicon (`macos-26` unless the label moves), so
           # that is the target that runs natively — the archive is proven by
-          # running it. An Intel Mac is a `cargo install` route, because 0.2 ships
+          # running it. An Intel Mac is a `cargo install` route, because this release ships
           # one archive per platform and not one per architecture.
           - os: macos-latest
             target: aarch64-apple-darwin
@@ -259,3 +259,85 @@ jobs:
           esac
           gh release create "$GITHUB_REF_NAME" "${args[@]}" \
             dist/*.tgz dist/*.zip dist/SHA256SUMS
+
+  # The registry's route to the same artifact, and the one no dry run can prove.
+  # 0.3.0 is the first release published this way: this job holds no token and the
+  # repository stores none. `id-token: write` is what lets
+  # `rust-lang/crates-io-auth-action` trade the workflow's OIDC identity for a
+  # short-lived crates.io token, which crates.io issues only when its own
+  # trusted-publisher entry for the crate names this repository and this workflow
+  # file. A missing entry therefore fails here rather than publishing from a
+  # machine — which is what the release checklist's stop rules are written for.
+  #
+  # It runs after `release`, so the tag is a release with three archives before
+  # anything reaches the index, and only for a tag with no pre-release suffix: a
+  # scratch `v0.3.0-rc.1` builds and proves archives, and must not upload `0.3.0`.
+  publish:
+    name: publish
+    needs: release
+    if: ${{ !contains(github.ref_name, '-') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.100.0
+
+      # One token per run, minted from the OIDC identity above and expiring with
+      # it, so nothing long-lived is stored in this repository.
+      - name: Authenticate against crates.io
+        id: auth
+        uses: rust-lang/crates-io-auth-action@v1
+
+      # Core first, and each crate skipped when the index already carries the
+      # version. The order is not a preference: the cli's manifest resolves
+      # `lrsalvage-core` by version through the index, so publishing core first is
+      # what makes the second upload resolvable rather than a race — and skipping
+      # what landed is what makes a re-run after a failed second publish resume
+      # instead of failing on the first. `--locked` keeps the graph the gates
+      # proved.
+      - name: Publish lrsalvage-core, then lrsalvage-cli
+        shell: bash
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+        run: |
+          set -eu
+          version="${GITHUB_REF_NAME#v}"
+
+          # The sparse index's path for a crate name: its first two characters,
+          # then the next two. Both crates of this workspace start `lr`, so both
+          # live under `lr/sa/`.
+          index_has() {
+            curl -fsSL "https://index.crates.io/lr/sa/$1" 2>/dev/null |
+              grep -q "\"vers\":\"$version\""
+          }
+
+          publish() {
+            crate="$1"
+            if index_has "$crate"; then
+              printf '%s %s is already on the index; nothing to upload\n' \
+                "$crate" "$version"
+              return 0
+            fi
+            cargo publish -p "$crate" --locked
+            # The index lags the upload, and the next crate resolves this one
+            # through it, so wait for the version rather than racing it.
+            waited=0
+            until index_has "$crate"; do
+              waited=$((waited + 10))
+              if [ "$waited" -gt 600 ]; then
+                printf 'the index did not carry %s %s within ten minutes\n' \
+                  "$crate" "$version" >&2
+                return 1
+              fi
+              sleep 10
+            done
+          }
+
+          publish lrsalvage-core
+          publish lrsalvage-cli

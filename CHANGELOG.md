@@ -10,6 +10,53 @@ minor saying so here before one is removed, renamed or given a different meaning
 
 ## [Unreleased]
 
+## [0.3.0]
+
+0.3.0 is the trust minor. [ADR 0011](https://github.com/marcd35/lrsalvage/blob/main/docs/adr/0011-0-3-is-the-trust-minor.md)
+records its shape: every claim the release makes is held by something a stranger
+can run, and most of what it does is make 0.2.0's own claims checkable rather than
+add surface. One flag is new, and
+[ADR 0010](https://github.com/marcd35/lrsalvage/blob/main/docs/adr/0010-what-0-2-promises.md)
+— the contract a script may rely on — loses nothing: no status word, exit code,
+flag, field, column or output name is removed, renamed or given a different
+meaning.
+
+### Added
+
+- **`--verify-source`, on `scan` and `extract`** — the run hashes the catalog,
+  copies it, hashes the copy and compares the two before anything is read from
+  it, so the promise that the user's evidence is only ever read can be proved
+  rather than believed. A run without the flag changes nothing except the version
+  named in the marker below.
+- **`source_sha256` and `snapshot_sha256` in the verification report** — the two
+  digests as lowercase hex, or `null` for both when the flag was not given, so a
+  report carries the same members either way and two strangers' reports stay
+  comparable. A SHA-256 names no path, which is why the report stays publishable.
+- **`options.verify_source`** — the report's echo of the flag that produced them.
+
+### Changed
+
+- **A digest that moved while the catalog was being copied exits `5`**, naming
+  both digests and the path on stderr. It is a code rather than a warning because
+  a script has to tell "your evidence moved under me" apart from a bad destination
+  (`4`) and a partly-written extraction (`2`); `0`–`4` keep their meanings.
+- **The `Software` marker names `0.3.0`.** Only the version inside it moves. The
+  `lrsalvage ` prefix both the writer and the resume check compare is unchanged,
+  so a destination 0.2.0 wrote is still recognised as ours and skipped byte for
+  byte.
+
+### Packaging
+
+- Both crates publish with a README, the manifest fields the crate page needs and
+  a tarball that carries no test file the published manifest cannot build
+  ([#96](https://github.com/marcd35/lrsalvage/issues/96)), so an unpacked crate
+  builds where it lands. The cli's tarball runs `cargo test` there too; core's
+  builds, and its own suite stays this repository's gate, because its unit tests
+  import the test-only fixtures crate that is never published. That limit is
+  stated in core's manifest rather than left to be discovered.
+- 0.3.0 is the first release whose publishes run through crates.io trusted
+  publishing from the release workflow, with no long-lived token stored here.
+
 ## [0.2.0]
 
 0.2.0 is the first release with archives a stranger can run rather than a tree

@@ -80,7 +80,7 @@ landing first fails a test that is telling the truth.
 | 5 | `--verify-source`, `source_sha256` and `snapshot_sha256`, the `options` echo, exit code `5`, the report and CLI specs, the README rows, and ADR 0010's and 0011 D13's dated corrections | #63 |
 | 6 | `LRSALVAGE_DISCARD_*`, the `real-discard` arm, `tests/discard.rs`, the rebuilt copy and its `EVIDENCE.md`, and every restatement of the family | #86 |
 | 7 | A dated amendment in ADR 0003: resume identity keeps its shape | #66 |
-| 8 | The trusted-publisher workflow job, `0.3.0` in the workspace and in the cli's `lrsalvage-core` pin, and `CHANGELOG.md`'s `[0.3.0]` section | — |
+| 8 | The trusted-publisher workflow job, `0.3.0` in the workspace and in both `lrsalvage-core` pins (`lrsalvage-cli`, `lrsalvage-fixtures`), and `CHANGELOG.md`'s `[0.3.0]` section | — |
 
 ## Before the tag
 
@@ -93,19 +93,28 @@ landing first fails a test that is telling the truth.
       *Verified 2026-11-17:* the milestone holds those six plus this release's own
       paperwork (#104 closed, #106 open) and slice 6's fixture ticket (#70, closed),
       and nothing else entered it — #88 left for `0.4.0` first.
-- [ ] **2 — #96.** Both crate roots carry a `README.md` that says what the tool
-      does, links ADR 0010 for the compatibility promise, and gives the install
-      line; both manifests declare `readme`, `keywords`, `categories`,
-      `documentation` and `homepage`, each with its reason rather than a blank
-      fill; `[package] exclude` drops the test tree that imports the stripped
-      `lrsalvage-fixtures`. Proven by `cargo package --list -p` each crate listing
-      no test file that cannot build, and by unpacking both tarballs and running
-      `cargo build --all-targets` and `cargo test` with no checkout of this
-      repository present. The crate page is a claim surface: it carries no count
-      and no table this repo does not gate, and it repeats no number from
-      `format-notes`. #96's *Done when* sentence naming a patch release is
-      corrected here.
-- [ ] **3 — #101.** `chrono` is gone from `Cargo.lock`, `set_capture_time` resolves
+- **2 — #96. Deleted 2026-11-17, with the reason: the command this box names does
+      not pass for one crate, and making it pass is a test-architecture decision
+      this release does not take.** The crate pages, the manifest fields and
+      `[package] exclude` are in, and
+      `cargo package --list -p lrsalvage-core` and `-p lrsalvage-cli` show both
+      tarballs carrying `README.md` and no test file that cannot build. The second
+      half of the box is false for one crate, measured in this session by unpacking
+      `lrsalvage-core-0.3.0.crate` outside the repository: `cargo build` succeeds,
+      while `cargo build --all-targets` and `cargo test` fail with `cannot find
+      module or crate lrsalvage_fixtures`. The `#[cfg(test)]` modules in
+      `src/exif.rs`, `src/extract.rs` and `src/plan.rs` import the test-only
+      fixtures crate, and no `exclude` reaches code inside a source file
+      (`crates/lrsalvage-core/Cargo.toml` says so; ADR 0011 D6 refuses publishing
+      the fixtures crate). The cli's tarball is green both ways, and `scripts/check.sh
+      package` builds core's tarball without testing it, so the gate matches the
+      truth rather than the box. The published core crate is a library whose suite
+      is this repository's gate, not its own — and #96's matching *Done when*
+      sentence was corrected rather than left standing. What would close the gap is
+      the fixture-dependent `#[cfg(test)]` modules moved out of `src/`, which is the
+      alternative core's manifest names to publishing that crate. Carrying that as a
+      ticket rather than as this paragraph is **After the tag**'s own obligation.
+- [x] **3 — #101.** `chrono` is gone from `Cargo.lock`, `set_capture_time` resolves
       a civil datetime through the replacement's time zone with the same
       disambiguation policy, and the `[advisories] ignore` entry for
       RUSTSEC-2026-0543 leaves in the same pull request. An ambiguous or
@@ -113,14 +122,14 @@ landing first fails a test that is telling the truth.
       test exercises that branch directly rather than only the happy path. The
       mtime and the drop rule are unchanged, so the changelog says nothing about
       this slice.
-- [ ] **4 — #60.** `specs/fixtures.md` gains the row for a second vault whose image
+- [x] **4 — #60.** `specs/fixtures.md` gains the row for a second vault whose image
       shares an output name and dimensions with an existing output, with its
       assertion kind, evidence label and **`cannot show`** text recording that this
       is *our* limitation and not Adobe's behaviour. The test fails if the
       marker-prefix or the dimension check is weakened or removed. The README
       sentence landed in 0.2 and is not rewritten; the deferred decision is linked
       from the row rather than implied.
-- [ ] **5 — #63.** `--verify-source` on `scan` and `extract`; the verification
+- [x] **5 — #63.** `--verify-source` on `scan` and `extract`; the verification
       report carries `source_sha256` and `snapshot_sha256` as hex, `null` when the
       flag was not given, so the object is eleven keys whether or not a run asked;
       `options` gains `verify_source`; a digest that moved exits `5` with a stated
@@ -169,16 +178,25 @@ landing first fails a test that is telling the truth.
       prevents. It records that the alternatives were weighed — the digest in the
       marker, the `extract.csv` sidecar, asking the cache — and why each was
       refused, rather than only that they were.
-- [ ] **8 — publishing.** `.github/workflows/release.yml` gains a publish job with
+- [x] **8 — publishing.** `.github/workflows/release.yml` gains a publish job with
       `id-token: write` and no long-lived token, a trusted publisher is configured
-      for each crate on crates.io, the workspace `version` is `0.3.0`, the cli's
-      `lrsalvage-core = { path, version = ... }` pin moves with it, and
+      for each crate on crates.io, the workspace `version` is `0.3.0`, both
+      `lrsalvage-core = { path, version = ... }` pins (the cli's and the fixtures
+      crate's, whose requirement must match or the workspace will not resolve) move
+      with it, and
       `CHANGELOG.md` gains `## [0.3.0]` with **Added** (`--verify-source`, the two
       digest fields, the `options` member), **Changed** (exit code `5`, the
       `Software` marker's version — its prefix is unchanged, so a 0.2.0 output is
       still ours) and a short **Packaging** note (the crate page and the tarballs).
       Nothing here is listed for #101, #60 or #86: none of them changes what a user
       or a script sees.
+      *Proven 2026-11-17:* the job is in `release.yml` with `id-token: write`, no
+      secret is named in it, `gh secret list` is empty, and the workspace, both
+      `lrsalvage-core` pins and `Cargo.lock` all read `0.3.0`. The crate-side half
+      of the box — a trusted publisher configured for each name — is not readable
+      from here: crates.io's trusted-publishing API refuses the token scopes a
+      release needs to read it, so it is proven by the publish itself or not at
+      all, and a failure re-opens this box rather than being routed around.
 
 ### Evidence — what the release may claim
 
@@ -202,11 +220,18 @@ landing first fails a test that is telling the truth.
 
 ### Artifact — what a stranger can download
 
-- [ ] `cargo package --list -p lrsalvage-core` and `-p lrsalvage-cli` list no test
+- [x] `cargo package --list -p lrsalvage-core` and `-p lrsalvage-cli` list no test
       file that cannot build, and each tarball carries its crate's `README.md`.
-- [ ] `cargo publish --dry-run -p lrsalvage-core` packages and reaches
-      `aborting upload due to dry run`, with the cli's pin resolved against the
-      index rather than a path.
+      *Run 2026-11-17:* core lists `README.md`, `src/…` and `tests/properties.rs`, and
+      no fixture-importing test file; the cli lists `README.md`, `src/…` and no test
+      tree at all. *Run 2026-11-17:* it packaged
+      `lrsalvage-core-0.3.0`, verified it and stopped at `warning: aborting upload
+      due to dry run`; the cli's generated manifest carries
+      `[dependencies.lrsalvage-core] version = "0.3.0"` with no `path`, so the pin
+      resolves against the index in the artifact as well as the tree, and
+      `scripts/check.sh package` verifies the cli's tarball against the core tarball
+      beside it with a `--config patch` because 0.3.0's core is not on the index
+      before the tag.
 - [ ] The tag still produces the three platform archives and `SHA256SUMS` from
       `release.yml`, with the archive names `cargo-binstall`'s template requires —
       unchanged by the publish job.
@@ -242,7 +267,7 @@ landing first fails a test that is telling the truth.
       destination marked `lrsalvage 0.1.0` is still skipped byte for byte, and a
       0.2.0 output is skipped for the same reason — the version inside the marker
       is never compared. 0.3.0's own marker moves only that number.
-- [ ] Every sentence naming 0.2 as the present release is re-read and rewritten:
+- [x] Every sentence naming 0.2 as the present release is re-read and rewritten:
       `README.md`'s version paragraph, the macOS gap's pointer, *"the frozen-surface
       review in the 0.2 checklist"*, and *"the commit a tag is cut on is chosen by
       the 0.2 checklist"* — plus the same claim in `release.yml`'s own comment.
