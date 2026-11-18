@@ -9,6 +9,7 @@ references:
   - glossary
   - adr-0010-what-0-2-promises
   - adr-0011-0-3-is-the-trust-minor
+  - adr-0012-two-release-lines
 ---
 
 # lrsalvage architecture
@@ -237,7 +238,9 @@ here: `adr-0001-parse-dont-carve`, `adr-0002-map-via-previews-db`,
 `adr-0010-what-0-2-promises` (which declares the compatibility contract every
 other decision is a promise about), and
 `adr-0011-0-3-is-the-trust-minor` (what the release after 0.2 is for, and the
-six issues it refuses).
+six issues it refuses), and `adr-0012-two-release-lines` (which artifacts carry a
+version number, what `0.4` is for, and the criteria that decide whether the app is
+a browser page or an executable).
 Byte-level facts about the formats, with an evidence label per claim, live in
 `format-notes`; the product vocabulary lives in `glossary`. A module spec links
 to those and carries only what is specific to its own boundary.

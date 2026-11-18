@@ -218,3 +218,22 @@ source digest it is not Adobe's `digest` (`format-notes` §2.4): it names no
 preview, no level file and no cache, and nothing in either digest is derived from
 the preview cache.
 _Avoid_: checksum, copy hash
+
+**Release line**:
+One of the two sequences this project versions independently: the **core line**,
+which ships the library and the command-line binary, and the **app line**, which
+ships the desktop front end. A number on one line says nothing about the other,
+and no release on one line waits for a release on the other.
+_Avoid_: product version, release train, channel
+
+**Core version**:
+The version of the recovery pipeline a run was built from — the number the
+`Software` marker names on every output it writes, and therefore the number that
+makes an output recognisable to any later run, whichever front end wrote it. A
+front end reports it beside its own number rather than instead of it.
+_Avoid_: app version, tool version
+
+**App version**:
+The version of the desktop front end. It moves on its own line, and it changes
+neither the marker, nor the contract, nor the core version an output carries.
+_Avoid_: GUI version, product version, bundled version
