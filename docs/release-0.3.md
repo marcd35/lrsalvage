@@ -160,7 +160,7 @@ landing first fails a test that is telling the truth.
       sentence and its new discard steps, `format-notes` §5.11, and this page —
       plus the copies a grep found outside that list, and one wrong sentence in
       `CODING_STANDARDS.md`.
-- [ ] **7 — #66.** ADR 0003 gains a dated amendment: resume identity stays marker
+- [x] **7 — #66.** ADR 0003 gains a dated amendment: resume identity stays marker
       prefix + completeness + `SOF` dimensions, one destination per catalog is the
       documented rule, and strengthening it waits for a report of the failure it
       prevents. It records that the alternatives were weighed — the digest in the

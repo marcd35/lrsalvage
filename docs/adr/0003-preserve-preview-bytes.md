@@ -8,7 +8,7 @@ parent: architecture
 
 # Preserve preview bytes
 
-**Status:** accepted · **Date:** 2026-11-12 · **Amended:** 2026-11-15
+**Status:** accepted · **Date:** 2026-11-12 · **Amended:** 2026-11-15, 2026-11-17
 
 ## Context
 
@@ -107,6 +107,75 @@ read. The existing note keeps the prose: what was kept, what was replaced.
 
 Any future operation that changes pixels — rotation, conversion to sRGB — must be
 an opt-in flag, and the run report must say the pixels were altered.
+
+### Resume identity — reviewed 2026-11-17
+
+**Amended 2026-11-17.** Point 5 stands as written. Reviewing it against the
+failure it is meant to prevent changed no code and left the rule stronger in one
+place only: **this is the identity, and strengthening it waits for a report of the
+failure it prevents.**
+
+The identity is three checks and no state: the `Software` marker's `lrsalvage `
+prefix, a complete JPEG (`SOI` … `FF D9`), and `SOF` dimensions equal to the plan
+item's — `extract::verifies_as_ours`, as pointed at above. It is deliberately not
+an identity for the *photograph*: a different image that derives the same output
+name at the same dimensions is skipped as already recovered, and a
+metadata-bearing run's `--force` does not replace it either, because `--force`
+replaces what fails to verify rather than what verifies as somebody else's. That
+gap is stated in `README.md`'s *Resumable* bullet, pinned by fixture M15 in
+`specs/fixtures.md` (two catalogs into one destination), and the marker and both
+halves of the size check have a case there: the same size behind a different
+marker, a size sharing only the width and a size sharing only the height are each
+`failed`, never skipped. Completeness is not M15's — every destination that row
+composes is a whole JPEG — it is `extract`'s own unit test, which keeps a
+truncated file whose `SOF` survives from being accepted.
+
+**One destination per catalog is the rule.** A collision is not a case a resume
+should repair, it is a case the documented rule already forbids: the remedy is to
+recover one catalog into one destination and delete a collided file rather than
+keep it. `--force` does not mend it either, because it replaces only a file that
+does *not* verify as ours; a `--no-metadata` run verifies nothing at all, so it
+replaces nothing without `--force` and everything with it (`README.md`'s
+`--force` row).
+
+**Strengthening waits for a report of the failure it prevents.** ADR 0011 D9
+records the same decision. The reason is the shape of the cost: each candidate
+below buys the collision case with something today's identity gets for free — no
+state, no extra file, no second read of the cache, and a destination written by
+0.2.0 or 0.3.0 stays ours. A mechanism built for a scenario nobody has reported
+is a permanent cost in exchange for a hypothetical gain, in a tool whose value is
+that it does not guess.
+
+The three alternatives were weighed, and each was refused for a stated reason:
+
+- **The payload digest inside the marker** (`lrsalvage <version> <sha256>`). It
+  would make the marker content-addressed, but the marker's job is authorship —
+  "this file is lrsalvage's output" — and adding a second, unrelated job to a
+  frozen surface is a change of meaning under ADR 0010, which needs a minor
+  preceding the one that makes it, with the old form deprecated first. It is also
+  self-defeating as a repair: a later release comparing a digest would find every
+  output 0.2.0 and 0.3.0 wrote foreign and report a whole library as not ours,
+  which is the outcome #66's recorded decision 2 forbids.
+- **An identity sidecar beside the output** — `extract.csv` already carries a
+  SHA-256 of every file it wrote. It changes no output byte, but it is a *second*
+  resume path that silently falls back to shape when the file is absent, so the
+  guarantee depends on a file a user may move, delete or never have written. What
+  it holds is the whole output file's digest rather than the payload's — the two
+  differ whenever metadata was written — so it also goes stale on any change to
+  the segment writer, which is the objection *Considered options* below already
+  records. One stated limitation becomes two behaviours under one name, decided by
+  state the repository does not control.
+- **Re-deriving the payload digest from the cache on every resume.** The cache is
+  read-only evidence, not a record of what was written: a level re-rendered, a
+  preview discarded, or a catalog edited after the output changes the expected
+  digest and turns our own output foreign. It also costs a full read of every
+  payload before anything can be skipped, which is the cost resume exists to
+  avoid.
+
+**What reopens this.** A report of the failure, meaning two catalogs into one
+destination silently skipping an image, or a destination whose own record shows
+this tool wrote it from a different payload. The next review starts by measuring
+that report against fixture M15, not by adding one of the three mechanisms above.
 
 ## Consequences
 
