@@ -92,7 +92,11 @@ archetype, then per-image composition:
 
 ```text
 Vault::modern() / legacy() / mixed() / damaged() / empty() / unindexed() / unrecognised()
-Vault::image(ImageRow)              catalog row, original path, orientation, XMP blob
+Vault::image(ImageRow)              catalog row, original path, orientation, XMP blob.
+                                    `ImageRow::path_from_root` sets
+                                    AgLibraryFolder.pathFromRoot, so an image's folder
+                                    tree — a hostile `..` included — reaches the catalog
+                                    as Lightroom stored it
 Vault::pyramid(PyramidRow)          Pyramid + PyramidLevel rows, profile and quality names
 Vault::level_file(level)            a level file at its derived leaf, or with raw bytes
 Vault::row_without_file(level)      a PyramidLevel row whose file is absent (pruned)
@@ -100,10 +104,7 @@ Vault::file_without_row(level)      a level file the widened glob must find
 Vault::tombstone(timestamp)         a DeletedPyramid row
 Vault::cache_entry_without_image(uuid)  an ImageCacheEntry row whose imageId names no
                                     image: the dead row a deleted image leaves behind,
-                                    whose payload is therefore an orphan. ImageRow's own
-                                    `path_from_root` sets AgLibraryFolder.pathFromRoot,
-                                    so an image's folder tree — a hostile `..` included —
-                                    reaches the catalog as Lightroom stored it
+                                    whose payload is therefore an orphan
 Vault::unclaimed(levels)            a pyramid no image claims
 Vault::superseded(levels)           level files plus a deliberately unreadable .lrprev
 Vault::unrecognised_file(shape)     payload-like, wrong shard / no suffix / bad uuid
@@ -125,30 +126,35 @@ composition rather than copied into a test.
 The builder replaced all three implementations of the same bytes: the
 `chunk`/`jpeg` helpers that `crates/lrsalvage-core/tests/pipeline.rs`,
 `crates/lrsalvage-cli/tests/cli.rs` and `crates/lrsalvage-core/src/plan.rs`'s
-`#[cfg(test)]` module each carried are gone, and no suite keeps a private fixture
-beside the builder. The plan's own tests came last: they now live in
-`crates/lrsalvage-core/tests/plan.rs` on a `Vault`, next to `tests/extract.rs` and
-`tests/exif.rs`, whose subjects are the writer and the metadata reader. The
-matrix itself is asserted from two files — `crates/lrsalvage-core/tests/matrix.rs`
-(rows whose medium is the plan) and `crates/lrsalvage-cli/tests/matrix.rs` (runs:
-exit codes, report files, output bytes) — so the existing suites stay about their
-own seams.
+`#[cfg(test)]` module each carried are gone. The plan's own tests came last: they
+now live in `crates/lrsalvage-core/tests/plan.rs` on a `Vault`, next to
+`tests/extract.rs` and `tests/exif.rs`, whose subjects are the writer and the
+metadata reader. The matrix itself is asserted from two files —
+`crates/lrsalvage-core/tests/matrix.rs` (rows whose medium is the plan) and
+`crates/lrsalvage-cli/tests/matrix.rs` (runs: exit codes, report files, output
+bytes) — so the existing suites stay about their own seams.
 
 **A test that needs the builder lives in `tests/`, never in a `#[cfg(test)]`
 module inside `src/`.** `lrsalvage-fixtures` is `publish = false`, so the
-published manifest drops the dev-dependency, and `[package] exclude` reaches
-`tests/` and nothing else: a `src/` module that imported it would leave an
-unpacked crate failing to compile instead of running the suite it carries
+published manifest drops the dev-dependency, and a test under `src/` cannot be
+dropped with it: excluding a source file leaves a crate that does not compile
 (#123, and `architecture`'s *artifact carries a suite it can run*). Which files
-ship is `cargo package --list`'s answer, and `scripts/check.sh package` runs the
-tarball's suite where it lands.
+ship is `cargo package --list`'s answer, and `scripts/check.sh package` runs each
+tarball's suite outside the checkout.
+
+A `src/` test that cannot import the builder still keeps its own bytes —
+`exif`'s `tiny_jpeg` and `extract`'s hand-built `Plan` are the two — and that is
+legitimate: they are not a fourth implementation of a *vault*, and they are what
+lets the package run a suite at all.
 
 ### OS neutrality
 
 Rows are built and asserted with `Path::join` and compared through one `slashed()`
 helper, never by string concatenation with `/`. No row depends on case folding,
 symlinks, file timestamps or a separator: the uuid hex, the shard folders and the
-leaf are all lower-case ASCII, and no two names in a vault differ only by case.
+leaf are all lower-case ASCII, and no two names in a vault differ only by case —
+except the pair that pins `plan`'s case-folded dedupe, the one state whose whole
+point is breaking that rule.
 
 ## Vaults
 

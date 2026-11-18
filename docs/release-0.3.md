@@ -120,8 +120,9 @@ landing first fails a test that is telling the truth.
       and it is now [#123](https://github.com/marcd35/lrsalvage/issues/123) — on the
       `0.4.0` milestone, with this box's measurement in its body. *Since this cut:*
       #123 moved those modules into `tests/` and made `scripts/check.sh package`
-      test the unpacked core tarball, so the two sentences above describe the gate
-      as it stood for 0.3.0.
+      test the unpacked core tarball, so two claims above — "builds core's tarball
+      without testing it" and "a library whose suite is this repository's gate, not
+      its own" — describe the gate and the crate as they stood for 0.3.0.
 - [x] **3 — #101.** `chrono` is gone from `Cargo.lock`, `set_capture_time` resolves
       a civil datetime through the replacement's time zone with the same
       disambiguation policy, and the `[advisories] ignore` entry for

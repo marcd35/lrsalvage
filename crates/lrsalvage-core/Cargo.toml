@@ -34,16 +34,16 @@ homepage = "https://github.com/marcd35/lrsalvage"
 # `lrsalvage-fixtures`, a `path`-only dev-dependency the published manifest drops,
 # and one that reads outside the package root (the `specs` tree). `cargo package
 # --list` prints what ships instead of this comment repeating it; the tests that
-# need neither travel, so an unpacked crate runs a suite rather than failing to
-# compile.
+# need neither travel, so an unpacked crate runs a suite.
 #
-# `exclude` reaches `tests/` and nothing else, so no `#[cfg(test)]` code inside
-# `src/` may import the fixtures crate — which is why the fixture-dependent plan,
-# extract and exif tests live in `tests/`. Measured 2026-11-17 by unpacking
-# `lrsalvage-core-0.3.0.crate` outside the repository: `cargo build` succeeded
-# while `cargo test` failed with `unresolved module lrsalvage_fixtures` at five
-# sites in `src/` (#123). `scripts/check.sh package` holds the line by running
-# `cargo test` in the unpacked tarball.
+# A file under `src/` cannot be excluded — a crate missing a module does not
+# compile — so no `#[cfg(test)]` code there may import the fixtures crate. That is
+# why the fixture-dependent plan, extract and exif tests live in `tests/`
+# (`specs/fixtures.md`, *Absorbing the three copies*), measured 2026-11-17 by
+# unpacking `lrsalvage-core-0.3.0.crate` outside the repository: `cargo build`
+# succeeded while `cargo test` failed with `unresolved module lrsalvage_fixtures`
+# at five sites in `src/` (#123). `scripts/check.sh package` runs this tarball's
+# suite outside the checkout, so the property cannot rot back.
 exclude = [
     "tests/exif.rs",
     "tests/extract.rs",
