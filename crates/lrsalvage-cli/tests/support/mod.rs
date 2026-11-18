@@ -113,6 +113,61 @@ pub fn extract(catalog: &Path, previews: &Path, extra: &[&str]) -> (tempfile::Te
     (out, manifest)
 }
 
+/// `scan --report <file>`, as its exit code and the verification report's object.
+///
+/// It is the only surface that carries a plan's `selected_images` and
+/// `selected_items` — `scan --json` has neither — so a row that counts what a
+/// run selected reads it here rather than inferring selection from a status.
+/// The report is a file the run writes to the path it is given, path-free by
+/// construction (`adr-0007-publish-a-verification-report`), so the temp root is
+/// this call's own and nothing of it can reach an assertion.
+#[allow(dead_code)]
+pub fn scan_report(catalog: &Path, previews: &Path, extra: &[&str]) -> (i32, Value) {
+    let dir = tempfile::tempdir().expect("a directory for the report");
+    let path = dir.path().join("report.json");
+    let output = Command::cargo_bin("lrsalvage")
+        .expect("the binary")
+        .arg("scan")
+        .arg("--catalog")
+        .arg(catalog)
+        .arg("--previews")
+        .arg(previews)
+        .args(extra)
+        .arg("--report")
+        .arg(&path)
+        .output()
+        .expect("run scan --report");
+    let bytes = std::fs::read(&path)
+        .unwrap_or_else(|why| panic!("scan --report wrote no report ({why}): {output:?}"));
+    let json = serde_json::from_slice(&bytes).expect("the verification report is an object");
+    (output.status.code().unwrap_or(-1), json)
+}
+
+/// An `extract` under a fresh temp root, as its exit code and that root — for a
+/// run that writes nothing at all.
+///
+/// `extract` above is the sibling for the case that succeeds and leaves a
+/// manifest to read. An empty window exits `3`, writes no report and has no
+/// manifest, so its row needs the code and the tree and nothing else.
+#[allow(dead_code)]
+pub fn extract_code(catalog: &Path, previews: &Path, extra: &[&str]) -> (i32, tempfile::TempDir) {
+    let out = tempfile::tempdir().expect("an output root");
+    let output = Command::cargo_bin("lrsalvage")
+        .expect("the binary")
+        .arg("extract")
+        .arg("--catalog")
+        .arg(catalog)
+        .arg("--previews")
+        .arg(previews)
+        .arg("--include-present")
+        .args(extra)
+        .arg("--out")
+        .arg(out.path())
+        .output()
+        .expect("run extract");
+    (output.status.code().unwrap_or(-1), out)
+}
+
 /// The run's own outcome rows — `extract.csv`, the one surface that records what
 /// happened to each selected item rather than what the plan expected of it — as
 /// `(status, bytes written)` per row.
