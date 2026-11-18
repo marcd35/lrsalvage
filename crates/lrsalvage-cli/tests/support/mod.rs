@@ -26,6 +26,23 @@ pub fn pair(catalog: &str, previews: &str, gate: &str) -> (PathBuf, PathBuf) {
     (read(catalog), read(previews))
 }
 
+/// The binary, pointed at one pair — the one place an evidence row says where
+/// the cache is.
+///
+/// Every surface below starts here: a correction to how a row points the binary
+/// at a catalog cannot land in one surface and leave the others stale, which is
+/// the reason this module exists at all.
+fn binary(subcommand: &str, catalog: &Path, previews: &Path) -> Command {
+    let mut command = Command::cargo_bin("lrsalvage").expect("the binary");
+    command
+        .arg(subcommand)
+        .arg("--catalog")
+        .arg(catalog)
+        .arg("--previews")
+        .arg(previews);
+    command
+}
+
 /// A `scan` run against one pair, as its raw output.
 ///
 /// `--json` is the only difference between the two surfaces, so the invocation
@@ -37,14 +54,8 @@ fn scan_output(
     extra: &[&str],
     json: bool,
 ) -> std::process::Output {
-    let mut command = Command::cargo_bin("lrsalvage").expect("the binary");
-    command
-        .arg("scan")
-        .arg("--catalog")
-        .arg(catalog)
-        .arg("--previews")
-        .arg(previews)
-        .args(extra);
+    let mut command = binary("scan", catalog, previews);
+    command.args(extra);
     if json {
         command.arg("--json");
     }
@@ -79,29 +90,37 @@ pub fn scan(catalog: &Path, previews: &Path, extra: &[&str]) -> (i32, Value) {
     (output.status.code().unwrap_or(-1), json)
 }
 
-/// An `extract` under a fresh temp root, as that root and the `manifest.json` it
-/// wrote. Holding the `TempDir` keeps the output alive for the assertions.
+/// An `extract` under a fresh temp root, as its raw output and that root.
 ///
 /// `--include-present` is always passed: both caches' originals still exist on
 /// the disk they were rendered from, so without it there is nothing to write.
-/// The manifest is the per-item record — quality, metadata and the payload each
-/// item came from — so a row's own segments are visible without parsing
-/// `report.csv`'s quoting by hand.
-pub fn extract(catalog: &Path, previews: &Path, extra: &[&str]) -> (tempfile::TempDir, Value) {
+/// The two helpers below split on what a run leaves behind — a manifest to read,
+/// or nothing at all.
+fn extract_output(
+    catalog: &Path,
+    previews: &Path,
+    extra: &[&str],
+) -> (std::process::Output, tempfile::TempDir) {
     let out = tempfile::tempdir().expect("an output root");
-    let output = Command::cargo_bin("lrsalvage")
-        .expect("the binary")
-        .arg("extract")
-        .arg("--catalog")
-        .arg(catalog)
-        .arg("--previews")
-        .arg(previews)
+    let mut command = binary("extract", catalog, previews);
+    let output = command
         .arg("--include-present")
         .args(extra)
         .arg("--out")
         .arg(out.path())
         .output()
         .expect("run extract");
+    (output, out)
+}
+
+/// A successful `extract`, as the temp root it wrote and the `manifest.json` in
+/// it. Holding the `TempDir` keeps the output alive for the assertions.
+///
+/// The manifest is the per-item record — quality, metadata and the payload each
+/// item came from — so a row's own segments are visible without parsing
+/// `report.csv`'s quoting by hand.
+pub fn extract(catalog: &Path, previews: &Path, extra: &[&str]) -> (tempfile::TempDir, Value) {
+    let (output, out) = extract_output(catalog, previews, extra);
     assert!(
         output.status.success(),
         "extract failed: {}",
@@ -111,6 +130,43 @@ pub fn extract(catalog: &Path, previews: &Path, extra: &[&str]) -> (tempfile::Te
         .expect("extract writes manifest.json beside its output");
     let manifest = serde_json::from_slice(&bytes).expect("manifest.json is an object");
     (out, manifest)
+}
+
+/// `scan --report <file>`, as its exit code and the verification report's object.
+///
+/// It is the only surface that carries a plan's `selected_images` and
+/// `selected_items` — `scan --json` has neither — so a row that counts what a
+/// run selected reads it here rather than inferring selection from a status.
+/// The report is a file the run writes to the path it is given, path-free by
+/// construction (`adr-0007-publish-a-verification-report`), so the temp root is
+/// this call's own and nothing of it can reach an assertion.
+#[allow(dead_code)]
+pub fn scan_report(catalog: &Path, previews: &Path, extra: &[&str]) -> (i32, Value) {
+    let dir = tempfile::tempdir().expect("a directory for the report");
+    let path = dir.path().join("report.json");
+    let mut command = binary("scan", catalog, previews);
+    let output = command
+        .args(extra)
+        .arg("--report")
+        .arg(&path)
+        .output()
+        .expect("run scan --report");
+    let bytes = std::fs::read(&path)
+        .unwrap_or_else(|why| panic!("scan --report wrote no report ({why}): {output:?}"));
+    let json = serde_json::from_slice(&bytes).expect("the verification report is an object");
+    (output.status.code().unwrap_or(-1), json)
+}
+
+/// An `extract` of any exit code, as that code and the temp root — for a run
+/// that writes nothing at all.
+///
+/// `extract` above is the sibling for the case that succeeds and leaves a
+/// manifest to read. An empty window exits `3`, writes no report and has no
+/// manifest, so its row needs the code and the tree and nothing else.
+#[allow(dead_code)]
+pub fn extract_exit(catalog: &Path, previews: &Path, extra: &[&str]) -> (i32, tempfile::TempDir) {
+    let (output, out) = extract_output(catalog, previews, extra);
+    (output.status.code().unwrap_or(-1), out)
 }
 
 /// The run's own outcome rows — `extract.csv`, the one surface that records what

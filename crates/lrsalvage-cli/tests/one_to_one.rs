@@ -12,7 +12,9 @@
 //!
 //! It runs only where the machine holds such a cache, through
 //! `scripts/check.sh real-1to1`, and it is the one gate that holds C's column of
-//! §5.10 to the cache those numbers were measured on.
+//! §5.10 to the cache those numbers were measured on — and, in
+//! `a_cap_chooses_the_largest_level_at_or_below_it`, holds the cap's winner rule
+//! to the same cache's ladders (§5.12).
 //!
 //! **Both halves matter.** `scan --json` proves the counts; `extract` proves one
 //! file is written per image and no companion is invented — and `--all-levels`
@@ -159,5 +161,150 @@ fn a_one_to_one_build_reports_one_pyramid_per_image_and_writes_no_companion() {
         images.len(),
         10,
         "the forty level files belong to ten pyramids, one per image (§5.10)"
+    );
+}
+
+/// `format-notes` §5.12: the cap's winner rule measured on C's own ladder rather
+/// than on a vault this repository composed.
+///
+/// No level of C measures 1,920 px — its ladders step `320, 1024, 2048, 4096` and
+/// `320, 750, 1500, 3000, 6000`, and the 1200 × 800 image's largest level is its
+/// own size (§5.10) — so a run capped there must choose a smaller step rather
+/// than the level named after the cap. That is the difference between a winner
+/// rule and a filter after the fact, and it is what M16 pins synthetically.
+#[test]
+#[ignore = "needs LRSALVAGE_ONE_TO_ONE_CATALOG and LRSALVAGE_ONE_TO_ONE_PREVIEWS (scripts/check.sh real-1to1)"]
+fn a_cap_chooses_the_largest_level_at_or_below_it() {
+    let (catalog, previews) = support::pair(
+        "LRSALVAGE_ONE_TO_ONE_CATALOG",
+        "LRSALVAGE_ONE_TO_ONE_PREVIEWS",
+        "real-1to1",
+    );
+
+    // Without `--all-levels` the plan is one item per image, and every image
+    // clears the cap — so `above_cap` is 0 while a level above the cap exists,
+    // which is `adr-0013`'s "invisible unless it binds" measured.
+    let (code, json) = support::scan(
+        &catalog,
+        &previews,
+        &["--include-present", "--max-long-edge", "1920"],
+    );
+    assert_eq!(code, 0, "{json:#?}");
+    assert_eq!(json["images"], 10);
+    assert_eq!(json["recovered"], 10, "every image has a level under 1,920");
+    assert_eq!(
+        json["below_floor"], 0,
+        "the level the cap chose is above the 640 px floor"
+    );
+    assert_eq!(json["above_cap"], 0, "nothing is reported above the cap");
+    assert_eq!(json["failed"], 0, "a cap never fails an image");
+    // An option value never reclassifies a cache's shape (`adr-0008`), and these
+    // are the rows §5.12 publishes: a capped run still sees one pyramid per
+    // image, no companion and no payload without its row.
+    assert_eq!(json["layout"], "modern");
+    assert_eq!(json["thumbnail_pyramids"], 0);
+    assert_eq!(json["unmapped"], 0);
+    assert_eq!(json["missing_payload"], 0);
+    assert_eq!(
+        json["bytes"], 885_493,
+        "the ten chosen payloads, which is what §5.12 publishes"
+    );
+
+    // Selection is the verification report's: `scan --json` carries no
+    // `selected_items`, and the report echoes the cap the run used (ADR 0013).
+    let (code, report) = support::scan_report(
+        &catalog,
+        &previews,
+        &["--include-present", "--max-long-edge", "1920"],
+    );
+    assert_eq!(code, 0, "{report:#?}");
+    assert_eq!(
+        report["options"]["max_long_edge"], 1920,
+        "the report echoes the cap it applied"
+    );
+    assert_eq!(
+        report["stats"]["levels"], 10,
+        "one item per image without --all-levels"
+    );
+    assert_eq!(report["stats"]["selected_images"], 10);
+    assert_eq!(
+        report["stats"]["selected_items"], 10,
+        "ten images whose ladder holds a level at or below 1,920"
+    );
+
+    // `--all-levels` makes the cap a count: eighteen of §5.10's forty level files
+    // are above it — 2,048 ×7, 3,000 ×2, 4,096 ×7, 6,000 ×2 — and the ten 320 px
+    // floors are under the 640 px floor. The twelve inside the window are the
+    // items that survive both bounds.
+    let every = [
+        "--include-present",
+        "--all-levels",
+        "--max-long-edge",
+        "1920",
+    ];
+    let (code, all_json) = support::scan(&catalog, &previews, &every);
+    assert_eq!(code, 0, "{all_json:#?}");
+    assert_eq!(
+        all_json["shapes"]["level_file"], 40,
+        "forty level files over ten pyramids (§5.10)"
+    );
+    assert_eq!(all_json["below_floor"], 10, "the ten 320 px floors");
+    assert_eq!(
+        all_json["above_cap"], 18,
+        "§5.10's ladder above 1,920: 2,048 ×7, 3,000 ×2, 4,096 ×7, 6,000 ×2"
+    );
+    let (code, all_report) = support::scan_report(&catalog, &previews, &every);
+    assert_eq!(code, 0, "{all_report:#?}");
+    assert_eq!(
+        all_report["stats"]["selected_items"], 12,
+        "750 ×2, 1,024 ×7, 1,200 ×1, 1,500 ×2 — the two 6,000 px ladders hold two steps each"
+    );
+    assert_eq!(
+        all_report["stats"]["selected_images"], 10,
+        "twelve items over ten images: a cap never splits one image's output"
+    );
+    assert_eq!(
+        all_json["above_cap"].as_u64().unwrap_or_default()
+            + all_json["below_floor"].as_u64().unwrap_or_default()
+            + all_report["stats"]["selected_items"]
+                .as_u64()
+                .unwrap_or_default(),
+        40,
+        "above the cap, below the floor and inside the window partition the forty level files"
+    );
+
+    // The half a scan cannot see: one file per image, each the largest level at
+    // or below 1,920 — never the 2,048, 3,000, 4,096 or 6,000 beside it.
+    let (out, manifest) = support::extract(&catalog, &previews, &["--max-long-edge", "1920"]);
+    assert_eq!(manifest["stats"]["images"], 10, "ten images planned");
+    assert_eq!(
+        items(&manifest).len(),
+        10,
+        "one item per image, as uncapped"
+    );
+    let mut written = support::jpeg_long_edges(out.path());
+    assert_eq!(written.len(), 10, "one file per image (§5.12)");
+    written.sort_unstable();
+    assert_eq!(
+        written,
+        vec![1024, 1024, 1024, 1024, 1024, 1024, 1024, 1200, 1500, 1500],
+        "the largest level at or below 1,920 is what was written"
+    );
+
+    // A cap no level clears is an empty window rather than a failure: exit 3,
+    // nothing written, and no image given a new status — M17's state, here on a
+    // ladder the cap steps through instead of one level it misses.
+    let (code, empty) = support::extract_exit(&catalog, &previews, &["--max-long-edge", "200"]);
+    assert_eq!(code, 3, "an empty window is not a failure");
+    assert!(
+        support::jpeg_long_edges(empty.path()).is_empty(),
+        "nothing is written under a cap no level clears"
+    );
+    assert_eq!(
+        std::fs::read_dir(empty.path())
+            .expect("the output root")
+            .count(),
+        0,
+        "an empty run writes no JPEG, no report.csv and no manifest.json"
     );
 }

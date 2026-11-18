@@ -280,8 +280,11 @@ What those rows mean in practice:
   Lightroom had **discarded** was measured as well (section 5.11): it removes the
   standard-size and 1:1 levels and the image's thumbnail pyramid, keeps the levels
   below the standard size, and every image still came back `recovered` — at
-  1920 px in that cache. What none of these runs covers: a re-render of an image
-  the catalog already holds.
+  1920 px in that cache. The cap was then set against the 1:1 cache of section
+  5.10 (section 5.12): with `--max-long-edge 1920` it writes the 1,024, 1,200 and
+  1,500 px levels those ladders hold, never the 2,048, 3,000, 4,096 or 6,000
+  above them, and a cap no level clears exits `3` without failing an image. What
+  none of these runs covers: a re-render of an image the catalog already holds.
 - **Same reader, untested**: 4 – 10, 12 and 13.0 – 13.2 use the `.lrprev`
   pyramid this tool parses. Nothing known stops them working; nobody has run it
   on one.
@@ -417,7 +420,7 @@ with `scan`; the table names which command each flag belongs to:
 | Flag | Effect |
 |---|---|
 | `--min-long-edge 640` | Ignore levels below this long edge (default 640; `0` disables the floor). |
-| `--max-long-edge 0` | Write the largest level at or below this long edge instead of the largest present (default `0`, no cap). A 1:1 cache with `--max-long-edge 1920` writes the 1,920 px level and nothing bigger. An image whose every level is larger keeps its size in the plan, is reported, and is not written — it is never failed. `0` disables the cap, and a cap below the floor is an empty window rather than an error: nothing is selected and the run exits `3`. The cap chooses a level rather than excluding one, so the levels it passed over are items only with `--all-levels`; without it the only level counted is the one the image is reported at, so `above_cap` is non-zero exactly when nothing cleared the cap. |
+| `--max-long-edge 0` | Write the largest level at or below this long edge instead of the largest present (default `0`, no cap). A 1:1 cache with `--max-long-edge 1920` writes the largest level at or below it — the 1,920 px step where the ladder holds one, 1,024 px on the seven 4,096-wide images of the 1:1 cache measured — and nothing bigger. An image whose every level is larger keeps its size in the plan, is reported, and is not written — it is never failed. `0` disables the cap, and a cap below the floor is an empty window rather than an error: nothing is selected and the run exits `3`. The cap chooses a level rather than excluding one, so the levels it passed over are items only with `--all-levels`; without it the only level counted is the one the image is reported at, so `above_cap` is non-zero exactly when nothing cleared the cap. |
 | `--all-levels` | Export every intermediate level, not just the best one. |
 | `--include-present` | Also include images whose original file still exists on disk. |
 | `--verbose` | `scan` only: print one line per plan item instead of only totals. |
