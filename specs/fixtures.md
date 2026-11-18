@@ -142,10 +142,15 @@ dropped with it: excluding a source file leaves a crate that does not compile
 ship is `cargo package --list`'s answer, and `scripts/check.sh package` runs each
 tarball's suite outside the checkout.
 
-A `src/` test that cannot import the builder still keeps its own bytes —
-`exif`'s `tiny_jpeg` and `extract`'s hand-built `Plan` are the two — and that is
-legitimate: they are not a fourth implementation of a *vault*, and they are what
-lets the package run a suite at all.
+A `src/` test that cannot import the builder still keeps bytes of its own, in
+three places, and they are not equal. `exif`'s `tiny_jpeg` and `extract`'s
+hand-built `Plan` are legitimate — a 4x4 frame and a `Plan` literal are not a
+*vault* — and they are what the package carries, so it runs a suite where it
+lands. `extract`'s `chunk`/`jpeg`/`payload_bytes` are debt: a fourth
+implementation of `bytes::chunk` and `bytes::container`, older than this rule. It
+stays because `extract`'s suite hand-builds the plan on purpose, to pin the
+writer with no catalog and no index; moving it is its own slice, and the rule
+reads "no *new* writer" until then.
 
 ### OS neutrality
 
