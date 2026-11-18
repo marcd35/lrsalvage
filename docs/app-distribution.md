@@ -7,6 +7,8 @@ parent: architecture
 tags:
   - reference
   - distribution
+references:
+  - browser-spike
 ---
 
 # App distribution and platforms: engineering notes
@@ -101,14 +103,30 @@ Read 2026-11-18. These are the facts #126's spike measures against.
   session rather than persisted the way a desktop app's file access is. — verified
 - **SQLite in a page**: the common builds (`sql.js`, the official WASM build with
   an in-memory database) read the whole file into memory, which fails on a large
-  catalog; the working pattern is a **demand-paged custom VFS** over the file
-  handle. The maintainer of `wa-sqlite` puts it plainly: accessing a user's picked
-  file directly means writing a custom VFS. — verified
-- **OPFS** is the alternative to a custom VFS: copy the database in, then query it
-  from the origin's private storage. The cost is the copy time for a file that may
-  be a gigabyte, and the origin's quota. `navigator.storage.persist()` asks the
-  browser not to evict it. Exact quota figures vary by browser, profile and free
-  disk. — reported
+  catalog. **Amended 2026-11-18:** the pattern this row used to name — a
+  *demand-paged custom VFS over the picked file handle* — cannot be built.
+  `FileSystemFileHandle.createSyncAccessHandle()` is usable "only … for files
+  within the origin private file system", so no synchronous VFS can page a picked
+  file; the maintainer of `wa-sqlite` says the same thing from the other end, and
+  an asynchronous build (JSPI/Asyncify) with the data layer in JavaScript is the
+  only remaining shape. [browser-spike](browser-spike.md) §1 has the measurement
+  and §6 the route not taken. — verified
+- **OPFS** is the alternative, and it is the only persistent one: copy the database
+  in, then query it from the origin's private storage through the `sahpool` VFS.
+  The cost is the copy time and the origin's quota. `navigator.storage.persist()`
+  asks the browser not to evict it. Exact quota figures vary by browser, profile
+  and free disk. — reported
+- **Measured 2026-11-18** ([browser-spike](browser-spike.md)): a 1 GiB copy ran at
+  86–178 MB/s; the quota was 10.7–12.0 GB and moved between sessions;
+  `persist()` was refused while the data nonetheless survived a restart; a picked
+  folder's grant survived a reload and became `prompt` after a restart; the
+  `sahpool` import copies the main file only and resets the header to rollback
+  mode, so a live `-wal`'s committed rows are lost without an error. — measured
+- **A page writes into a picked folder slowly, and that is the mechanism that
+  failed.** 1 000 payloads through `createWritable()` ran at 1.8–3.5 files/s with a
+  p95 of 0.6–1.4 s and a worst single file of 26 s, against 29 files/s for the same
+  call pattern into OPFS and 49–108 files/s for a native writer on the same disk. —
+  measured
 - **What a page cannot do**: open Explorer at the destination, integrate with the
   shell, keep running after the tab closes, or survive an OOM kill mid-write.
 

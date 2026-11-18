@@ -4,11 +4,7 @@ type: architecture-design
 title: "ADR 0012: Two release lines, and what 0.4 is for"
 status: active
 parent: architecture
-references:
-  - adr-0010-what-0-2-promises
-  - adr-0011-0-3-is-the-trust-minor
-  - app-distribution
-  - glossary
+references: [adr-0010-what-0-2-promises, adr-0011-0-3-is-the-trust-minor, app-distribution, glossary, browser-spike]
 ---
 
 # Two release lines, and what 0.4 is for
@@ -255,6 +251,21 @@ never by widening what the map already promised.
 
 The spike therefore does not decide whether there is an app. It decides what the
 app is.
+
+**Amended 2026-11-18, the day the spike ran, because one mechanism named above
+does not exist.** D10's first test said the SQLite dependency must compile "to
+`wasm32` against a demand-paged VFS over a File handle". No such VFS can be built:
+`FileSystemFileHandle.createSyncAccessHandle()` is usable only for files inside the
+origin private file system, so a synchronous VFS cannot page a file the user
+picked, and the crate that gives `rusqlite` a wasm build ships no asynchronous
+one. The test was run against the mechanism that does exist — a copy into OPFS
+read through the `sahpool` VFS — and the browser path is **No-go** on two other
+rows, not on this one: writing JPEGs into a picked folder ran at 1.8–3.5 files/s
+with a worst single file of 26 s, and a catalog whose newest rows live in its
+`-wal` reads 78 images instead of 128 without reporting anything. The numbers, the
+environment and what was not measured are in [browser-spike](browser-spike.md); the
+verdict and its follow-ups are on #126. The route this leaves is D9's, with the
+native shell as the constraint.
 
 ### D11 — Accessibility is a level, not a sentiment
 
