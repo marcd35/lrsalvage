@@ -30,21 +30,28 @@ categories = ["multimedia::images", "filesystem", "database"]
 documentation = "https://docs.rs/lrsalvage-core"
 homepage = "https://github.com/marcd35/lrsalvage"
 
-# The test tree a tarball cannot run. `matrix.rs` and `pipeline.rs` import
+# The test files a tarball cannot run. Two kinds are dropped: one that imports
 # `lrsalvage-fixtures`, a `path`-only dev-dependency the published manifest drops,
-# and `spec_graph.rs` walks `../../specs`, outside the package root, so a tarball
-# carrying them fails `cargo test` for an auditor instead of proving anything.
-# `properties.rs` needs neither and travels.
+# and one that reads outside the package root (the `specs` tree). `cargo package
+# --list` prints what ships instead of this comment repeating it; the tests that
+# need neither travel, so an unpacked crate runs a suite.
 #
-# This list is not the whole story: the `#[cfg(test)]` modules in `src/exif.rs`,
-# `src/extract.rs` and `src/plan.rs` call the same fixtures crate, and a manifest
-# cannot drop code inside a source file. Measured 2026-11-17 by unpacking
-# `target/package/lrsalvage-core-0.2.0.crate` outside the repository and running
-# `cargo test`: `unresolved module lrsalvage_fixtures`, and no test run.
-# Making that green needs the fixture-dependent unit tests moved out of `src/` or
-# `lrsalvage-fixtures` published (ADR 0011 D6 refuses the second), so the published
-# crate is a library whose own suite is a repository gate, not a crate one.
-exclude = ["tests/matrix.rs", "tests/pipeline.rs", "tests/spec_graph.rs"]
+# A file under `src/` cannot be excluded — a crate missing a module does not
+# compile — so no `#[cfg(test)]` code there may import the fixtures crate. That is
+# why the fixture-dependent plan, extract and exif tests live in `tests/`
+# (`specs/fixtures.md`, *Absorbing the three copies*), measured 2026-11-17 by
+# unpacking `lrsalvage-core-0.3.0.crate` outside the repository: `cargo build`
+# succeeded while `cargo test` failed with `unresolved module lrsalvage_fixtures`
+# at five sites in `src/` (#123). `scripts/check.sh package` runs this tarball's
+# suite outside the checkout, so the property cannot rot back.
+exclude = [
+    "tests/exif.rs",
+    "tests/extract.rs",
+    "tests/matrix.rs",
+    "tests/pipeline.rs",
+    "tests/plan.rs",
+    "tests/spec_graph.rs",
+]
 
 [dependencies]
 rusqlite.workspace = true

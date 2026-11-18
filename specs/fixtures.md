@@ -92,12 +92,19 @@ archetype, then per-image composition:
 
 ```text
 Vault::modern() / legacy() / mixed() / damaged() / empty() / unindexed() / unrecognised()
-Vault::image(ImageRow)              catalog row, original path, orientation, XMP blob
+Vault::image(ImageRow)              catalog row, original path, orientation, XMP blob.
+                                    `ImageRow::path_from_root` sets
+                                    AgLibraryFolder.pathFromRoot, so an image's folder
+                                    tree — a hostile `..` included — reaches the catalog
+                                    as Lightroom stored it
 Vault::pyramid(PyramidRow)          Pyramid + PyramidLevel rows, profile and quality names
 Vault::level_file(level)            a level file at its derived leaf, or with raw bytes
 Vault::row_without_file(level)      a PyramidLevel row whose file is absent (pruned)
 Vault::file_without_row(level)      a level file the widened glob must find
 Vault::tombstone(timestamp)         a DeletedPyramid row
+Vault::cache_entry_without_image(uuid)  an ImageCacheEntry row whose imageId names no
+                                    image: the dead row a deleted image leaves behind,
+                                    whose payload is therefore an orphan
 Vault::unclaimed(levels)            a pyramid no image claims
 Vault::superseded(levels)           level files plus a deliberately unreadable .lrprev
 Vault::unrecognised_file(shape)     payload-like, wrong shard / no suffix / bad uuid
@@ -114,28 +121,45 @@ needs a fourth ad-hoc writer. `level_files()` and `containers()` report what
 `write()` actually put on disk, so a vault's `shapes` counts are derived from the
 composition rather than copied into a test.
 
-### Absorbing the three copies
+### Absorbing the three copies, and where a test lives
 
-The builder replaces all three existing implementations of the same bytes, in the
-same change that adopts it:
-
-- `crates/lrsalvage-core/tests/pipeline.rs` — `chunk` `:744`, `jpeg` `:766`;
-- `crates/lrsalvage-cli/tests/cli.rs` — `chunk` `:52`, `jpeg` `:70`, `jpeg_files`
-  `:219`;
-- `crates/lrsalvage-core/src/plan.rs` (test module) — `chunk` `:896`, `jpeg` `:912`.
-
-`pipeline.rs` and `cli.rs` migrate onto the builder; they do not keep private
-fixtures beside it. The matrix itself is asserted from two new files —
+The builder replaced all three implementations of the same bytes: the
+`chunk`/`jpeg` helpers that `crates/lrsalvage-core/tests/pipeline.rs`,
+`crates/lrsalvage-cli/tests/cli.rs` and `crates/lrsalvage-core/src/plan.rs`'s
+`#[cfg(test)]` module each carried are gone. The plan's own tests came last: they
+now live in `crates/lrsalvage-core/tests/plan.rs` on a `Vault`, next to
+`tests/extract.rs` and `tests/exif.rs`, whose subjects are the writer and the
+metadata reader. The matrix itself is asserted from two files —
 `crates/lrsalvage-core/tests/matrix.rs` (rows whose medium is the plan) and
 `crates/lrsalvage-cli/tests/matrix.rs` (runs: exit codes, report files, output
 bytes) — so the existing suites stay about their own seams.
+
+**A test that needs the builder lives in `tests/`, never in a `#[cfg(test)]`
+module inside `src/`.** `lrsalvage-fixtures` is `publish = false`, so the
+published manifest drops the dev-dependency, and a test under `src/` cannot be
+dropped with it: excluding a source file leaves a crate that does not compile
+(#123, and `architecture`'s *artifact carries a suite it can run*). Which files
+ship is `cargo package --list`'s answer, and `scripts/check.sh package` runs each
+tarball's suite outside the checkout.
+
+A `src/` test that cannot import the builder still keeps bytes of its own, in
+three places, and they are not equal. `exif`'s `tiny_jpeg` and `extract`'s
+hand-built `Plan` are legitimate — a 4x4 frame and a `Plan` literal are not a
+*vault* — and they are what the package carries, so it runs a suite where it
+lands. `extract`'s `chunk`/`jpeg`/`payload_bytes` are debt: a fourth
+implementation of `bytes::chunk` and `bytes::container`, older than this rule. It
+stays because `extract`'s suite hand-builds the plan on purpose, to pin the
+writer with no catalog and no index; moving it is its own slice, and the rule
+reads "no *new* writer" until then.
 
 ### OS neutrality
 
 Rows are built and asserted with `Path::join` and compared through one `slashed()`
 helper, never by string concatenation with `/`. No row depends on case folding,
 symlinks, file timestamps or a separator: the uuid hex, the shard folders and the
-leaf are all lower-case ASCII, and no two names in a vault differ only by case.
+leaf are all lower-case ASCII, and no two names in a vault differ only by case —
+except the pair that pins `plan`'s case-folded dedupe, the one state whose whole
+point is breaking that rule.
 
 ## Vaults
 
@@ -412,6 +436,9 @@ which medium proves each promise, and where the bytes come from.
 
 - `goal-and-requirements` — a Verification statement: every promise is proved by a
   synthetic vault from one shared builder.
+- `architecture` — an invariant: the published artifact carries a suite it can
+  run, so a test that needs the builder lives in `tests/` and never in a
+  `#[cfg(test)]` module inside `src/`.
 - `plan` — the `deleted` stat, named and counted per `missing-payload` item whose
   pyramid carries a `DeletedPyramid` row.
 - `report` — where `deleted` and `unrecognised` surface (a summary line when

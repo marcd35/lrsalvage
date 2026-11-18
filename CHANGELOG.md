@@ -30,18 +30,15 @@ minor saying so here before one is removed, renamed or given a different meaning
   the other filters and every rename template stay declined, and the README now
   says so rather than leaving them unmentioned.
 
-### Known limitation
+### Packaging
 
-- **The published `lrsalvage-core` 0.3.0 tarball builds but cannot run its own
-  `cargo test`.** Five `#[cfg(test)]` modules under `src/` import
-  `lrsalvage-fixtures`, a `publish = false` path-only dev-dependency the published
-  manifest drops, so an unpacked crate stops at `error[E0433]` instead of running
-  a suite ([#123](https://github.com/marcd35/lrsalvage/issues/123), measured
-  2026-11-17). The manifest states the limit. This entry is here because a
-  published tarball cannot be corrected — its readme is part of it — so the wait
-  until `0.4.0` republishes core is written down rather than left to be
-  discovered. [ADR 0012](docs/adr/0012-two-release-lines.md) records why this did
-  not become a `0.3.1`.
+- **`lrsalvage-core`'s tarball runs its own `cargo test`**
+  ([#123](https://github.com/marcd35/lrsalvage/issues/123)). The plan, extract
+  and exif tests that need the synthetic fixtures moved from `src/` — where no
+  `[package] exclude` reaches — into `tests/`, which the published manifest
+  drops; an unpacked crate now builds `--all-targets` and runs the suite it
+  carries. `scripts/check.sh package` tests that tarball rather than only
+  building it, so the property cannot rot back.
 
 ## [0.3.0]
 
@@ -84,9 +81,10 @@ meaning.
   a tarball that carries no test file the published manifest cannot build
   ([#96](https://github.com/marcd35/lrsalvage/issues/96)), so an unpacked crate
   builds where it lands. The cli's tarball runs `cargo test` there too; core's
-  builds, and its own suite stays this repository's gate, because its unit tests
-  import the test-only fixtures crate that is never published. That limit is
-  stated in core's manifest rather than left to be discovered.
+  built only, because its unit tests imported the test-only fixtures crate that
+  is never published, and that limit was stated in core's manifest rather than
+  left to be discovered. [#123](https://github.com/marcd35/lrsalvage/issues/123)
+  moves those tests, so the next crate's tarball runs its own suite as well.
 - 0.3.0 is the first release whose publishes run through crates.io trusted
   publishing from the release workflow, with no long-lived token stored here.
 

@@ -138,6 +138,13 @@ a published crate page that states the limitation in its manifest and is wrong
 until `0.4.0` republishes core, which is stated in `CHANGELOG.md`'s `[Unreleased]`
 section so the wait is visible rather than implied.
 
+**Amended 2026-11-18:** #123's fix has landed in `[Unreleased]` — the five
+fixture-dependent test modules moved into `tests/`, so an unpacked core tarball
+runs its own suite — and the `### Known limitation` entry this decision leaned on
+is deleted with the limit it described. `docs/release-0.3.md` records the same
+closure. What D5 says about the *published* 0.3.0 artifact still holds: its crate
+page states the limitation and stays wrong until `0.4.0` republishes it.
+
 Rules out: annotating the published crate page (impossible — its readme is the
 tarball's, and the tarball for 0.3.0 is fixed); bundling #123 into a patch that
 carries a contract change; leaving the debt to be discovered by an auditor.

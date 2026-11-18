@@ -219,6 +219,13 @@ everything else is always compiled. `report` reads its two name templates from
 - **Nothing is clobbered on faith.** An existing destination is replaced only
   when it verifies as one of our own outputs; a report file name is claimed, not
   assumed.
+- **The artifact carries a suite it can run.** A published tarball compiles its
+  test targets and passes its own `cargo test` where it is unpacked, with no
+  checkout in reach; `scripts/check.sh package` is what proves it for both
+  crates. So a test that needs `lrsalvage-fixtures` lives in `tests/`, never in a
+  `#[cfg(test)]` module inside `src/`: the fixtures crate is never published
+  (`adr-0011-0-3-is-the-trust-minor`, D6), the published manifest drops the
+  dev-dependency, and only `tests/` can be dropped from the package with it.
 - **User data is opened read-only.** The `.lrcat`, the preview cache and
   `.lrcat-data` are evidence. A destination inside any of those trees is refused
   before the first write, and `--verify-source` makes the claim checkable: the

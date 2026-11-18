@@ -19,7 +19,7 @@
 # own pair is unset. Each runs only its own tests, so adding a family cannot reach
 # into another's and break it.
 #
-# `package` is the slow one — two builds and a test run — so name it while
+# `package` is the slow one — two builds and two test runs — so name it while
 # iterating and let the no-argument run carry it at hand-off.
 #
 # A missing tool is a failure, never a skip: a green run must mean CI's green.
@@ -109,7 +109,11 @@ gate_build() {
 # metadata drops, a dev-dependency Cargo strips, a README the crate page points at
 # and the tarball lacks — is invisible to all of them. `#96` is that failure
 # measured: an unpacked crate whose `cargo test` cannot compile because
-# `lrsalvage-fixtures` is a `path`-only dev-dependency the published manifest drops.
+# `lrsalvage-fixtures` is a `path`-only dev-dependency the published manifest
+# drops. So every tarball is built **and** tested where it is unpacked, with no
+# checkout in reach: a crate that only builds is a package that has not been
+# proved, and `#123` is that half measured (`src/`'s `#[cfg(test)]` sites, which
+# no `exclude` reaches, kept core's suite out of its tarball).
 #
 # The cli's tarball is verified against the core tarball this run built, by a
 # `patch` on the command line. Its generated manifest names `lrsalvage-core` by
@@ -121,20 +125,25 @@ gate_build() {
 # tree. Aimed at the tarball beside it, the gate proves the pair a release
 # publishes rather than a pair nobody ships together.
 #
-# The slowest gate here (two builds and a test run), and it takes `--allow-dirty`
-# so it measures a working tree — which is exactly when it is worth running.
-# Name it while iterating, and let the no-argument run carry it at hand-off.
+# The slowest gate here (two builds and two test runs), and it takes
+# `--allow-dirty` so it measures a working tree — which is exactly when it is
+# worth running. Name it while iterating, and let the no-argument run carry it at
+# hand-off.
 gate_package() {
     printf '%s\n' '== package'
-    # Relative, so `cargo` and the shell read the same path on every platform:
-    # `/tmp` is bash's alone and `C:/...` is not.
-    staged=target/package/gate-unpacked
-    rm -rf "$staged"
+    # Outside the checkout, because that is what an auditor has: unpacked in this
+    # tree, a shipped test could walk up to `specs/` or to another member and the
+    # gate would still pass while theirs failed. `mktemp -d` is the shell's; the
+    # one EXIT trap removes whatever is left of it, pass or fail.
+    staged_dir=$(mktemp -d)
     core_root=''
     for crate in lrsalvage-core lrsalvage-cli; do
         patch=''
         if [ -n "$core_root" ]; then
-            patch=$(native_path "$(pwd)/$core_root")
+            # `native_path` translates the shell's spelling into one `cargo` reads:
+            # the staged tree is no longer under the repository, so it is absolute
+            # and, on msys, `C:`-less until cygpath rewrites it.
+            patch=$(native_path "$core_root")
             cargo package --allow-dirty -p "$crate" \
                 --config "patch.crates-io.lrsalvage-core.path=\"$patch\""
         else
@@ -157,24 +166,29 @@ gate_package() {
             fi
         done
         archive=$(ls -t "target/package/$crate"-*.crate | head -1)
-        unpacked="$staged/$crate"
+        unpacked="$staged_dir/$crate"
         mkdir -p "$unpacked"
         tar -xzf "$archive" -C "$unpacked"
         root="$unpacked/$(tar -tzf "$archive" | head -1 | cut -d/ -f1)"
-        # `--all-targets` compiles test targets too, and core's lib test target
-        # names the stripped fixtures crate from `#[cfg(test)]` sites inside
-        # `src/`, where no `exclude` reaches (#96's open half). Its tarball is
-        # built, not tested, until those sites move; the CLI's is both.
+        # Every tarball is built with `--all-targets` and then run: the compile
+        # of the test targets is one half of what an auditor does, and the run is
+        # the half that proves anything. Core needs no patch — it is its own
+        # package — and is unpacked before the cli is packaged, so the cli's
+        # generated manifest can be aimed at the core tarball beside it.
         if [ "$crate" = lrsalvage-cli ]; then
             (cd "$root" && cargo build --all-targets \
                 --config "patch.crates-io.lrsalvage-core.path=\"$patch\"" \
                 && cargo test --config "patch.crates-io.lrsalvage-core.path=\"$patch\"")
         else
             core_root=$root
-            (cd "$root" && cargo build)
+            (cd "$root" && cargo build --all-targets && cargo test)
         fi
     done
-    rm -rf "$staged"
+    # Removed on the success path too, so a full gate run does not carry two
+    # target directories to the end; clearing the name leaves the trap nothing to
+    # do here.
+    rm -rf "$staged_dir"
+    staged_dir=''
 }
 
 gate_typos() {
@@ -322,8 +336,14 @@ fi
 # `==` headers, or running the whole thing again to prove it. The trap names the
 # failure; the last line names the success.
 gate_in_flight=''
+# A gate that stages files outside the checkout registers its directory here, so
+# this one trap removes it whether the gate passed, failed or aborted.
+staged_dir=''
 on_exit() {
     status=$?
+    if [ -n "$staged_dir" ]; then
+        rm -rf "$staged_dir"
+    fi
     if [ "$status" -ne 0 ] && [ -n "$gate_in_flight" ]; then
         printf 'gate failed: %s\n' "$gate_in_flight" >&2
     fi

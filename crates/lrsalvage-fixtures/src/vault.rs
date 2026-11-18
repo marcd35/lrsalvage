@@ -95,6 +95,10 @@ const STORE_VERSION: &str = "13.0";
 /// The extension every synthetic original is named with.
 const EXTENSION: &str = "CR2";
 
+/// The `ImageCacheEntry.imageId` a [`Vault::cache_entry_without_image`] row
+/// carries: no archetype's image uses it, so the row is one nothing explains.
+const STALE_IMAGE_ID: i64 = 999;
+
 // ---------------------------------------------------------------------------
 // Small value types
 // ---------------------------------------------------------------------------
@@ -198,6 +202,7 @@ pub struct ImageRow {
     xmp: Option<String>,
     original_on_disk: bool,
     has_file_row: bool,
+    path_from_root: String,
     cache: Option<(String, String)>,
 }
 
@@ -213,8 +218,19 @@ impl ImageRow {
             xmp: None,
             original_on_disk: false,
             has_file_row: true,
+            path_from_root: String::new(),
             cache: None,
         }
+    }
+
+    /// The image's `AgLibraryFolder.pathFromRoot`, and therefore the folder tree
+    /// its output path mirrors. Kept as the catalog stores it — separators and
+    /// `..` included — so a hostile path stays hostile and the sanitiser is what
+    /// a test asserts on.
+    #[must_use]
+    pub fn path_from_root(mut self, path: &str) -> Self {
+        self.path_from_root = path.to_string();
+        self
     }
 
     /// Share another image's `AgLibraryFile` row — two images over one file,
@@ -449,6 +465,9 @@ pub struct Vault {
     level_rows: Vec<Level>,
     payloads: Vec<Payload>,
     tombstones: Vec<(String, String, f64)>,
+    /// `ImageCacheEntry` rows whose `imageId` names no `Adobe_images` row: what
+    /// a deleted image leaves in the index.
+    stale_entries: Vec<(String, String)>,
     /// Files written verbatim at a container's address — the deliberately
     /// unreadable `.lrprev` `superseded` leaves behind.
     verbatim: Vec<(String, String, Vec<u8>)>,
@@ -523,6 +542,7 @@ impl Vault {
             level_rows: Vec::new(),
             payloads: Vec::new(),
             tombstones: Vec::new(),
+            stale_entries: Vec::new(),
             verbatim: Vec::new(),
             unrecognised: Vec::new(),
             preoccupied: Vec::new(),
@@ -613,6 +633,15 @@ impl Vault {
         self.level_file(level)
     }
 
+    /// An `ImageCacheEntry` row no catalog image explains: the dead row a
+    /// deleted image leaves behind, whose payload is therefore an orphan. Its
+    /// `imageId` is `STALE_IMAGE_ID` (999), which no archetype's image uses.
+    #[must_use]
+    pub fn cache_entry_without_image(mut self, uuid: &str) -> Self {
+        self.stale_entries.push((uuid.to_string(), digest_of(uuid)));
+        self
+    }
+
     /// A `PyramidLevel` row whose file is absent — a pruned level.
     #[must_use]
     pub fn row_without_file(mut self, level: Level) -> Self {
@@ -665,9 +694,9 @@ impl Vault {
 
     /// A file already sitting at `relative` inside the output tree.
     #[must_use]
-    pub fn preoccupied_destination(mut self, relative: &str, bytes: &[u8]) -> Self {
+    pub fn preoccupied_destination(mut self, relative: impl AsRef<Path>, bytes: &[u8]) -> Self {
         self.preoccupied
-            .push((PathBuf::from(relative), bytes.to_vec()));
+            .push((relative.as_ref().to_path_buf(), bytes.to_vec()));
         self
     }
 
@@ -805,11 +834,22 @@ impl Vault {
             [self.root_folder_value()],
         )
         .expect("root folder");
-        conn.execute(
-            "INSERT INTO AgLibraryFolder (id_local, pathFromRoot, rootFolder) VALUES (10, '', 1)",
-            [],
-        )
-        .expect("folder");
+
+        // One folder row per distinct `pathFromRoot`, so an image's own folder
+        // tree reaches the catalog the way Lightroom stored it.
+        let mut folders: BTreeMap<&str, i64> = BTreeMap::new();
+        for image in self.images.iter().filter(|image| image.has_file_row) {
+            let next = 10 + folders.len() as i64;
+            folders.entry(image.path_from_root.as_str()).or_insert(next);
+        }
+        for (path_from_root, id) in &folders {
+            conn.execute(
+                "INSERT INTO AgLibraryFolder (id_local, pathFromRoot, rootFolder) \
+                 VALUES (?1, ?2, 1)",
+                params![id, path_from_root],
+            )
+            .expect("folder");
+        }
 
         // One file row per distinct file id, first writer wins.
         let mut files: BTreeMap<i64, &ImageRow> = BTreeMap::new();
@@ -817,10 +857,13 @@ impl Vault {
             files.entry(image.file_id()).or_insert(image);
         }
         for (id, image) in &files {
+            let folder = folders
+                .get(image.path_from_root.as_str())
+                .expect("a folder row for every file's pathFromRoot");
             conn.execute(
                 "INSERT INTO AgLibraryFile (id_local, folder, baseName, extension) \
-                 VALUES (?1, 10, ?2, ?3)",
-                params![id, image.base_name, EXTENSION],
+                 VALUES (?1, ?2, ?3, ?4)",
+                params![id, folder, image.base_name, EXTENSION],
             )
             .expect("file row");
         }
@@ -954,6 +997,17 @@ impl Vault {
             .expect("cache entry");
         }
 
+        // A row no image explains: `orientation` is NULL because nothing reads
+        // it and the claim is the dead `imageId`, not a value.
+        for (uuid, digest) in &self.stale_entries {
+            conn.execute(
+                "INSERT INTO ImageCacheEntry (imageId, uuid, digest, orientation) \
+                 VALUES (?1, ?2, ?3, NULL)",
+                params![STALE_IMAGE_ID, uuid, digest],
+            )
+            .expect("stale cache entry");
+        }
+
         for (uuid, digest, timestamp) in &self.tombstones {
             conn.execute(
                 "INSERT INTO DeletedPyramid (uuid, digest, deletedTimeStamp) \
@@ -1071,14 +1125,18 @@ impl Vault {
         }
     }
 
-    /// `<root><pathFromRoot><baseName>.CR2`, joined component-wise like
-    /// `catalog::original_path` so both separators are honoured.
+    /// `<root><pathFromRoot><baseName>.CR2`, joined component-wise so both
+    /// separators are honoured.
+    ///
+    /// `catalog::original_path` keeps `.` and `..` verbatim — it says where the
+    /// *user's* file would be — while [`path_parts`] drops them, because a
+    /// fixture only ever writes inside its own temp tree. A row therefore never
+    /// asserts an original at a path the output sanitiser would discard.
     fn original_path(&self, image: &ImageRow) -> PathBuf {
         let mut path = PathBuf::from(self.root_folder_value().trim_end_matches(['/', '\\']));
-        for part in image.base_name.split(['/', '\\']) {
-            if !part.is_empty() {
-                path.push(part);
-            }
+        let parts = path_parts(&image.path_from_root).chain(path_parts(&image.base_name));
+        for part in parts {
+            path.push(part);
         }
         path.set_extension(EXTENSION);
         path
@@ -1103,6 +1161,17 @@ impl Vault {
         let (first, first_four) = bytes::leaf_dir(uuid);
         PathBuf::from(first).join(first_four)
     }
+}
+
+/// The components of a stored path, for the fixture's own writes.
+///
+/// Both separators split, and `.` and `..` are dropped: the catalog stores them
+/// and `catalog::original_path` honours them, but a fixture writes only inside
+/// its vault, so a hostile path places no file outside it.
+fn path_parts(value: &str) -> impl Iterator<Item = &str> {
+    value
+        .split(['/', '\\'])
+        .filter(|part| !part.is_empty() && *part != "." && *part != "..")
 }
 
 /// A 32-character lower-case hex digest derived from the uuid.

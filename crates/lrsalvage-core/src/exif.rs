@@ -1991,22 +1991,7 @@ mod tests {
     }
 
     #[test]
-    fn a_payloads_own_orientation_is_read_back() {
-        // The fixture builder writes the other byte order, so this also proves
-        // the reader handles a TIFF block this module did not write.
-        let bytes = jpeg_with_prefix(&[lrsalvage_fixtures::bytes::exif_app1(6)]);
-        let segments = certified(&bytes);
-        assert_eq!(
-            orientation(&bytes, &segments.segments),
-            Some(Orientation::Rotate90)
-        );
-
-        // A mirrored value is not one this writer can restate, so it declares
-        // nothing usable and the catalog's orientation applies.
-        let mirrored = jpeg_with_prefix(&[lrsalvage_fixtures::bytes::exif_app1(2)]);
-        let segments = certified(&mirrored);
-        assert_eq!(orientation(&mirrored, &segments.segments), None);
-
+    fn a_payload_with_no_exif_declares_no_orientation() {
         let bare = tiny_jpeg();
         let segments = certified(&bare);
         assert_eq!(orientation(&bare, &segments.segments), None);
@@ -2031,15 +2016,6 @@ mod tests {
             exif_app1_segments(&out).len(),
             1,
             "the marker rides in our one EXIF segment"
-        );
-
-        // The fixture builder writes the other byte order, and a resume reads
-        // whatever a destination happens to be.
-        let big_endian = lrsalvage_fixtures::bytes::our_output(4, 4, "0.1.0");
-        let segments = certified(&big_endian);
-        assert_eq!(
-            software(&big_endian, &segments.segments).as_deref(),
-            Some("lrsalvage 0.1.0")
         );
 
         let bare = tiny_jpeg();
