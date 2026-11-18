@@ -7,6 +7,7 @@ parent: architecture
 references:
   - adr-0010-what-0-2-promises
   - adr-0011-0-3-is-the-trust-minor
+  - app-distribution
   - glossary
 ---
 
@@ -192,6 +193,10 @@ users; paying before SignPath has been asked; a background updater in v1, which
 needs a signed manifest and a hosting decision nobody has made; and — if D10 lands
 on a browser — this whole decision, which becomes moot rather than negotiable.
 
+The costs and conditions of each route, with a source and a date on every row,
+are in `app-distribution` §1–§3. This record states the decision and does not
+restate a price.
+
 ### D10 — The browser-or-desktop question is decided by a rubric, not by the spike
 
 A spike answers *feasible*; it never answers *better*, and a green spike pulls
@@ -228,6 +233,11 @@ repository's existing matrix: `release.yml` still builds three archives for the
 CLI whoever ships the app. And it does not remove work, it moves it — `wasm32`
 becomes a fourth target `scripts/check.sh` must eventually keep green, with its own
 SQLite build.
+
+Every figure behind that ledger is in `app-distribution`, with the source and the
+date it was read: §4 for the browser's constraints, §5 for which toolkits can keep
+D11's accessibility promise at all. A row there that has gone stale is amended by
+re-reading its source, never by editing the decision it fed.
 
 Rules out: choosing on the ledger without a spike (the mechanisms are unverified
 here); letting the spike choose; treating "deferred" as "decided against"; and
