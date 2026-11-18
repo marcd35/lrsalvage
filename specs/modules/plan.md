@@ -19,6 +19,7 @@ references:
   - adr-0007-publish-a-verification-report
   - adr-0008-a-render-companion-is-not-an-orphan
   - adr-0009-rescue-an-image-from-its-companion
+  - adr-0013-a-cap-demotes-the-level
   - glossary
 ---
 
@@ -26,7 +27,7 @@ references:
 
 ## Responsibility
 
-Turn a catalog, a preview index, the cache root and three options into an explicit
+Turn a catalog, a preview index, the cache root and four options into an explicit
 list of decisions: one status for every catalog image, the items `extract` would
 write, tier classes, totals, the payloads no live image claims, and one block of
 cache-level facts — the layout, the catalog's two version strings and the shape
@@ -103,9 +104,15 @@ from the run rather than from the plan.
   payload came from. A rescued 320 px level is `recovered`, `below_floor` and
   unselected, exactly like a claimed level of that size (M12), and
   `--min-long-edge 0` writes it under the image's own name
-  (`adr-0009-rescue-an-image-from-its-companion`). The cache count is unchanged:
-  `thumbnail_pyramids` describes the cache, not what the plan did with one
-  pyramid.
+  (`adr-0009-rescue-an-image-from-its-companion`). The cap reaches this path too,
+  because a companion's levels are ranked by the same level-file rule: one rule
+  for a level, whichever pyramid held it. It binds there only under a floor
+  lowered below the thumbnail tier, because a classified companion's every level
+  measures under 640 px — so with the default floor no cap reaches one, and with
+  `--min-long-edge 0 --max-long-edge 200` a 320 px companion level is `above_cap`
+  and unselected, exactly as a claimed level of that size would be. The cache
+  count is unchanged: `thumbnail_pyramids` describes the cache, not what the plan
+  did with one pyramid.
 - **`superseded` is a cache stat, not a status, and it cannot move the exit code.**
   It counts claimed pyramids with **both** representations — at least one level
   file and at least one legacy `.lrprev` — whose level files are the pyramid and
@@ -162,21 +169,32 @@ from the run rather than from the plan.
   level is compared against *its* row, not the pyramid's largest
   (`adr-0005-discover-payloads-by-index`). A container keeps its existing rule:
   its whole level set is in the file or the file is truncated, so only the level
-  it writes is compared.
-- **The chosen level is the largest one present, ranked by the claim before the
-  bytes.** A container is measured level by level and sorted by decoded area: a
-  small file with a large header is still a small image, and a tie keeps the
-  higher level. A pyramid of level files is ranked by each candidate's own row
-  area, and by `_<n>` only where a file has no row, then the winner alone is
-  certified (`adr-0005-discover-payloads-by-index` ¶5). Either way the dimensions
-  the item reports are measured from the winner's own `SOF`, never from the
-  name.
-- **The floor excludes, it does not fail, and nothing else excludes.** Items below
-  `--min-long-edge` (640 by default, `0` disables) are counted as `below_floor`
-  and left unselected. A level judged `failed` is still an item the run
-  evaluates: it is reported with its reason and writes nothing, so a cache with a
-  broken payload exits partial instead of claiming a clean success
-  (`goal-and-requirements` ¶5).
+  it writes is compared — against the pyramid's best row while that level is the
+  container's largest, and otherwise against the row that declares its own size,
+  which is what a cap can select (`adr-0013-a-cap-demotes-the-level`).
+- **The chosen level is the largest one present that clears the cap, ranked by
+  the claim before the bytes.** A container is measured level by level and
+  sorted by decoded area: a small file with a large header is still a small
+  image, and a tie keeps the higher level. A pyramid of level files is ranked by
+  each candidate's own row area, and by `_<n>` only where a file has no row, then
+  the winner alone is certified (`adr-0005-discover-payloads-by-index` ¶5).
+  Either way the dimensions the item reports are measured from the winner's own
+  `SOF`, never from the name.
+- **The floor and the cap bound which level is written; neither fails an image.**
+  Items below `--min-long-edge` (640 by default, `0` disables) are counted as
+  `below_floor`, items above `--max-long-edge` (default `0`, which disables it)
+  are counted as `above_cap`, and both are left unselected. A level judged `failed`
+  is still an item the run evaluates: it is reported with its reason and writes
+  nothing, so a cache with a broken payload exits partial instead of claiming a
+  clean success (`goal-and-requirements` ¶5). A cap is a winner rule rather than
+  a filter after one: the largest level at or below it owns the image's plain
+  name, so a 1:1 cache writes its 1920 level instead of writing nothing. An image
+  whose every level is above the cap keeps its largest level as an item —
+  `recovered`, unselected, counted — exactly as an image below the floor does,
+  and never becomes `failed` (`adr-0013-a-cap-demotes-the-level`).
+  `--all-levels` makes every level above the cap an item too; without it the cap
+  is invisible unless it binds, which is the floor's behaviour as well. Neither
+  bound reaches `superseded`: that counts pyramids held twice, not levels.
 - **`original-present` short-circuits everything else**, and the `stat` behind it
   is skipped when `--include-present` is set, so the opt-in run costs nothing per
   image.

@@ -16,6 +16,7 @@ references:
   - adr-0006-degrade-without-guessing
   - adr-0007-publish-a-verification-report
   - adr-0008-a-render-companion-is-not-an-orphan
+  - adr-0013-a-cap-demotes-the-level
 ---
 
 # report
@@ -103,10 +104,12 @@ struct a path.
   machine surface. The nested-per-class form with a grammar template in it is the
   verification report's and belongs there alone. An absent version string is
   `null`, never `""` and never a stand-in.
-- **The summary counts images and names the floor actually applied.** The default
-  summary assumes 640, so a caller that changed the floor calls
-  `summary_with_floor`; a summary that reports a `below_floor` count for a floor
-  nobody applied would be a lie about the run.
+- **The summary counts images and names the bounds actually applied.** The caller
+  hands the run's options to the summary, so one function prints the floor and the
+  cap the run really used; a summary that reported a `below_floor` or `above_cap`
+  count for a bound nobody applied would be a lie about the run, and a default
+  wrapper around a hard-coded 640 is exactly that lie
+  (`adr-0013-a-cap-demotes-the-level`).
 - **Machine output keeps a fixed shape.** Fields are separated by two spaces and
   an unknown fact prints as `-`, so the five columns stay put for a script;
   `--json` replaces the table with one object rather than mixing the two.
@@ -130,12 +133,12 @@ struct a path.
   then `layout`, `db_version` and `crs_version` (ADR 0004's five words and two
   verbatim strings), `source_sha256` and `snapshot_sha256` (the digest pair a
   `--verify-source` run proved, `null` for both when it did not), `options`
-  (`min_long_edge`, `all_levels`, `include_present`, `verify_source`), `stats`,
-  and `shapes`. `options` echoes the knobs the run applied, which the caller
-  hands over with the plan: a plan records what the run decided, not the options
-  that shaped it. `stats` carries exactly `images`,
+  (`min_long_edge`, `max_long_edge`, `all_levels`, `include_present`,
+  `verify_source`), `stats`, and `shapes`. `options` echoes the knobs the run
+  applied, which the caller hands over with the plan: a plan records what the run
+  decided, not the options that shaped it. `stats` carries exactly `images`,
   `recovered`, `suspect`, `missing_payload`, `no_cache_entry`, `unmapped`,
-  `failed`, `original_present`, `below_floor`, `bytes`, `levels`,
+  `failed`, `original_present`, `below_floor`, `above_cap`, `bytes`, `levels`,
   `selected_items`, `selected_images`, `tiers`, `superseded`, `deleted` and
   `unrecognised`. It is not `--json` with fields removed: there is no `catalog`,
   no `previews`, no `items` and no note, so a reader cannot mistake it for a

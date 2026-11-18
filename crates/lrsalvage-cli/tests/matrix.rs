@@ -663,6 +663,120 @@ fn extract_all_levels_on_a_damaged_cache_writes_the_good_level_under_its_size() 
     );
 }
 
+/// A pyramid whose levels are the doubling ladder §5.7 measured a 1:1 build
+/// writing: 320, 960, 1920, 3840.
+fn capped() -> Vault {
+    let pyramid = uuid(31);
+    let mut vault = Vault::modern()
+        .image(ImageRow::new(31, "IMG_0031").cache(&pyramid))
+        .pyramid(
+            PyramidRow::new(&pyramid)
+                .profile("sRGB")
+                .level(320, 213)
+                .level(960, 640)
+                .level(1920, 1280)
+                .level(3840, 2560),
+        );
+    for (width, height) in [(320, 213), (960, 640), (1920, 1280), (3840, 2560)] {
+        vault = vault.level_file(Level::sized(&pyramid, width, height));
+    }
+    vault.write()
+}
+
+#[test]
+fn m16_a_cap_writes_the_largest_level_under_it() {
+    let vault = capped();
+
+    extract(&vault)
+        .arg("--max-long-edge")
+        .arg("1920")
+        .assert()
+        .code(0);
+
+    assert_eq!(
+        jpeg_names(vault.out()),
+        vec!["IMG_0031.jpg"],
+        "one file, under the image's plain name"
+    );
+    let bytes = fs::read(vault.out().join("originals").join("IMG_0031.jpg")).expect("the output");
+    assert_eq!(
+        jpeg::dimensions(&bytes).expect("a readable frame"),
+        (1920, 1280),
+        "the cap chooses the level, it does not merely hide the bigger one"
+    );
+}
+
+#[test]
+fn m17_a_cap_no_level_clears_exits_three_and_writes_nothing() {
+    let pyramid = uuid(32);
+    let vault = Vault::modern()
+        .image(ImageRow::new(32, "IMG_0032").cache(&pyramid))
+        .pyramid(PyramidRow::new(&pyramid).level(3840, 2560))
+        .level_file(Level::sized(&pyramid, 3840, 2560))
+        .write();
+
+    extract(&vault)
+        .arg("--max-long-edge")
+        .arg("1920")
+        .assert()
+        .code(3)
+        .stderr(predicate::str::contains("nothing to extract"));
+
+    assert!(
+        jpeg_names(vault.out()).is_empty(),
+        "nothing was selected, so nothing may be written: {:?}",
+        jpeg_names(vault.out())
+    );
+
+    // The scan says what the cap did, rather than reading as an empty cache.
+    let output = scan(&vault)
+        .args(["--json", "--max-long-edge", "1920"])
+        .output()
+        .expect("run scan --json");
+    let object: Value = serde_json::from_slice(&output.stdout).expect("one JSON object");
+    assert_eq!(object["above_cap"], 1, "{object}");
+    assert_eq!(object["below_floor"], 0, "{object}");
+    assert_eq!(object["failed"], 0, "a cap never fails an image: {object}");
+}
+
+#[test]
+fn m18_all_levels_reports_the_levels_the_cap_left_behind() {
+    let vault = capped();
+
+    extract(&vault)
+        .args(["--all-levels", "--max-long-edge", "1920"])
+        .assert()
+        .code(0)
+        .stdout(predicate::str::contains("above cap (1920px)"));
+
+    let mut written = jpeg_names(vault.out());
+    written.sort();
+    assert_eq!(
+        written,
+        vec!["IMG_0031 - 960x640.jpg", "IMG_0031.jpg"],
+        "the cap's choice keeps the plain name; the smaller survivor is suffixed"
+    );
+}
+
+#[test]
+fn a_cap_below_the_floor_is_an_empty_window_not_a_usage_error() {
+    let pyramid = uuid(33);
+    let vault = Vault::modern()
+        .image(ImageRow::new(33, "IMG_0033").cache(&pyramid))
+        .pyramid(PyramidRow::new(&pyramid).level(960, 640))
+        .level_file(Level::sized(&pyramid, 960, 640))
+        .write();
+
+    // The level clears the floor and not the cap, so the window holds nothing —
+    // the same answer `--min-long-edge 99999` gets, and never exit 1.
+    extract(&vault)
+        .args(["--min-long-edge", "640", "--max-long-edge", "500"])
+        .assert()
+        .code(3)
+        .stderr(predicate::str::contains("nothing to extract"));
+    assert!(jpeg_names(vault.out()).is_empty());
+}
+
 #[test]
 fn a_floor_above_every_level_exits_three_and_writes_nothing() {
     let vault = damaged();
@@ -1100,8 +1214,9 @@ fn r1_the_verification_report_is_the_frozen_field_set() {
     assert_eq!(report["db_version"], "1504001");
     assert_eq!(report["crs_version"], "18.0.0");
 
-    // The options the run applied, echoed: the floor and all three switches.
+    // The options the run applied, echoed: both bounds and all three switches.
     assert_eq!(report["options"]["min_long_edge"], 640);
+    assert_eq!(report["options"]["max_long_edge"], 0);
     assert_eq!(report["options"]["all_levels"], false);
     assert_eq!(report["options"]["include_present"], false);
 
@@ -1124,6 +1239,7 @@ fn r1_the_verification_report_is_the_frozen_field_set() {
         ("failed", plan.stats.failed),
         ("original_present", plan.stats.original_present),
         ("below_floor", plan.stats.below_floor),
+        ("above_cap", plan.stats.above_cap),
         ("bytes", plan.stats.bytes),
         ("levels", plan.stats.levels),
         ("selected_items", plan.stats.selected_items),
@@ -1142,7 +1258,7 @@ fn r1_the_verification_report_is_the_frozen_field_set() {
     );
     let mut named: Vec<&String> = stats.as_object().expect("an object").keys().collect();
     named.sort();
-    assert_eq!(named.len(), 17, "the `stats` list is frozen: {named:?}");
+    assert_eq!(named.len(), 18, "the `stats` list is frozen: {named:?}");
 
     // One object per class: the level files the builder wrote, one of which
     // names a long edge its own frame disagrees with, and no container at all.

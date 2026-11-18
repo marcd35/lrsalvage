@@ -343,6 +343,18 @@ impl PreviewIndex {
             )
         })
     }
+    /// The `PyramidLevel` row that declares exactly this size, in either
+    /// orientation. `None` when the index records no row for it.
+    ///
+    /// A level a container writes is judged against the row that claims it
+    /// (`adr-0005-discover-payloads-by-index` ¶5); a size no row declares has
+    /// nothing to disagree with, exactly like a level file only the glob found.
+    pub fn row_for_size(&self, key: &PyramidKey, width: u32, height: u32) -> Option<&PyramidLevel> {
+        self.levels.get(key)?.iter().find(|level| {
+            (level.width == width && level.height == height)
+                || (level.width == height && level.height == width)
+        })
+    }
 }
 
 /// One pyramid the cache tree holds, identified by the `(uuid, digest)` its own

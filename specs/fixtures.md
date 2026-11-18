@@ -161,15 +161,17 @@ run: it exits 3 for "nothing recognised", never 1.
 
 ## Rows
 
-Rows are per-image variations inside one vault — M15 is the one row whose state
-needs two, and it says so. `Assertion` is `count` (a plan or
-report field: status, stats, `declared`, `payload_metadata`, CSV column, manifest
-member), `bytes` (the bytes of a written file), or `both` (the item's fields and
-the file it produced). `Evidence` uses `format-notes`' labels plus `synthetic` for
-a state this process has never observed. A row that composes a state a run *did*
-observe carries both, as `verified §5.11 (state); synthetic (bytes)`: the label on
-the left is what the measurement holds, the one on the right is what the vault
-builds.
+Rows are per-image variations inside one vault, unless the row composes a state
+that vault cannot hold — a row that builds its own vault says so in its prose, and
+the section's pinned totals then describe the base vault rather than it. M15 is
+the one row whose state needs two catalogs, and it says so. `Assertion` is `count`
+(a plan or report field: status, stats, `declared`, `payload_metadata`, CSV
+column, manifest member), `bytes` (the bytes of a written file), or `both` (the
+item's fields and the file it produced). `Evidence` uses `format-notes`' labels
+plus `synthetic` for a state this process has never observed. A row that composes
+a state a run *did* observe carries both, as `verified §5.11 (state); synthetic
+(bytes)`: the label on the left is what the measurement holds, the one on the
+right is what the vault builds.
 
 ### `modern` — 14 images, 2 unclaimed pyramids
 
@@ -205,6 +207,19 @@ is a row of its own if anyone wants it |
 | M12 | `longDimension` stored REAL | row `longDimension 101.0`, file `_101` at 101×68 | `recovered` | `below_floor +1`, tier `thumbnail`, unselected | `scan` | 0 | count | verified §5.7 | the suffix is the rounded integer, and the floor excludes without failing |
 | M13 | payload carrying its own EXIF, XMP and ICC | `jpeg_with(1616×1077, [exif_app1(6), xmp_app1(x), icc_app2(p)])`; catalog orientation `AB`, catalog XMP | `recovered` | `payload_metadata = exif,xmp,icc`, `effective_orientation = 6` | `extract` | 0 | both | verified §5.10 for the segments; synthetic for the payload's own orientation | ADR 0003's precedence: the payload's orientation and ICC win, our EXIF replaces its EXIF, its XMP packet is untouched. A render does write all three segments (§5.8), but its `Exif` carries no orientation tag, so the precedence's orientation arm is still exercised only here |
 | M14 | bare payload, catalog claims orientation and profile | bare `jpeg(1616×1077)`; catalog `BC`, `Pyramid.colorProfile = 'AdobeRGB'` | `recovered` | `payload_metadata` empty | `extract` | 0 | bytes | verified §6.4 | `0x0112 = 6` is written from the catalog, our `AdobeRGB` profile is embedded, and `payload_metadata` stays empty: ours is not the payload's |
+| M16 | a cap that demotes | level files for `320, 960, 1920, 3840`, one row each; `--max-long-edge 1920` | `recovered` at 1920×1280 | `above_cap 0` without `--all-levels`, `levels 1`, selected | `extract` | 0 | bytes | synthetic; ADR 0013 | the cap is a winner rule, not a filter after one: the 1920 level keeps the image's plain name and is what gets written |
+| M17 | a cap no level clears | one `3840` level file; `--max-long-edge 1920` | `recovered` at 3840×2560, unselected | `above_cap 1`, `failed 0`, `selected_images 0` | `extract` | 3 | count | synthetic; ADR 0013 | the image is not `failed` and gets no new status: a cap bounds what is written, never what a payload is |
+| M18 | `--all-levels` under both bounds | M16's ladder, `--min-long-edge 640 --max-long-edge 1920` | `recovered` at 1920×1280 | `levels 4`, `below_floor 1`, `above_cap 1`, `selected_items 2` | `extract` | 0 | count+bytes | synthetic; ADR 0013 | levels above the cap stay items and lose the write, exactly as levels below the floor do; the cap's choice keeps the plain name and the smaller survivor takes the ` - WxH` suffix |
+
+**No cap row appears in the run table below, and that is a decision.** Every run
+there is uncapped, so none of its numbers moved; the cap's claim is what lands on
+disk, and M16–M18 pin it with their own vaults. The cap also reaches the
+companion rescue (M10f): one rule for a level, whichever pyramid held it. With
+the default floor it cannot bind on a companion, because a classified companion's
+every level measures under 640 px (ADR 0008, third clause) — but a floor lowered
+with `--min-long-edge 0` leaves a cap that does, so a 320 px companion level under
+`--max-long-edge 200` is `above_cap` and unselected, exactly as a claimed level of
+that size would be.
 
 **Runs on `modern`.**
 
@@ -248,6 +263,7 @@ Totals: `images 5`, `recovered 2`, `suspect 1`, `missing_payload 1`,
 | L4 | `missing-payload` | row, no `.lrprev` on disk | `missing-payload` | `missing_payload +1` | `scan` | 0 | count | ADR 0006 ¶5 | |
 | L5 | no index row | image, no row | `no-cache-entry` | `no_cache_entry +1` | `scan` | 0 | count | — | |
 | L6 | unclaimed container | `.lrprev` no image claims | `unmapped` | `unmapped +1` | `scan` | 0 | count | ADR 0005 ¶8 | an unclaimed container is one orphan pyramid |
+| L7 | a cap over a container | `container([101, 808, 1616])`, a row for each; `--max-long-edge 1000` | `recovered` at 808×539 | `above_cap 0`, `suspect 0` | `extract` | 0 | bytes | synthetic; ADR 0013 | the container is ranked by decoded area, and the chunk a cap chooses is judged against the row that declares its size — not the pyramid's best row, which would flag an ordinary level `suspect`. The row builds its own vault, so the totals above describe the base one |
 
 Container framing failures (a chunk length running past EOF) are **not** a row:
 `failed` is already pinned three ways in `damaged`, and the byte walk is

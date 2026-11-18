@@ -8,7 +8,7 @@ use std::path::{Component, Path, PathBuf};
 
 use crate::catalog::Catalog;
 use crate::error::Result;
-use crate::model::{CatalogImage, Orientation, Pyramid, PyramidLevel};
+use crate::model::{CatalogImage, Orientation, Pyramid};
 use crate::previews_db::{
     CacheSweep, Candidate, Layout, LevelOnDisk, PreviewIndex, PyramidKey, PyramidOnDisk,
 };
@@ -154,6 +154,10 @@ impl PlanItem {
 pub struct Options {
     /// Ignore levels whose long edge is below this. `0` disables the floor.
     pub min_long_edge: u32,
+    /// Write the largest level at or below this long edge, instead of the
+    /// largest present. `0` disables the cap. A cap below the floor is a legal
+    /// window with nothing in it, not an error (`adr-0013-a-cap-demotes-the-level`).
+    pub max_long_edge: u32,
     /// Emit every level instead of only the best one.
     pub all_levels: bool,
     /// Also consider images whose original is still on disk. Off by default:
@@ -165,6 +169,7 @@ impl Default for Options {
     fn default() -> Self {
         Options {
             min_long_edge: 640,
+            max_long_edge: 0,
             all_levels: false,
             include_present: false,
         }
@@ -189,11 +194,15 @@ pub struct Stats {
     pub original_present: u64,
     /// Level items below the configured floor.
     pub below_floor: u64,
+    /// Level items above the configured cap: counted, reported and never
+    /// written, because a cap chooses the level rather than emptying the image
+    /// (`adr-0013-a-cap-demotes-the-level`).
+    pub above_cap: u64,
     pub bytes: u64,
     /// Every level item in the plan, including the extra ones `--all_levels`
     /// emits for one image.
     pub levels: u64,
-    /// Plan items the extractor evaluates: everything the floor did not exclude.
+    /// Plan items the extractor evaluates: everything neither bound excluded.
     pub selected_items: u64,
     /// Distinct images among those items.
     pub selected_images: u64,
@@ -385,11 +394,11 @@ impl Plan {
                 .collect();
 
             let read = if !present.is_empty() {
-                let (levels, smallest_level) = level_file_levels(present, options);
+                let (levels, smallest_level) = level_file_levels(present, &measured, options);
                 Some((levels, smallest_level, pyramid, None))
             } else if container.is_file() {
                 Some((
-                    container_levels(&container, pyramid, index.best_level(&key), options),
+                    container_levels(index, &key, &container, options),
                     None,
                     pyramid,
                     None,
@@ -405,7 +414,8 @@ impl Plan {
                     // construction; the guard keeps "no file, no rescue" true
                     // even if that ever changes.
                     (!available.is_empty()).then(|| {
-                        let (levels, smallest_level) = level_file_levels(available, options);
+                        let (levels, smallest_level) =
+                            level_file_levels(available, &measured, options);
                         (
                             levels,
                             smallest_level,
@@ -550,7 +560,7 @@ impl Plan {
         })
     }
 
-    /// Every item the extractor evaluates: an item the floor did not exclude,
+    /// Every item the extractor evaluates: an item neither bound excluded,
     /// whatever its status. A `failed` one is reported and writes nothing.
     pub fn selected(&self) -> impl Iterator<Item = &PlanItem> {
         self.items.iter().filter(|i| i.selected)
@@ -807,6 +817,43 @@ struct Tally<'a> {
     stats: &'a mut Stats,
 }
 
+/// The long edge a candidate claims, in the order the plan trusts it: the frame
+/// the file's own bytes declared, then the row that named it, then the `_<n>` in
+/// its name.
+///
+/// The cap judges a level by its bytes the way the floor already does, so a row
+/// that lies about a size cannot smuggle a payload past it. The row and the name
+/// are only for a file the cache sweep found no readable frame for — the same
+/// "unknown" answer the floor gives such a level
+/// (`adr-0013-a-cap-demotes-the-level`).
+fn candidate_long_edge(candidate: &Candidate<'_>, measured: &Measurements) -> u32 {
+    measured
+        .frames
+        .get(&candidate.path)
+        .map(|(width, height)| (*width).max(*height))
+        .or_else(|| candidate.row.map(|row| row.width.max(row.height)))
+        .unwrap_or(candidate.long_edge)
+}
+
+/// The index of the level a run writes: the last one that clears the cap, or the
+/// last present when the cap is `0` or nothing clears it.
+///
+/// The cap chooses the winner rather than filtering after the ranking, so a bound
+/// nothing clears still leaves the largest level as the item that carries the
+/// image's status — the shape an image below the floor already has — and a bound
+/// that binds leaves the demoted level as an item too, `selected: false`
+/// (`adr-0013-a-cap-demotes-the-level`). Both ranks that write a level call this,
+/// so the two cannot drift apart.
+fn capped_winner(len: usize, cap: u32, long_edge_at: impl Fn(usize) -> u32) -> usize {
+    let last = len - 1;
+    match cap {
+        0 => last,
+        cap => (0..len)
+            .rposition(|index| long_edge_at(index) <= cap)
+            .unwrap_or(last),
+    }
+}
+
 /// A pyramid's level files, ranked by the claim and then certified.
 ///
 /// Only the winner is read unless `--all-levels` asked for every one: the rank
@@ -815,6 +862,7 @@ struct Tally<'a> {
 /// which the contact sheet inlines.
 fn level_file_levels(
     candidates: Vec<Candidate<'_>>,
+    measured: &Measurements,
     options: &Options,
 ) -> (Vec<FoundLevel>, Option<PathBuf>) {
     let mut ranked = candidates;
@@ -829,7 +877,9 @@ fn level_file_levels(
     });
 
     let smallest_level = ranked.first().map(|candidate| candidate.path.clone());
-    let winner = ranked.len() - 1;
+    let winner = capped_winner(ranked.len(), options.max_long_edge, |index| {
+        candidate_long_edge(&ranked[index], measured)
+    });
     let chosen: Vec<usize> = if options.all_levels {
         (0..ranked.len()).collect()
     } else {
@@ -896,11 +946,13 @@ fn level_file_levels(
 /// level this container writes: its whole level set is in the file, or the file
 /// is truncated.
 fn container_levels(
+    index: &PreviewIndex,
+    key: &PyramidKey,
     container: &Path,
-    pyramid: Option<&Pyramid>,
-    best: Option<&PyramidLevel>,
     options: &Options,
 ) -> Vec<FoundLevel> {
+    let pyramid = index.pyramid(key);
+    let best = index.best_level(key);
     let declared = pyramid.map(|p| (p.cropped_width, p.cropped_height));
     let failed = |note: String| FoundLevel {
         winner: true,
@@ -950,7 +1002,11 @@ fn container_levels(
         return vec![failed(note)];
     }
 
-    let winner = measured.len() - 1;
+    let last = measured.len() - 1;
+    let winner = capped_winner(measured.len(), options.max_long_edge, |index| {
+        let (width, height) = measured[index].1.dimensions;
+        width.max(height)
+    });
     let chosen: Vec<usize> = if options.all_levels {
         (0..measured.len()).collect()
     } else {
@@ -958,9 +1014,26 @@ fn container_levels(
     };
     chosen
         .into_iter()
-        .map(|index| {
-            let (chunk, certified) = &measured[index];
-            let judged = index == winner;
+        .map(|position| {
+            let (chunk, certified) = &measured[position];
+            let judged = position == winner;
+            // The level a container writes is compared against the row that
+            // claims *that* size. The pyramid's own best row is that claim only
+            // when the chunk is the container's largest, which is every
+            // uncapped run; a cap can choose a smaller chunk, and judging it
+            // against the best row would flag an ordinary level `suspect`
+            // (`adr-0005-discover-payloads-by-index` ¶5,
+            // `adr-0013-a-cap-demotes-the-level`).
+            let claim = if !judged {
+                None
+            } else if position == last {
+                best.map(|row| (row.width, row.height))
+            } else {
+                let (width, height) = certified.dimensions;
+                index
+                    .row_for_size(key, width, height)
+                    .map(|row| (row.width, row.height))
+            };
             FoundLevel {
                 winner: judged,
                 payload: Payload::Container {
@@ -971,11 +1044,7 @@ fn container_levels(
                 failure: (!certified.complete)
                     .then(|| "level does not end with an EOI marker".to_string()),
                 declared,
-                claim: if judged {
-                    best.map(|row| (row.width, row.height))
-                } else {
-                    None
-                },
+                claim,
                 metadata: exif::inventory(chunk.data, &certified.segments),
                 declared_orientation: exif::orientation(chunk.data, &certified.segments),
                 bytes: chunk.data.len(),
@@ -998,7 +1067,12 @@ fn decide_levels(
     tally: &mut Tally<'_>,
 ) -> (Vec<PlanItem>, Option<Status>) {
     let mut levels = levels;
-    let winner = levels.len() - 1;
+    // The level that owns the plain output name is marked by the rank, not by its
+    // position: a cap can choose one that is not the last candidate.
+    let winner = levels
+        .iter()
+        .position(|level| level.winner)
+        .unwrap_or(levels.len() - 1);
     let chosen: Vec<FoundLevel> = if tally.options.all_levels {
         levels
     } else {
@@ -1012,13 +1086,18 @@ fn decide_levels(
         let tier = level
             .dimensions
             .map(|(width, height)| Tier::from_long_edge(width.max(height)));
-        // The floor excludes an item; nothing else does. A broken level is still
-        // evaluated, so the run reports it and exits partial instead of claiming
-        // a clean success over a cache it could not read. A level whose size
-        // cannot be measured is not "below" the floor — it is unknown.
+        // The floor and the cap bound which levels are written; neither empties
+        // an image and neither fails one. A broken level is still evaluated, so
+        // the run reports it and exits partial instead of claiming a clean
+        // success over a cache it could not read. A level whose size cannot be
+        // measured is not below the floor and not above the cap — it is unknown.
         let below_floor = level
             .dimensions
             .is_some_and(|(width, height)| width.max(height) < tally.options.min_long_edge);
+        let above_cap = tally.options.max_long_edge != 0
+            && level
+                .dimensions
+                .is_some_and(|(width, height)| width.max(height) > tally.options.max_long_edge);
 
         let mut status = Status::Recoverable;
         let mut note = None;
@@ -1057,6 +1136,9 @@ fn decide_levels(
         let writable = matches!(status, Status::Recoverable | Status::Suspect);
         if writable && below_floor {
             tally.stats.below_floor += 1;
+        }
+        if writable && above_cap {
+            tally.stats.above_cap += 1;
         }
 
         // Only the extra levels `--all-levels` adds carry a size suffix; the
@@ -1109,7 +1191,7 @@ fn decide_levels(
             image_status = Some(status);
         }
         tally.stats.levels += 1;
-        if writable && !below_floor {
+        if writable && !below_floor && !above_cap {
             tally.stats.bytes += level.bytes as u64;
         }
         if let Some(tier) = tier {
@@ -1131,7 +1213,7 @@ fn decide_levels(
             tier,
             declared: level.declared,
             smallest_level: smallest_level.clone(),
-            selected: !below_floor,
+            selected: !below_floor && !above_cap,
             note,
         });
     }
