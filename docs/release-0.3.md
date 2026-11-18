@@ -43,9 +43,13 @@ never touched, the crate page that was blank, the advisory 0.2 shipped ignoring,
 and the resume limitation that shipped as prose. One surface is added
 (`--verify-source`); nothing is taken away.
 
-Until the tag exists the published version is `0.2.0`: this page describes a
-release that has not happened, and every sentence naming a version follows the
-publish rather than leading it.
+**Until the publish lands, the version on `crates.io` is `0.2.0`**, and every
+sentence on this page that names a version follows the publish rather than
+leading it: the number at the tag is the one a reader can download, and a release
+that has been cut is not one a stranger can install from the registry until its
+upload succeeds. *Amended 2026-11-17, after the tag:* the tag and the GitHub
+release have happened and are recorded below; the registry publish has not, and it
+is the one line here that changes when it does.
 
 ## The slices this list executes
 
@@ -178,9 +182,9 @@ landing first fails a test that is telling the truth.
       prevents. It records that the alternatives were weighed — the digest in the
       marker, the `extract.csv` sidecar, asking the cache — and why each was
       refused, rather than only that they were.
-- [x] **8 — publishing.** `.github/workflows/release.yml` gains a publish job with
-      `id-token: write` and no long-lived token, a trusted publisher is configured
-      for each crate on crates.io, the workspace `version` is `0.3.0`, both
+- [ ] **8 — publishing. Re-opened 2026-11-17: the tree's half is proven, the
+      crate-side half is not.** The workflow job is in, with `id-token: write` and
+      no long-lived token; the workspace `version` is `0.3.0`, both
       `lrsalvage-core = { path, version = ... }` pins (the cli's and the fixtures
       crate's, whose requirement must match or the workspace will not resolve) move
       with it, and
@@ -192,18 +196,21 @@ landing first fails a test that is telling the truth.
       or a script sees.
       *Proven 2026-11-17:* the job is in `release.yml` with `id-token: write`, no
       secret is named in it, `gh secret list` is empty, and the workspace, both
-      `lrsalvage-core` pins and `Cargo.lock` all read `0.3.0`. The crate-side half
-      of the box — a trusted publisher configured for each name — is not readable
-      from here: crates.io's trusted-publishing API refuses the token scopes a
-      release needs to read it, so it is proven by the publish itself or not at
-      all, and a failure re-opens this box rather than being routed around.
+      `lrsalvage-core` pins and `Cargo.lock` all read `0.3.0`. **Unproven:** a
+      trusted publisher configured for each name. crates.io refused the job's
+      attempt (`No Trusted Publishing config found`), and its
+      trusted-publishing API refuses the token scopes a release needs to read the
+      configuration, so this box stays open until the configuration exists and the
+      job has been re-run. The human step is named where the publish box stands
+      under **After the tag**.
 
 ### Evidence — what the release may claim
 
-- [ ] All four families are green here, on the commit the tag will land on:
+- [x] All four families are green here, on the commit the tag will land on:
       `sh scripts/check.sh real`, `real-render`, `real-1to1` and `real-discard`.
       Each fails rather than skipping when its own pair is unset, and none is
-      borrowed from another.
+      borrowed from another. *Run on `a009091`:* four green runs, one suite each —
+      `all gates green: real`, `real-render`, `real-1to1`, `real-discard`.
 - [x] §5.11's numbers are re-measured against the rebuilt copy. The capture they
       rested on came from an `0.1.0` build whose report echoes `min_long_edge 640`,
       so neither the byte total nor the report's own members were inherited: the
@@ -215,8 +222,13 @@ landing first fails a test that is telling the truth.
       copy it names was rebuilt after the first was deleted, with the date.
       Nothing in it is downgraded to prose: the gate holds the counts and the
       payload total, and the section says which gate.
-- [ ] Where a byte-level claim has no gate behind it, the release says so in the
-      notes rather than in a checklist nobody reads twice.
+- [x] Where a byte-level claim has no gate behind it, the release says so in the
+      notes rather than in a checklist nobody reads twice. The published section
+      carries no byte-level claim at all — the numbers it could restate stay in
+      `format-notes` — so there is nothing for it to caveat; the one route this
+      release cannot prove, macOS, is stated in `README.md` in the tagged tree and
+      tracked by [#93](https://github.com/marcd35/lrsalvage/issues/93), which is
+      named when the tracker closes rather than left to be inferred.
 
 ### Artifact — what a stranger can download
 
@@ -232,41 +244,65 @@ landing first fails a test that is telling the truth.
       `scripts/check.sh package` verifies the cli's tarball against the core tarball
       beside it with a `--config patch` because 0.3.0's core is not on the index
       before the tag.
-- [ ] The tag still produces the three platform archives and `SHA256SUMS` from
+- [x] The tag still produces the three platform archives and `SHA256SUMS` from
       `release.yml`, with the archive names `cargo-binstall`'s template requires —
       unchanged by the publish job.
-- [ ] The publish job is the only new writer on crates.io: no repository secret
-      holds a crates.io token afterwards, and both crates list exactly one
-      trusted publisher.
+      *Verified 2026-11-17 on `v0.3.0`:* the release carries
+      `lrsalvage-x86_64-unknown-linux-gnu-v0.3.0.tgz`,
+      `lrsalvage-x86_64-pc-windows-msvc-v0.3.0.zip`,
+      `lrsalvage-aarch64-apple-darwin-v0.3.0.tgz` and `SHA256SUMS`, and downloading
+      all four and running `sha256sum --check --strict SHA256SUMS` reports three
+      `OK`. The publish job changed none of them.
+- The box that asked whether the publish job is the only new writer on crates.io
+      **cannot be ticked: it was measured false.** *Recorded 2026-11-17.*
+      `gh secret list` is empty, so no repository secret holds a token and the job
+      is the only writer this release adds — but the job's own attempt answered
+      `No Trusted Publishing config found for repository marcd35/lrsalvage`, so no
+      trusted publisher is configured for either name yet. That is a human step in
+      crates.io's web UI, recorded where the publish box stands under **After the
+      tag**.
 
 ### Gates — the ones a script can run
 
-- [ ] `sh scripts/check.sh` green: `fmt`, `shell`, `clippy --all-targets`, the
+- [x] `sh scripts/check.sh` green: `fmt`, `shell`, `clippy --all-targets`, the
       workspace tests, `doc`, the release build, `typos` and `deny`. A missing tool
-      fails rather than skipping.
-- [ ] `sh scripts/check.sh msrv` green on the `rust-version` the manifests publish,
+      fails rather than skipping. *Run on `a009091` with the tag not yet existing:*
+      `all gates green: fmt shell clippy test doc build package typos deny msrv`.
+- [x] `sh scripts/check.sh msrv` green on the `rust-version` the manifests publish,
       with the new dependency's floor checked against it — a dependency that raises
-      the floor is a decision, not a pin.
-- [ ] `spec_validate` clean: no dangling link, duplicate id or parent cycle across
-      `specs/`, including the row and the module specs this release edits.
-- [ ] `cargo test -p lrsalvage-core --test spec_graph` and
+      the floor is a decision, not a pin. Same run: `rust-version = 1.89`, toolchain
+      `1.89.0` installed and the workspace built on it.
+- [x] `spec_validate` clean: no dangling link, duplicate id or parent cycle across
+      `specs/`, including the row and the module specs this release edits. →
+      `Spec-graph is valid: no issues found.`
+- [x] `cargo test -p lrsalvage-core --test spec_graph` and
       `cargo test -p lrsalvage-cli --test readme` green after the documentation
       edits: a module's `depends-on` matches what it reaches, and the README's flag
-      and `--json` tables match the binary.
-- [ ] `typos` and `cargo deny` are green with their own policy files unchanged
+      and `--json` tables match the binary. → `6 passed` and `3 passed` on
+      `a009091`.
+- [x] `typos` and `cargo deny` are green with their own policy files unchanged
       except where a slice says otherwise: `deny.toml`'s advisory ignore is
-      *deleted* by slice 3, never renewed.
+      *deleted* by slice 3, never renewed. → both green in the run above, and
+      `chrono` is absent from `Cargo.lock`.
 
 ### Frozen surface — what 0.2 promised, still promised
 
-- [ ] ADR 0010's eight surfaces reviewed against the whole diff: nothing removed,
+- [x] ADR 0010's eight surfaces reviewed against the whole diff: nothing removed,
       renamed or given a different meaning, and the additions are exactly the flag,
       the `options` member, the two digests and exit code `5`, each named in 0010's
-      dated block.
-- [ ] A later version keeps recognising what 0.2 wrote: the resume gate's
+      dated block. *Reviewed 2026-11-17 across the release's whole diff,
+      `v0.2.0..a009091` (16 commits, 45 files):* the only added flag is
+      `--verify-source` at both of its `#[arg]` sites, the only added exit code is
+      `const EXIT_EVIDENCE: u8 = 5`, nothing is removed or renamed, and
+      `report.csv`, `manifest.json`, the status words, the output names and `0`–`4`
+      are untouched by any test — the workspace suites and `spec_graph` are green on
+      `a009091`.
+- [x] A later version keeps recognising what 0.2 wrote: the resume gate's
       destination marked `lrsalvage 0.1.0` is still skipped byte for byte, and a
       0.2.0 output is skipped for the same reason — the version inside the marker
-      is never compared. 0.3.0's own marker moves only that number.
+      is never compared. 0.3.0's own marker moves only that number. Held by
+      `a_preexisting_verified_file_is_skipped_and_its_bytes_untouched`, green in
+      the `extract` suite on `a009091`.
 - [x] Every sentence naming 0.2 as the present release is re-read and rewritten:
       `README.md`'s version paragraph, the macOS gap's pointer, *"the frozen-surface
       review in the 0.2 checklist"*, and *"the commit a tag is cut on is chosen by
@@ -306,20 +342,30 @@ outcome afterwards. Nothing under **After the tag** happens without its own
 separate go-ahead — one approval for "the release" is not one for an irreversible
 upload.
 
-- [ ] The tree the tag lands on is measured, not inherited: `sh scripts/check.sh`
+- [x] The tree the tag lands on is measured, not inherited: `sh scripts/check.sh`
       green on that commit after it is merged and before a tag exists, all four
       evidence families green on it, `cargo publish --dry-run -p lrsalvage-core`
       packaging and reaching `aborting upload due to dry run`, and the release body
       read from the extractor `release.yml` itself runs rather than by eye.
-- [ ] `CHANGELOG.md`'s `## [0.3.0]` section is the release body, verbatim. The
+      *Measured 2026-11-17 on `a009091`, the squash commit of #120, before the tag
+      existed:* every gate green, the four families green, the dry run reaching
+      `warning: aborting upload due to dry run`, and the extractor's `awk` giving 39
+      non-blank lines that open `## [0.3.0]` and end at the section boundary.
+- [x] `CHANGELOG.md`'s `## [0.3.0]` section is the release body, verbatim. The
       published body's first and last lines are that section's, and the heading
-      after it did not travel into the release.
-- [ ] The tag is `v0.3.0`, annotated, on the merge commit of the close-out pull
+      after it did not travel into the release. *Checked against the published
+      release:* `diff` against the extractor's output is a single trailing blank
+      line GitHub trims, the first line is `## [0.3.0]`, the last non-blank line is
+      the Packaging bullet about trusted publishing, and `## [0.2.0]` is absent.
+- [x] The tag is `v0.3.0`, annotated, on the merge commit of the close-out pull
       request — the tree published from, which carries slice 8's bump, changelog and
-      workflow by construction rather than by a later check.
-- [ ] The release publishes the three archives, `SHA256SUMS` and the changelog
+      workflow by construction rather than by a later check. → `v0.3.0` is an
+      annotated tag on `a009091`, the squash commit of #120.
+- [x] The release publishes the three archives, `SHA256SUMS` and the changelog
       section — and nothing generated from `scan --report`, which describes a cache,
-      not a release.
+      not a release. →
+      [the release](https://github.com/marcd35/lrsalvage/releases/tag/v0.3.0) has
+      exactly those four assets and no other.
 
 ## After the tag (irreversible)
 
@@ -335,6 +381,25 @@ Publish — the artifact's second route, and the one no dry run can prove:
       rather than from a working tree, published by the trusted-publisher job in
       `release.yml`. The order is not a preference: the cli resolves
       `lrsalvage-core 0.3.0` through the index.
+      **Blocked 2026-11-17, at stop rule one.** The publish job ran on the tag and
+      the `Authenticate against crates.io` step failed: `Failed to retrieve token
+      from Cargo registry. Status: 400. Error: No Trusted Publishing config found
+      for repository marcd35/lrsalvage`. Nothing was uploaded — `Publish
+      lrsalvage-core, then lrsalvage-cli` was skipped — nothing was yanked, and no
+      token was substituted: the job is the only writer and it wrote nothing. What
+      clears it is a human step this list cannot do: a trusted publisher for
+      `lrsalvage-core` and `lrsalvage-cli` on crates.io, naming this repository and
+      `.github/workflows/release.yml`. The job skips a crate the index already
+      carries, so it can simply be re-run once that exists. Stop rule one's
+      "scoped, short-lived token" was not taken up either: this run holds no
+      crates.io token of any kind.
+      **One sentence the published body carries that this record must not leave
+      alone.** Its last Packaging bullet calls `0.3.0` "the first release whose
+      publishes run through crates.io trusted publishing". That becomes true when
+      the publisher is configured and the job is re-run, and is not true today. The
+      release body is an external surface, so it is neither edited nor deleted here:
+      this note is the record until the route works, and changing the body is its
+      own approval.
       **Stop rule one.** If the OIDC job fails on `lrsalvage-core`, the fix is a
       scoped, short-lived token for that one release so the version lands, and the
       workflow defect becomes its own issue — never a yank of a version that was
@@ -358,9 +423,20 @@ Docs and the record, once the publish has said what is true:
 - [ ] The README's install and crates.io sentences are corrected in a pull request
       merged after the publish: both names are on crates.io as 0.3.0, the route was
       proved, and no sentence describes a route that does not exist in either
-      direction.
-- [ ] `rust-version` and `rust-toolchain.toml` are re-checked against the
+      direction. **This box also owns two sentences the tag already expired**, which
+      no other box names because they are not about the registry: the version
+      paragraph's "until `v0.3.0` is tagged … still 0.2.0" and the prebuilt-archive
+      table, which still lists `…-v0.2.0.tgz` and links the `v0.2.0` release while
+      the `v0.3.0` archives exist and are verified. *Recorded 2026-11-17:* they are
+      left untouched here rather than half-corrected while the same section's
+      `cargo install` line must keep saying 0.2.0.
+- [x] `rust-version` and `rust-toolchain.toml` are re-checked against the
       dependency tree, so the next release does not inherit a stale claim.
+      *Re-checked 2026-11-17:* `rust-version = 1.89` is the number
+      `sh scripts/check.sh msrv` built the workspace on with every current
+      dependency (`jiff` and the rest) resolved, and `rust-toolchain.toml` pins
+      `1.100.0`, which `ci.yml` and `release.yml` install as their only written
+      number. Neither moved this release.
 - [ ] #96, #86, #101, #60, #63, #66, the `0.3.0` milestone and
       [#106](https://github.com/marcd35/lrsalvage/issues/106) are closed with the
       release link, and anything a slice cut on the way is an issue with its reason
