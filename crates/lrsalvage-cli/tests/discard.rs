@@ -24,12 +24,10 @@
 //! its own quality — which is the promise the state is worth to a user.
 //!
 //! **One number is deliberately not asserted here: the byte total.** §5.11
-//! publishes `2.6 MiB` from an `0.1.0` build whose report echoed
-//! `min_long_edge 640`, and a total inherited from a build that is not this one is
-//! not a measurement of this tree. The copy this gate needs is rebuilt by hand
-//! (`docs/agents/rendering-a-test-cache.md`), and the total becomes a strict
-//! assertion against that rebuild's own rows — see the TODO at the end of the
-//! test.
+//! publishes one, but from a build this one is not, so a total inherited from it
+//! would be a memory rather than a measurement — the TODO at the end of the test
+//! says what turns it into an assertion. Everything else §5.11 publishes about
+//! this state is held here, the demoted `quality` included.
 
 use std::collections::BTreeMap;
 
