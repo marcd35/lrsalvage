@@ -87,6 +87,13 @@ not allowed.
   newly expected lints land in the same commit. A dependency that raises the
   floor fails that gate; raise `rust-version` deliberately with the reason in the
   bump, and never pin the dependency back to keep a lower number.
+- **Name the branch before the first commit** — `<type>/<issue>-<slug>`, renaming
+  the harness's `workspace-<n>` with `git branch -m`, because
+  `.github/branch-policy.json` arms the local `check-worktree` guard, and an agent
+  reads this file long before it runs that guard at PR time. That file holds the
+  pattern and the example: its lanes are the kinds of slice this repo actually
+  cuts rather than the whole commit-type vocabulary (`ci` work is a `chore`), and
+  the ticket a branch names is the one its pull request closes.
 - **`.githooks/pre-commit` runs the cheap gates on every commit** — `fmt`,
   `shell` and `typos` through `scripts/check.sh`, which is the only place they
   are written. A fresh clone installs it with

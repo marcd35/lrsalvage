@@ -22,5 +22,7 @@ sentence would have decided the wrong problem. Check the mechanism against the
 code before the first design round, and correct the ticket in the round where it
 first matters — a wrong cause quietly sets the stakes for every choice after it.
 
-This repo commits no `.github/branch-policy.json`, so a branch carries no issue
-number; the workspace's branch is its own.
+A branch names the issue it works — `<type>/<issue>-<slug>`, with
+`.github/branch-policy.json` holding the pattern and `AGENTS.md` saying to rename
+the harness default before the first commit — so read the ticket's number before
+the first commit, not after the code disagrees with it.
