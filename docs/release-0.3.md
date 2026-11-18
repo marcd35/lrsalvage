@@ -86,10 +86,13 @@ landing first fails a test that is telling the truth.
 
 ### Slices
 
-- [ ] **1 — this file** is merged, the `0.2.0` milestone is closed, `0.3.0` exists
+- [x] **1 — this file** is merged, the `0.2.0` milestone is closed, `0.3.0` exists
       and holds #96, #101, #60, #63, #86 and #66. Nothing else enters either
       milestone: #62, #64, #65, #67, #68 and #93 are 0.4's or the app's, and #93
       stays open after this tag with the README sentence it already has.
+      *Verified 2026-11-17:* the milestone holds those six plus this release's own
+      paperwork (#104 closed, #106 open) and slice 6's fixture ticket (#70, closed),
+      and nothing else entered it — #88 left for `0.4.0` first.
 - [ ] **2 — #96.** Both crate roots carry a `README.md` that says what the tool
       does, links ADR 0010 for the compatibility promise, and gives the install
       line; both manifests declare `readme`, `keywords`, `categories`,
@@ -245,25 +248,30 @@ landing first fails a test that is telling the truth.
       the 0.2 checklist"* — plus the same claim in `release.yml`'s own comment.
       Historical files keep their 0.2 references: this is a sweep of what a reader
       takes for the present, not a rename.
-- [ ] The macOS paragraph still states its gap in its own words and points at
+- [x] The macOS paragraph still states its gap in its own words and points at
       [#93](https://github.com/marcd35/lrsalvage/issues/93), which stays open after
       this release; no box here claims the macOS route was proved.
 
 ### Docs — the record
 
-- [ ] `CONTEXT.md` gains **Source digest** and **Snapshot digest**, each saying how
+- [x] `CONTEXT.md` gains **Source digest** and **Snapshot digest**, each saying how
       it differs from the payload digest Adobe writes into `previews.db`, and
       **Verification report** grows the digests and the second half of its
       path-free argument: a SHA-256 names no path. *Evidence family* stays out —
       that is how this repository tests, not what the product is about.
-- [ ] ADR 0003's amendment (slice 7), ADR 0010's *added by 0.3.0* block and ADR
+- [x] ADR 0003's amendment (slice 7), ADR 0010's *added by 0.3.0* block and ADR
       0011 D13's dated correction (slice 5) are all in the tree, each dated.
-- [ ] `specs/modules/report.md` records the two fields and the `options` member as
+- [x] `specs/modules/report.md` records the two fields and the `options` member as
       part of the frozen set, and `specs/modules/cli.md` records exit code `5` and
       the flag — the two specs a reader consults instead of the code.
-- [ ] Each slice's own ticket is corrected in the pull request that implements it,
-      where its text had drifted: #96's patch-release sentence, #86's `deleted 1`,
+- [x] Each slice's own ticket is corrected in the pull request that implements it,
+      or, where a slice merged uncorrected, in the docs close-out with a dated
+      **Corrected** sentence: #96's patch-release sentence, #86's `deleted 1`,
       #63's "two fields" without the `options` echo.
+      *Recorded 2026-11-17:* the three slices merged without the correction their own
+      box asked for, so each body was corrected here instead, with a dated
+      **Corrected** sentence naming the reason and the evidence, and the release's
+      docs pull request says so.
 
 ## Making the tag
 

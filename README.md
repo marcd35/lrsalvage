@@ -8,12 +8,15 @@ photos they point at are not there any more. Lightroom still has a rendered copy
 of each one in its preview cache, and this tool writes those copies out as
 ordinary JPEG files, with the catalog's metadata attached.
 
-Version 0.2, the first release with something to download rather than a tree to
-build: [Install](#install) names all four routes. [The 0.2 release
-checklist](docs/release-0.2.md) is what the number covers, and
-[ADR 0010](docs/adr/0010-what-0-2-promises.md) is the surface list a script can
-lean on. Still early, and deliberately conservative: it would rather tell you it
-found nothing than hand you a folder of wrong images.
+0.3.0 is the release this tree prepares: [the 0.3 release
+checklist](docs/release-0.3.md) is what the number covers, [Install](#install)
+names all four routes, and [ADR 0010](docs/adr/0010-what-0-2-promises.md) is the
+surface list a script can lean on. Until `v0.3.0` is tagged, the archive and the
+crate on the routes below are still 0.2.0. 0.2 was the first release with
+something to download rather than a tree to build, and 0.3.0 adds one flag while
+keeping every promise that release made. Still early, and deliberately
+conservative: it would rather tell you it found nothing than hand you a folder of
+wrong images.
 
 ## Lightroom is not required
 
@@ -68,12 +71,12 @@ on.
 Four routes to the same `lrsalvage` binary: the platform archive for your
 machine, `cargo install` if you would rather have cargo build it, `cargo
 binstall` to fetch a prebuilt binary instead of building one, or a source build
-for a platform 0.2 ships no archive for. [Compatibility](#compatibility) says
-whether it reads your catalog at all, before you download anything.
+for a platform this release ships no archive for. [Compatibility](#compatibility)
+says whether it reads your catalog at all, before you download anything.
 
-0.2 ships **no installer and no notarised bundle**. Both are decisions rather
-than gaps — [What this repository is not](#what-this-repository-is-not) has the
-cost behind each — so what follows is you unpacking an archive and putting the
+This release ships **no installer and no notarised bundle**. Both are decisions
+rather than gaps — [What this repository is not](#what-this-repository-is-not) has
+the cost behind each — so what follows is you unpacking an archive and putting the
 binary where you want it.
 
 ### Release archives
@@ -147,8 +150,10 @@ Linux and Windows routes were proved that way, command by command, against
 against `SHA256SUMS`, and the Linux archive unpacked and its contents listed, but
 no route was re-run end to end at the final tag. The macOS pair — `shasum -a 256
 -c` above and this `xattr` line — has never run, because no Mac was available to
-the release. They are what this page would run first on one, and
-`docs/release-0.2.md` records the gap instead of this file implying it is closed.
+the release. They are what this page would run first on one;
+`docs/release-0.2.md` is where the gap is written down, nothing here is upgraded
+to proved, and [#93](https://github.com/marcd35/lrsalvage/issues/93) stays open
+until a Mac has run them.
 
 **macOS is Apple Silicon only.** There is one macOS archive and its target is
 `aarch64-apple-darwin`; on an Intel Mac, build from source (a few lines below) or
@@ -188,9 +193,9 @@ own default template.
 cargo build --release
 ```
 
-This is the route for an Intel Mac, for a platform 0.2 ships no archive for, or
-for reading the code before trusting it. Output path and requirements are in
-[Building](#building).
+This is the route for an Intel Mac, for a platform this release ships no archive
+for, or for reading the code before trusting it. Output path and requirements are
+in [Building](#building).
 
 ## Compatibility
 
@@ -653,7 +658,7 @@ keeps the files an earlier one wrote instead of reporting a whole library as
 somebody else's.
 
 A review-held row is a gap stated rather than hidden: those are the promises the
-frozen-surface review in [the 0.2 checklist](docs/release-0.2.md) reads by hand,
+frozen-surface review in [the 0.3 checklist](docs/release-0.3.md) reads by hand,
 because no test can. Where a row says gate, the test it names is the authority and
 this page is the summary.
 
@@ -744,7 +749,7 @@ instead: `lrsalvage-cli`'s `tests/readme.rs` checks the flag list and the
 [`.github/workflows/release.yml`](.github/workflows/release.yml), which is where
 the archive set, the `SHA256SUMS` file and the changelog-derived release body are
 described. The commit a tag is cut on is chosen by
-[the 0.2 checklist](docs/release-0.2.md), not by the tag itself.
+[the 0.3 checklist](docs/release-0.3.md), not by the tag itself.
 
 What that release deliberately does not do. Each is a decision with a cost, and
 the cost is why it stays out:
@@ -769,7 +774,7 @@ the cost is why it stays out:
   the routes this release carries, and a distro user's usual command is not yet
   one of them.
 
-A graphical interface is planned after 0.2 rather than ruled out
+A graphical interface is planned after 0.3 rather than ruled out
 ([#68](https://github.com/marcd35/lrsalvage/issues/68)). It is separate in the way
 that matters for this tree: reading, planning and writing live in
 `crates/lrsalvage-core` behind a library interface, so a UI drives that library
