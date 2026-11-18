@@ -629,7 +629,10 @@ premise is that the evidence was only ever read, so a disagreement stops there.
 ## The compatibility contract
 
 [ADR 0010](docs/adr/0010-what-0-2-promises.md) is the list of surfaces this tool
-promises a script, across versions. The table below says where each one is stated
+promises a script, across versions. This project versions two artifacts — the core
+line and the app line — independently; what a number promises on each, and what
+each artifact can currently do, is [docs/versions.md](docs/versions.md). The table
+below says where each surface is stated
 in this file and what holds it: a **gate** is a test in this tree that pins the
 surface in the binary, so changing it fails `cargo test`; **review** means no test
 pins it and a person is the only check. The two are named apart wherever they part

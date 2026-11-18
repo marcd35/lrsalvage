@@ -151,6 +151,9 @@ exactly how §6.4 kept a false ICC claim after the render disproved it.
   *rendered* rather than converted, what a new catalog decides on its own, and the
   five facts that make driving its GUI reliable rather than a lottery.
 - `docs/format-notes.md` — byte layouts, evidence labels, the `.lrcat-data` trap.
+- `docs/versions.md` — what a version number promises on each of the two release
+  lines, and which capabilities each artifact currently has. It is the only place
+  the two-line structure is explained, so a change to it is a change to a promise.
 - `docs/adr/` — decisions and their consequences; read before changing a seam.
 - `specs/` — the spec graph: the product goal, the architecture and its
   invariants, and one spec per module. It is the ground truth for what a module

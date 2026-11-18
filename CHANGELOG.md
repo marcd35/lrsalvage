@@ -10,6 +10,19 @@ minor saying so here before one is removed, renamed or given a different meaning
 
 ## [Unreleased]
 
+### Known limitation
+
+- **The published `lrsalvage-core` 0.3.0 tarball builds but cannot run its own
+  `cargo test`.** Five `#[cfg(test)]` modules under `src/` import
+  `lrsalvage-fixtures`, a `publish = false` path-only dev-dependency the published
+  manifest drops, so an unpacked crate stops at `error[E0433]` instead of running
+  a suite ([#123](https://github.com/marcd35/lrsalvage/issues/123), measured
+  2026-11-17). The manifest states the limit. This entry is here because a
+  published tarball cannot be corrected — its readme is part of it — so the wait
+  until `0.4.0` republishes core is written down rather than left to be
+  discovered. [ADR 0012](docs/adr/0012-two-release-lines.md) records why this did
+  not become a `0.3.1`.
+
 ## [0.3.0]
 
 0.3.0 is the trust minor. [ADR 0011](https://github.com/marcd35/lrsalvage/blob/main/docs/adr/0011-0-3-is-the-trust-minor.md)
