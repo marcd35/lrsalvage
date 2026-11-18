@@ -50,7 +50,7 @@ name = "lrsalvage"
 path = "src/main.rs"
 
 [dependencies]
-lrsalvage-core = { path = "../lrsalvage-core", version = "0.2.0" }
+lrsalvage-core = { path = "../lrsalvage-core", version = "0.3.0" }
 clap.workspace = true
 walkdir.workspace = true
 serde_json.workspace = true
