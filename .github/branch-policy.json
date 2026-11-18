@@ -1,0 +1,5 @@
+{
+  "branchPattern": "^(?:feat|fix|test|docs|chore|spike|grill)/([1-9][0-9]*)-[a-z0-9]+(?:-[a-z0-9]+)*$",
+  "issueGroup": 1,
+  "example": "chore/134-branch-policy"
+}
