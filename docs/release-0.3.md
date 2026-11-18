@@ -116,7 +116,9 @@ landing first fails a test that is telling the truth.
       sentence was corrected rather than left standing. What would close the gap is
       the fixture-dependent `#[cfg(test)]` modules moved out of `src/`, which is the
       alternative core's manifest names to publishing that crate. Carrying that as a
-      ticket rather than as this paragraph is **After the tag**'s own obligation.
+      ticket rather than as this paragraph was **After the tag**'s own obligation,
+      and it is now [#123](https://github.com/marcd35/lrsalvage/issues/123) — on the
+      `0.4.0` milestone, with this box's measurement in its body.
 - [x] **3 — #101.** `chrono` is gone from `Cargo.lock`, `set_capture_time` resolves
       a civil datetime through the replacement's time zone with the same
       disambiguation policy, and the `[advisories] ignore` entry for
@@ -460,9 +462,10 @@ Docs and the record, once the publish has said what is true:
       closing comment, and the tracker's own comment names #93, #62, #64, #65, #67,
       #68 and #117 as staying open. The exception is the first clause's second half:
       the one thing this release cut — the published `lrsalvage-core` tarball
-      cannot run its own `cargo test` (box 2) — needs its own issue, and filing one
-      was not authorised in this run, so it stands as box 2's measurement until it
-      is filed. That is stated in the tracker's closing comment too.
+      cannot run its own `cargo test` (box 2) — needed its own issue. Filed
+      2026-11-18 as [#123](https://github.com/marcd35/lrsalvage/issues/123), which
+      carries the measurement, the options and the commands that would retire box
+      2's text; the tracker has a comment naming it, and so does #96.
 
 ## The discard, rebuilding it
 
