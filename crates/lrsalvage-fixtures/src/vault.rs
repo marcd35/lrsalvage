@@ -95,6 +95,10 @@ const STORE_VERSION: &str = "13.0";
 /// The extension every synthetic original is named with.
 const EXTENSION: &str = "CR2";
 
+/// The `ImageCacheEntry.imageId` a [`Vault::cache_entry_without_image`] row
+/// carries: no archetype's image uses it, so the row is one nothing explains.
+const STALE_IMAGE_ID: i64 = 999;
+
 // ---------------------------------------------------------------------------
 // Small value types
 // ---------------------------------------------------------------------------
@@ -630,8 +634,8 @@ impl Vault {
     }
 
     /// An `ImageCacheEntry` row no catalog image explains: the dead row a
-    /// deleted image leaves behind, whose payload is therefore an orphan. The
-    /// entry's `imageId` is 999, which no archetype's image uses.
+    /// deleted image leaves behind, whose payload is therefore an orphan. Its
+    /// `imageId` is `STALE_IMAGE_ID` (999), which no archetype's image uses.
     #[must_use]
     pub fn cache_entry_without_image(mut self, uuid: &str) -> Self {
         self.stale_entries.push((uuid.to_string(), digest_of(uuid)));
@@ -1001,8 +1005,8 @@ impl Vault {
         for (uuid, digest) in &self.stale_entries {
             conn.execute(
                 "INSERT INTO ImageCacheEntry (imageId, uuid, digest, orientation) \
-                 VALUES (999, ?1, ?2, NULL)",
-                params![uuid, digest],
+                 VALUES (?1, ?2, ?3, NULL)",
+                params![STALE_IMAGE_ID, uuid, digest],
             )
             .expect("stale cache entry");
         }
@@ -1124,23 +1128,18 @@ impl Vault {
         }
     }
 
-    /// `<root><pathFromRoot><baseName>.CR2`, joined component-wise like
-    /// `catalog::original_path` so both separators are honoured.
+    /// `<root><pathFromRoot><baseName>.CR2`, joined component-wise so both
+    /// separators are honoured.
     ///
-    /// `..` and `.` are dropped: the catalog stores them, but a fixture writes
-    /// inside the vault, so a hostile path places no file outside it. No row
-    /// asserts an on-disk original at a path the catalog sanitises away.
+    /// `catalog::original_path` keeps `.` and `..` verbatim — it says where the
+    /// *user's* file would be — while [`path_parts`] drops them, because a
+    /// fixture only ever writes inside its own temp tree. A row therefore never
+    /// asserts an original at a path the output sanitiser would discard.
     fn original_path(&self, image: &ImageRow) -> PathBuf {
         let mut path = PathBuf::from(self.root_folder_value().trim_end_matches(['/', '\\']));
-        for part in image.path_from_root.split(['/', '\\']) {
-            if !part.is_empty() && part != "." && part != ".." {
-                path.push(part);
-            }
-        }
-        for part in image.base_name.split(['/', '\\']) {
-            if !part.is_empty() {
-                path.push(part);
-            }
+        let parts = path_parts(&image.path_from_root).chain(path_parts(&image.base_name));
+        for part in parts {
+            path.push(part);
         }
         path.set_extension(EXTENSION);
         path
@@ -1165,6 +1164,17 @@ impl Vault {
         let (first, first_four) = bytes::leaf_dir(uuid);
         PathBuf::from(first).join(first_four)
     }
+}
+
+/// The components of a stored path, for the fixture's own writes.
+///
+/// Both separators split, and `.` and `..` are dropped: the catalog stores them
+/// and `catalog::original_path` honours them, but a fixture writes only inside
+/// its vault, so a hostile path places no file outside it.
+fn path_parts(value: &str) -> impl Iterator<Item = &str> {
+    value
+        .split(['/', '\\'])
+        .filter(|part| !part.is_empty() && *part != "." && *part != "..")
 }
 
 /// A 32-character lower-case hex digest derived from the uuid.
