@@ -715,12 +715,13 @@ sh scripts/check.sh clippy       # just one
 sh scripts/check.sh real         # the #[ignore]d tests, against a converted cache
 sh scripts/check.sh real-render  # them, against a cache Lightroom rendered from scratch
 sh scripts/check.sh real-1to1    # them, against a cache it built 1:1 previews for
+sh scripts/check.sh real-discard # them, against a cache its previews were discarded from
 ```
 
-Those last three are three evidence families rather than one: a machine can hold a
-converted cache without a rendered one, or a rendered one without a 1:1 build.
-Each gate fails rather than skipping when its own pair of names is unset, and
-`.env.example` names all three pairs.
+Those last four are four evidence families rather than one: a machine can hold a
+converted cache without a rendered one, a rendered one without a 1:1 build, or no
+copy of a discard at all. Each gate fails rather than skipping when its own pair
+of names is unset, and `.env.example` names all four pairs.
 
 It covers formatting, clippy with `--all-targets`, the workspace tests, the
 release build, spelling (config in `typos.toml`) and the licence/advisory policy

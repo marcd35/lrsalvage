@@ -33,12 +33,12 @@ homepage = "https://github.com/marcd35/lrsalvage"
 # The whole test tree, because no file in it can run from a tarball: `cli.rs`,
 # `matrix.rs`, `probe.rs` and `readme.rs` import `lrsalvage-fixtures`, a
 # `path`-only dev-dependency the published manifest drops, `readme.rs` also reads
-# `../../README.md` and `probe.rs` runs `scripts/probe-cache.sh`, and the two
-# evidence families (`render.rs`, `one_to_one.rs`) need a real cache and the env
-# pair their gate reads — `tests/support` is the module they share. Shipping them
-# fails `cargo test` for an auditor instead of proving anything, so the published
-# crate carries `src/`, this page, both licence texts and the manifest, and no
-# test tree; measured 2026-11-17 by unpacking
+# `../../README.md` and `probe.rs` runs `scripts/probe-cache.sh`, and the three
+# evidence families (`render.rs`, `one_to_one.rs`, `discard.rs`) need a real cache
+# and the env pair their gate reads — `tests/support` is the module they share.
+# Shipping them fails `cargo test` for an auditor instead of proving anything, so
+# the published crate carries `src/`, this page, both licence texts and the
+# manifest, and no test tree; measured 2026-11-17 by unpacking
 # `target/package/lrsalvage-cli-0.2.0.crate` outside the repository, where
 # `cargo build --all-targets` and `cargo test` both finish green — the test run
 # executing `src/main.rs`'s fixture-free unit test, the error-to-exit-code

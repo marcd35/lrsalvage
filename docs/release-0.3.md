@@ -137,23 +137,33 @@ landing first fails a test that is telling the truth.
       and the gate was therefore verifying the previous one; and `ADR 0007` gains
       a dated amendment for the digest pair its path-freedom argument did not
       anticipate.
-- [ ] **6 — #86.** A discarded cache rebuilt by the recipe below, on an evidence
-      root that is not a scratch tree, with an `EVIDENCE.md` beside it recording
-      what it is, when the discard ran and the source render's hashes — because the
-      first copy was lost to a tidy-up and nothing asked. `LRSALVAGE_DISCARD_CATALOG`
-      / `LRSALVAGE_DISCARD_PREVIEWS` name it, and `sh scripts/check.sh real-discard`
-      fails rather than skipping when they are unset, exactly as the other three
-      families do. `crates/lrsalvage-cli/tests/discard.rs` asserts `scan --json`
+- [ ] **6 — #86.** `LRSALVAGE_DISCARD_CATALOG` / `LRSALVAGE_DISCARD_PREVIEWS` name
+      a discarded cache, and `sh scripts/check.sh real-discard` fails rather than
+      skipping when they are unset, exactly as the other three families do
+      (landed). `crates/lrsalvage-cli/tests/discard.rs` asserts `scan --json`
       (`layout modern`, `images 10`, `recovered 10`, tiers `large 9` / `standard 1`,
       `thumbnail_pyramids 0`, `unmapped 0`, `missing_payload 0`, `below_floor 0`,
       `superseded 0`, **`deleted 0`** — the capture that said `1` was wrong),
       `scan` exit 0, and an `extract --min-long-edge 0 --include-present` writing
-      ten with `failed 0`, the byte total re-measured at `0.3.0` and
-      `quality bigThumbnail` on the demoted pyramid. The six restatements ride in
-      this pull request: `.env.example`, `scripts/check.sh` (usage line,
-      `require_pair` comment, `case` arm), `AGENTS.md`'s gate list and its
-      evidence-family paragraph, `docs/agents/rendering-a-test-cache.md`'s "names
-      all three pairs", `format-notes` §5.11, and this page.
+      ten with `failed 0` and `quality bigThumbnail` on the demoted pyramid
+      (landed, and unrun: it needs the copy below). **Still open: the copy.**
+      §5.11's was deleted with its scratch tree; it is rebuilt by hand — the
+      render's pair copied whole, `Library > Previews > Discard Standard and 1:1
+      Previews` applied to all ten, the result landed on an evidence root that is
+      not a scratch tree with an `EVIDENCE.md` recording the render it was cut
+      from, the dialog's wording and the hashes that prove the survivors are the
+      render's bytes. Only then can two numbers be *measured* rather than carried
+      over: the byte total (§5.11 publishes `2.6 MiB` from an `0.1.0` build whose
+      report echoed `min_long_edge 640`) and the demoted pyramid's `quality`.
+      `discard.rs` says so in a TODO rather than asserting a number nobody
+      measured at this version, and §5.11 labels the byte total **TODO**. The six
+      restatements ride in this pull request: `.env.example`, `scripts/check.sh`
+      (usage line, `require_pair` comment, `case` arm), `AGENTS.md`'s gate list and
+      its evidence-family paragraph, `docs/agents/rendering-a-test-cache.md`'s
+      "names all three pairs" sentence and its new discard steps, `format-notes`
+      §5.11, and this page — plus the five copies the grep found outside that
+      list: `README.md`, `specs/fixtures.md`, `specs/goal-and-requirements.md`,
+      `crates/lrsalvage-cli/Cargo.toml`'s `exclude` comment and `tests/support`.
 - [ ] **7 — #66.** ADR 0003 gains a dated amendment: resume identity stays marker
       prefix + completeness + `SOF` dimensions, one destination per catalog is the
       documented rule, and strengthening it waits for a report of the failure it
@@ -336,9 +346,9 @@ leaves, and it is reproducible on a machine with Lightroom Classic and a rendere
 cache: take the render's catalog and previews as a pair, apply the discard to all
 ten images, confirm the dialog that names the photo count, quit Lightroom so the
 index settles, and measure before and after by declared segment lengths. The GUI
-steps and the five facts that make driving them reliable are in
-[rendering a test cache](agents/rendering-a-test-cache.md); the discard's own
-section records the confirmation dialog's wording, which is what a driver keys on.
+steps, the five facts that make driving them reliable and the discard's own steps
+are in [rendering a test cache](agents/rendering-a-test-cache.md); §5.11 records
+the confirmation dialog's wording, which is what a driver keys on.
 
 Two things the first copy did not survive, and this rebuild does: the copy lives
 outside any scratch directory, and the hashes that tie it to the render it came

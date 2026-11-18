@@ -34,8 +34,8 @@ a commit message that says why.
   in a state; say so in the row and in the prose, because the state is ours until
   a real cache is measured in it.
 - **A verified claim is re-measured, not re-read.** Changing a byte-level claim
-  means running `sh scripts/check.sh real`, whose assertions back the numbers
-  §5 of the notes publishes.
+  means running the family that measured it — `sh scripts/check.sh real` for most
+  of §5, and the gate the section itself names where it is one of the others.
 
 ## Code
 
