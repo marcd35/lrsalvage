@@ -1,10 +1,10 @@
-//! What the two evidence families' rows share.
+//! What the evidence families' rows share.
 //!
-//! `render.rs` and `one_to_one.rs` drive the same binary against the same shape
-//! of pair and read the same two artefacts back, so the harness lives here: a
-//! correction to how a row scans a cache or walks an output tree cannot land in
-//! one family and leave the other asserting a stale shape. Each target keeps
-//! only its own numbers.
+//! `render.rs`, `one_to_one.rs` and `discard.rs` drive the same binary against
+//! the same shape of pair and read the same artefacts back, so the harness lives
+//! here: a correction to how a row scans a cache or walks an output tree cannot
+//! land in one family and leave the others asserting a stale shape. Each target
+//! keeps only its own numbers.
 
 use std::path::{Path, PathBuf};
 
@@ -24,6 +24,35 @@ pub fn pair(catalog: &str, previews: &str, gate: &str) -> (PathBuf, PathBuf) {
         }))
     };
     (read(catalog), read(previews))
+}
+
+/// A plain `scan` — the human surface rather than `--json` — as its exit code
+/// and the summary it printed to stdout.
+///
+/// The two have to be asked separately: a row's counts come from the object, but
+/// "the command a person runs exits 0" is a claim about the summary, which the
+/// `--json` run replaces rather than renders.
+///
+/// This module is compiled once per test target, so a helper one family uses is
+/// dead code in the other two; `clippy --all-targets -- -D warnings` reads that
+/// per target, and a harness function no family calls is a helper that has been
+/// orphaned rather than a lint to silence.
+#[allow(dead_code)]
+pub fn scan_text(catalog: &Path, previews: &Path, extra: &[&str]) -> (i32, String) {
+    let output = Command::cargo_bin("lrsalvage")
+        .expect("the binary")
+        .arg("scan")
+        .arg("--catalog")
+        .arg(catalog)
+        .arg("--previews")
+        .arg(previews)
+        .args(extra)
+        .output()
+        .expect("run scan");
+    (
+        output.status.code().unwrap_or(-1),
+        String::from_utf8_lossy(&output.stdout).into_owned(),
+    )
 }
 
 /// `scan --json`, as its exit code and the object it printed.
@@ -76,6 +105,31 @@ pub fn extract(catalog: &Path, previews: &Path, extra: &[&str]) -> (tempfile::Te
         .expect("extract writes manifest.json beside its output");
     let manifest = serde_json::from_slice(&bytes).expect("manifest.json is an object");
     (out, manifest)
+}
+
+/// The run's own outcome rows — `extract.csv`, the one surface that records what
+/// happened to each selected item rather than what the plan expected of it — as
+/// `(status, bytes written)` per row.
+///
+/// Not a CSV parser: the two fields a row is judged by are the first two, and an
+/// `output` path that needs quoting comes after them, so splitting on the first
+/// two commas cannot be fooled by the rest of the line. Per-target dead code is
+/// the same fact `scan_text` allows for.
+#[allow(dead_code)]
+pub fn outcomes(root: &Path) -> Vec<(String, u64)> {
+    let path = root.join("extract.csv");
+    let text =
+        std::fs::read_to_string(&path).unwrap_or_else(|why| panic!("{}: {why}", path.display()));
+    text.lines()
+        .skip(1)
+        .filter(|line| !line.is_empty())
+        .map(|line| {
+            let mut fields = line.split(',');
+            let status = fields.next().unwrap_or_default().to_string();
+            let bytes = fields.next().unwrap_or_default().parse().unwrap_or(0);
+            (status, bytes)
+        })
+        .collect()
 }
 
 /// Every `.jpg` under `root`, as its own measured long edge — read from the
