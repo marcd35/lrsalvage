@@ -103,14 +103,17 @@ Read 2026-11-18. These are the facts #126's spike measures against.
   session rather than persisted the way a desktop app's file access is. — verified
 - **SQLite in a page**: the common builds (`sql.js`, the official WASM build with
   an in-memory database) read the whole file into memory, which fails on a large
-  catalog. **Amended 2026-11-18:** the pattern this row used to name — a
-  *demand-paged custom VFS over the picked file handle* — cannot be built.
+  catalog. **Amended 2026-11-18:** this row used to name a *demand-paged custom VFS
+  over the picked file handle* as the working pattern, and half of that is wrong.
+  A **read-only** VFS can page a picked file synchronously — the File API exposes
+  `FileReaderSync` to workers, and Emscripten's `WORKERFS` and SQLite Explorer's
+  blob VFS are shipping examples. A **writable** one cannot:
   `FileSystemFileHandle.createSyncAccessHandle()` is usable "only … for files
-  within the origin private file system", so no synchronous VFS can page a picked
-  file; the maintainer of `wa-sqlite` says the same thing from the other end, and
-  an asynchronous build (JSPI/Asyncify) with the data layer in JavaScript is the
-  only remaining shape. [browser-spike](browser-spike.md) §1 has the measurement
-  and §6 the route not taken. — verified
+  within the origin private file system", so no synchronous VFS can journal,
+  recover or checkpoint on a picked file, and an asynchronous build (JSPI/Asyncify)
+  with the data layer in JavaScript is the only shape that can write there.
+  [browser-spike](browser-spike.md) §1 has the specification sentences and §6 the
+  route not taken. — verified
 - **OPFS** is the alternative, and it is the only persistent one: copy the database
   in, then query it from the origin's private storage through the `sahpool` VFS.
   The cost is the copy time and the origin's quota. `navigator.storage.persist()`
@@ -119,14 +122,21 @@ Read 2026-11-18. These are the facts #126's spike measures against.
 - **Measured 2026-11-18** ([browser-spike](browser-spike.md)): a 1 GiB copy ran at
   86–178 MB/s; the quota was 10.7–12.0 GB and moved between sessions;
   `persist()` was refused while the data nonetheless survived a restart; a picked
-  folder's grant survived a reload and became `prompt` after a restart; the
-  `sahpool` import copies the main file only and resets the header to rollback
-  mode, so a live `-wal`'s committed rows are lost without an error. — measured
+  folder's grant survived a reload and became `prompt` after a restart; and the
+  crate's *checked* import copies the main file only and resets the header to
+  rollback mode, so a live `-wal`'s committed rows were lost without an error — 78
+  images read where 128 exist. That last one is the import's design, not a platform
+  limit: SQLite needs no `-shm` for a single owner set to exclusive locking, and the
+  same crate offers a byte-preserving import. The desktop `snapshot` copies
+  `-wal`/`-shm` and checkpoints, which is why the same file reads 128 there. —
+  measured, with the fix unmeasured
 - **A page writes into a picked folder slowly, and that is the mechanism that
   failed.** 1 000 payloads through `createWritable()` ran at 1.8–3.5 files/s with a
   p95 of 0.6–1.4 s and a worst single file of 26 s, against 29 files/s for the same
-  call pattern into OPFS and 49–108 files/s for a native writer on the same disk. —
-  measured
+  call pattern into OPFS and 49–108 files/s for a native writer on the same disk. All
+  of those runs awaited each write and close before starting the next; many files in
+  flight was the one lever not tested, and Chromium's per-close hashing and
+  after-write checks explain why the cost tracks file count. — measured
 - **What a page cannot do**: open Explorer at the destination, integrate with the
   shell, keep running after the tab closes, or survive an OOM kill mid-write.
 

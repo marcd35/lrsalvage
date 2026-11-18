@@ -253,19 +253,25 @@ The spike therefore does not decide whether there is an app. It decides what the
 app is.
 
 **Amended 2026-11-18, the day the spike ran, because one mechanism named above
-does not exist.** D10's first test said the SQLite dependency must compile "to
-`wasm32` against a demand-paged VFS over a File handle". No such VFS can be built:
-`FileSystemFileHandle.createSyncAccessHandle()` is usable only for files inside the
-origin private file system, so a synchronous VFS cannot page a file the user
-picked, and the crate that gives `rusqlite` a wasm build ships no asynchronous
-one. The test was run against the mechanism that does exist — a copy into OPFS
-read through the `sahpool` VFS — and the browser path is **No-go** on two other
-rows, not on this one: writing JPEGs into a picked folder ran at 1.8–3.5 files/s
-with a worst single file of 26 s, and a catalog whose newest rows live in its
-`-wal` reads 78 images instead of 128 without reporting anything. The numbers, the
-environment and what was not measured are in [browser-spike](browser-spike.md); the
-verdict and its follow-ups are on #126. The route this leaves is D9's, with the
-native shell as the constraint.
+does not exist as written.** D10's first test said the SQLite dependency must
+compile "to `wasm32` against a demand-paged VFS over a File handle". Half of that
+is buildable and half is not. *Reading* a picked file synchronously is: the File
+API exposes `FileReaderSync` to workers, which is all a read-only VFS needs, and
+Emscripten's `WORKERFS` and SQLite Explorer's blob VFS are that shape already.
+*Writing* through a picked file is not: `FileSystemFileHandle.createSyncAccessHandle()`
+is usable only inside the origin private file system, so a VFS that must journal,
+recover or checkpoint cannot live on a picked file. The test was run against the
+mechanism that does exist — a copy into OPFS read through the `sahpool` VFS — and
+the browser path is **No-go** on two other rows, not on this one: writing JPEGs
+into a picked folder ran at 1.8–3.5 files/s with a worst single file of 26 s, and
+the import that carries a catalog into OPFS dropped a committed `-wal` and read 78
+images where 128 exist, without saying so. Neither row is finished being measured:
+the write rate was strictly one file at a time, and the `-wal` loss is the *checked*
+import's design, which a byte-preserving import plus exclusive locking is expected
+to fix (SQLite needs no `-shm` for a single owner). The numbers, the environment,
+the untested levers and the gates that would reopen this are in
+[browser-spike](browser-spike.md); the verdict and its follow-ups are on #126. The
+route this leaves is D9's, with the native shell as the constraint.
 
 ### D11 — Accessibility is a level, not a sentiment
 
