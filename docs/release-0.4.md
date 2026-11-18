@@ -397,6 +397,13 @@ true then. This is a sweep of what a reader takes as the present, not a rename.
       in the shape 0.3.0's block took — flag, stat, `options` member and the
       widened exit-`4` trigger — with the sentence that says no existing surface
       changed meaning.
+- [x] **ADR 0012 D7's attribution is corrected with a date**, in this slice's own
+      pull request: the two README non-goals are #67's decision 1, and decision 2
+      is the cap. *Found by the review of this page rather than by a gate*, and
+      the gap is structural: an ADR's cross-reference to an issue's decision
+      number names text that is not in this tree, so no test can compare the two.
+      *Verified 2026-11-18:* the correction is in D7 and the wrong pointer is gone
+      from the record.
 - [ ] `specs/modules/extract.md` records the free-space check and where it sits in
       the order; `specs/modules/cli.md` records what `--dry-run` now prints, if it
       prints something new; and `specs/fixtures.md` carries the `cannot show` row
