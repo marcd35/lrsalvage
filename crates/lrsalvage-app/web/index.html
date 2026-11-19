@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>lrsalvage — recover the previews Lightroom kept</title>
+<!--
+  The app's page (`0.1.0`, ADR 0012 D10). It must be served with
+  `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy:
+  require-corp`: the seam's synchronous bridge parks a worker on a
+  `SharedArrayBuffer`, and a page that is not cross-origin isolated cannot make
+  one. `scripts/browser-app.sh` serves it that way for the run that proves it.
+
+  The page says nothing about recovery before it is asked: every string is a
+  count from the report (`web/view.js`), and the two things it cannot know — the
+  destination's free space and whether a drive is connected — are said out loud
+  rather than guessed.
+-->
+<style>
+  :root {
+    color-scheme: light dark;
+    --ink: #18181b;
+    --muted: #52525b;
+    --line: #d4d4d8;
+    --accent: #1d4ed8;
+    --bg: #ffffff;
+    --panel: #f8f8f9;
+    font: 16px/1.55 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ink: #e4e4e7;
+      --muted: #a1a1aa;
+      --line: #3f3f46;
+      --accent: #93b4ff;
+      --bg: #0b0b0d;
+      --panel: #18181b;
+    }
+  }
+  * {
+    box-sizing: border-box;
+  }
+  body {
+    margin: 0;
+    padding: 2.5rem 1.25rem 4rem;
+    background: var(--bg);
+    color: var(--ink);
+  }
+  main {
+    max-width: 44rem;
+    margin: 0 auto;
+  }
+  header p {
+    color: var(--muted);
+    margin-top: 0.25rem;
+  }
+  h1 {
+    font-size: 1.375rem;
+    letter-spacing: -0.01em;
+    margin: 0;
+  }
+  h2 {
+    font-size: 1rem;
+    margin: 2rem 0 0.5rem;
+  }
+  section[hidden] {
+    display: none;
+  }
+  .step {
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 1.25rem;
+    margin-top: 1.5rem;
+    background: var(--panel);
+  }
+  button {
+    font: inherit;
+    color: var(--ink);
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 0.5rem 0.9rem;
+    cursor: pointer;
+    min-height: 2.5rem;
+  }
+  button:hover:not(:disabled) {
+    border-color: var(--accent);
+  }
+  button:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+  button.primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+  }
+  @media (prefers-color-scheme: dark) {
+    button.primary {
+      color: #101014;
+    }
+  }
+  button:focus-visible,
+  select:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  .actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+    margin-top: 1rem;
+  }
+  #picked p,
+  #picker-error,
+  #stage,
+  #count {
+    margin: 0.6rem 0 0;
+  }
+  #picked strong {
+    font-weight: 600;
+  }
+  /* An error is a sentence, not a colour: the text says what happened. */
+  [role="alert"]:not([hidden]) {
+    border-left: 3px solid #b91c1c;
+    padding-left: 0.75rem;
+  }
+  @media (prefers-color-scheme: dark) {
+    [role="alert"]:not([hidden]) {
+      border-left-color: #f87171;
+    }
+  }
+  progress {
+    display: block;
+    width: 100%;
+    height: 0.6rem;
+    margin-top: 0.9rem;
+    accent-color: var(--accent);
+  }
+  progress:not([value]) {
+    opacity: 0.5;
+  }
+  #result ul {
+    padding-left: 1.1rem;
+  }
+  #result li {
+    margin: 0.35rem 0;
+  }
+  #headline {
+    font-size: 1.0625rem;
+    font-weight: 600;
+    margin: 0 0 0.75rem;
+  }
+  dl {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: 0.3rem 1rem;
+    margin: 0.5rem 0 0;
+    font-size: 0.9375rem;
+  }
+  dt {
+    color: var(--muted);
+  }
+  dd {
+    margin: 0;
+    overflow-wrap: anywhere;
+  }
+  code {
+    font: 0.9em ui-monospace, SFMono-Regular, Menlo, monospace;
+    overflow-wrap: anywhere;
+  }
+  details pre {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 0.75rem;
+  }
+  details summary {
+    cursor: pointer;
+    color: var(--muted);
+  }
+</style>
+
+<main>
+  <header>
+    <h1>lrsalvage</h1>
+    <p>
+      When a Lightroom catalog survives and the photographs do not, the previews are
+      what is left of them. This page reads a catalog and its preview folder and
+      tells you what can be recovered — in your browser, with nothing uploaded
+      anywhere.
+    </p>
+  </header>
+
+  <section id="gate" class="step" hidden>
+    <h2>This browser cannot run a recovery</h2>
+    <p id="gate-message"></p>
+  </section>
+
+  <section id="source" class="step" hidden>
+    <h2>1. Choose the folder your catalog is in</h2>
+    <p>
+      Pick the folder holding your <code>.lrcat</code> catalog. Lightroom usually
+      keeps its preview folder — the one ending in <code>.lrdata</code> — beside
+      it, and both are read where they are: nothing is moved, changed or uploaded.
+    </p>
+    <div class="actions">
+      <button id="pick" type="button" class="primary">Choose folder…</button>
+      <button id="pick-cache" type="button" hidden>Choose the preview folder…</button>
+    </div>
+    <div id="picked"></div>
+    <div id="choices"></div>
+    <p id="picker-error" role="alert" hidden></p>
+    <div class="actions">
+      <button id="scan" type="button" disabled>Scan this catalog</button>
+    </div>
+  </section>
+
+  <section id="scanning" class="step" hidden>
+    <h2>2. Scanning</h2>
+    <p id="stage" role="status" aria-live="polite"></p>
+    <progress id="bar" aria-hidden="true"></progress>
+    <p id="count"></p>
+    <div class="actions">
+      <button id="stop" type="button">Stop</button>
+    </div>
+  </section>
+
+  <section id="result" class="step" hidden>
+    <h2>3. What is there</h2>
+    <p id="headline"></p>
+    <ul id="causes"></ul>
+    <h2>What was checked</h2>
+    <dl id="checked"></dl>
+    <div id="roots-section" hidden>
+      <h2>Where the originals were</h2>
+      <p>
+        These are the folders the catalog recorded. A page can only see a folder it
+        has been given, so a folder that is not connected can be handed to it — then
+        the scan asks again and the photos whose originals are there stop being
+        salvage targets.
+      </p>
+      <ul id="roots"></ul>
+    </div>
+    <div class="actions">
+      <button id="restart" type="button">Start over</button>
+    </div>
+  </section>
+</main>
+
+<script type="module">
+  import { mount } from './view.js';
+  mount(document);
+</script>
+</html>

@@ -21,6 +21,10 @@ path = "src/bin/vault-parity.rs"
 
 [dependencies]
 lrsalvage-core = { path = "../lrsalvage-core" }
+# The harness links the app, never the reverse: the seam's registration shim and
+# the page-side bridge are the shipped page's, and a second copy of either is the
+# divergence `specs/modules/fs.md` guards against (`#149`, DEC-S5).
+lrsalvage-app = { path = "../lrsalvage-app" }
 serde_json.workspace = true
 sha2.workspace = true
 
@@ -35,4 +39,3 @@ wasm-bindgen = "0.2"
 # comparison runs against. Neither compiles for `wasm32`, and nothing here is
 # published.
 lrsalvage-fixtures = { path = "../lrsalvage-fixtures" }
-walkdir.workspace = true

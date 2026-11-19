@@ -461,6 +461,9 @@ pub struct Vault {
     /// Bytes to write at `previews.db` instead of an index: the torn file U4
     /// degrades on.
     raw_index: Option<Vec<u8>>,
+    /// Bytes to write as the catalog instead of a database: the file a person
+    /// picked believing it was a `.lrcat`, which SQLite refuses.
+    raw_catalog: Option<Vec<u8>>,
     db_version: String,
     crs_version: String,
     root_folder: Option<String>,
@@ -541,6 +544,7 @@ impl Vault {
             layout,
             has_index: true,
             raw_index: None,
+            raw_catalog: None,
             wal: false,
             db_version: db_version.to_string(),
             crs_version: crs_version.to_string(),
@@ -730,6 +734,17 @@ impl Vault {
         self
     }
 
+    /// Write these bytes as the catalog instead of a database.
+    ///
+    /// The state a person meets when they pick something that is not a `.lrcat`:
+    /// the copy is carried and the open is refused, which is a different answer
+    /// from "no images" and has to say so (`#117` user story 4).
+    #[must_use]
+    pub fn raw_catalog(mut self, bytes: &[u8]) -> Self {
+        self.raw_catalog = Some(bytes.to_vec());
+        self
+    }
+
     fn representation(&self) -> Representation {
         match self.layout {
             Layout::Legacy => Representation::Container,
@@ -862,6 +877,10 @@ impl Vault {
     // -- writers ------------------------------------------------------------
 
     fn write_catalog(&self) {
+        if let Some(bytes) = &self.raw_catalog {
+            fs::write(self.catalog(), bytes).expect("raw catalog");
+            return;
+        }
         let conn = Connection::open(self.catalog()).expect("create the catalog");
         conn.execute_batch(CATALOG_SCHEMA).expect("catalog schema");
         if self.metadata_table {

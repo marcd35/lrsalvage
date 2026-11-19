@@ -1,0 +1,62 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>lrsalvage — the app's entry and scan, driven</title>
+<!--
+  The app's harness page. It is not the product's page (`index.html` is): it drives
+  the same functions the product page calls — `web/app.js`'s `start`, its folder
+  reading, its capability gate and its picker — with the one thing a headless
+  browser cannot give them: an *answer* from a File System Access dialog.
+
+  That is the finding this page exists for. Measured on Chrome 157.0.8103.79 in
+  `--headless=new` (2026-11-19): `showDirectoryPicker` rejects with `AbortError`
+  and no dialog, and with `Page.setInterceptFileChooserDialog` the protocol's
+  `Page.fileChooserOpened` carries no `backendNodeId` and `Page.handleFileChooser`
+  does not exist — so no automation we have can accept a pick. A *cancelled* pick
+  is therefore driven for real here, and an accepted one is supplied as the value
+  a pick returns: a `FileSystemDirectoryHandle`, which origin-private storage
+  hands out with the same API.
+
+  `scripts/browser-app.sh` serves this page and `scripts/drive-browser.mjs` reads
+  `window.__result` back over the DevTools protocol.
+-->
+<style>
+  :root {
+    color-scheme: light dark;
+    font: 14px/1.5 ui-sans-serif, system-ui, sans-serif;
+  }
+  body {
+    margin: 0;
+    padding: 2rem;
+    max-width: 70rem;
+  }
+  h1 {
+    font-size: 1.1rem;
+    margin: 0 0 0.5rem;
+  }
+  p {
+    margin: 0 0 1rem;
+    color: #666;
+  }
+  pre {
+    background: #f4f4f5;
+    border-radius: 6px;
+    padding: 1rem;
+    overflow: auto;
+    white-space: pre-wrap;
+  }
+  @media (prefers-color-scheme: dark) {
+    p {
+      color: #a1a1aa;
+    }
+    pre {
+      background: #18181b;
+    }
+  }
+</style>
+<h1>lrsalvage — the app's entry and scan</h1>
+<p>
+  Runs the page's own flow over the vaults the native run composed, and holds every
+  report to the native one. The verdict is <code>window.__result</code>.
+</p>
+<pre id="log"></pre>
+<script type="module" src="./test.js"></script>

@@ -639,6 +639,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5d15f86d12da44cd8d4ec3c73984537eb7f4cadcb9776a575a0a8a05ca11005c"
 
 [[package]]
+name = "lrsalvage-app"
+version = "0.3.0"
+dependencies = [
+ "lrsalvage-core",
+ "lrsalvage-fixtures",
+ "serde_json",
+ "walkdir",
+ "wasm-bindgen",
+]
+
+[[package]]
 name = "lrsalvage-cli"
 version = "0.3.0"
 dependencies = [
@@ -690,11 +701,11 @@ dependencies = [
 name = "lrsalvage-web"
 version = "0.3.0"
 dependencies = [
+ "lrsalvage-app",
  "lrsalvage-core",
  "lrsalvage-fixtures",
  "serde_json",
  "sha2",
- "walkdir",
  "wasm-bindgen",
 ]
 

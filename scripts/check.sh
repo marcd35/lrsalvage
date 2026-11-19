@@ -137,9 +137,10 @@ gate_build() {
 
 # The second target. `lrsalvage-core` builds for `wasm32-unknown-unknown` and must
 # keep doing so: ADR 0012 D10 makes the target a fourth one the gate list owes, and
-# the browser app (#117) links this crate unchanged. `lrsalvage-web` is here too —
-# it is the crate a page loads, so it is where the seam's browser half is compiled
-# and linted; it is `publish = false`, and no other gate builds it for the target.
+# the browser app (#117) links this crate unchanged. The two `publish = false`
+# crates are here too, because they are what a page loads and no other gate builds
+# them for the target: `lrsalvage-app` is the shipped page's, `lrsalvage-web` is
+# the parity harness's.
 #
 # Linted as well as compiled: `--lib` is the surface an app links (the test targets
 # need the native-only `lrsalvage-fixtures`), and before #144 no gate built the
@@ -156,7 +157,7 @@ gate_wasm() {
     fi
     load_env
     cargo clippy --lib --locked --target wasm32-unknown-unknown \
-        -p lrsalvage-core -p lrsalvage-web -- -D warnings
+        -p lrsalvage-core -p lrsalvage-app -p lrsalvage-web -- -D warnings
 }
 
 # The artifact, not the tree. Every other gate reads this checkout, so a package

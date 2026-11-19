@@ -25,6 +25,18 @@ pub struct CatalogVersions {
     pub crs_version: Option<String>,
 }
 
+/// One `AgLibraryRootFolder` line: where Lightroom recorded a root, and how many
+/// catalog images it holds.
+///
+/// `path` is the stored `absolutePath` verbatim, trailing separator included. A
+/// front end that has to answer "is that drive connected?" asks the filesystem
+/// about this string, which is why it is not normalised here.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RootFolder {
+    pub path: String,
+    pub images: u64,
+}
+
 /// The `Adobe_variablesTable` names the two strings live under.
 const DB_VERSION: &str = "Adobe_DBVersion";
 const CRS_VERSION: &str = "Adobe_CrsVersion";
@@ -53,6 +65,43 @@ impl Catalog {
             .conn
             .query_row("SELECT count(*) FROM Adobe_images", [], |row| row.get(0))?;
         Ok(count.max(0) as u64)
+    }
+
+    /// The root folders the catalog recorded, and how many images live under
+    /// each — `AgLibraryRootFolder`'s own lines, verbatim.
+    ///
+    /// This is the "last known folder" a person recognises a disconnected drive
+    /// by, and it is the catalog's fact rather than a joined path's: Lightroom
+    /// writes `absolutePath` with a trailing separator and, on Windows, POSIX
+    /// separators (`format-notes` §6.1), so the strings are returned exactly as
+    /// stored and grouped by that spelling. A joined original path cannot be
+    /// split back into them, which is why this is a query and not a `plan`
+    /// derivation.
+    ///
+    /// The counts are images, virtual copies included, so their sum is
+    /// `Stats::images` less any image whose file row is gone — such an image has
+    /// no root to be counted under, and it is reported by the plan instead.
+    pub fn root_folders(&self) -> Result<Vec<RootFolder>> {
+        // INNER JOINs: a root with no image under it is not worth a row, and a
+        // row this join cannot reach is the deleted-file case above.
+        let mut stmt = self.conn.prepare(
+            "SELECT rf.absolutePath, count(i.id_local) \
+             FROM AgLibraryRootFolder rf \
+             JOIN AgLibraryFolder fo ON fo.rootFolder = rf.id_local \
+             JOIN AgLibraryFile fi ON fi.folder = fo.id_local \
+             JOIN Adobe_images i ON i.rootFile = fi.id_local \
+             GROUP BY rf.absolutePath \
+             ORDER BY rf.absolutePath",
+        )?;
+
+        let rows = stmt.query_map([], |row| {
+            Ok(RootFolder {
+                path: row.get(0)?,
+                images: row.get::<_, i64>(1)?.max(0) as u64,
+            })
+        })?;
+
+        Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
     }
 
     /// `Adobe_DBVersion` and `Adobe_CrsVersion` from `Adobe_variablesTable`,

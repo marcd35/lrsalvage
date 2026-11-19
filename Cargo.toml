@@ -4,6 +4,9 @@ members = [
     "crates/lrsalvage-core",
     "crates/lrsalvage-cli",
     "crates/lrsalvage-fixtures",
+    # The browser app: the shipped page (`0.1.0`, ADR 0012 D10) and its one
+    # entry. `publish = false`; it is the page, not a crate anybody installs.
+    "crates/lrsalvage-app",
     # The browser parity harness: a `cdylib` a page loads, plus the native half of
     # the comparison. `publish = false`; no gate runs it (`specs/modules/fs.md`).
     "crates/lrsalvage-web",
