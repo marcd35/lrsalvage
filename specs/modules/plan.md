@@ -165,6 +165,23 @@ applies decides whether a disagreement is `suspect`.
   same bytes, and the cost is the same one: every level file is read whole,
   because a bounded prefix could cut an `APPn` segment in half and turn a frame
   that is really there into a mismatch.
+- **A build reports as it goes and can be stopped, and the reporting build is the
+  only build.** `Plan::build_reported` takes a `&mut dyn FnMut(Progress) -> Control`
+  and answers `Result<Option<Plan>>`; `Plan::build` is that call with
+  `|_| Control::Continue` and drops the impossible `None`, so the two cannot
+  diverge and no caller can reach a second, unreported path. `Progress` is
+  `Cache { files }` for the one walk and `Images { done, total }` for the catalog's
+  images, and the unit of each is the smallest thing its stage has: a file the walk
+  has seen, and an image the plan has finished with. The callback fires once per
+  unit; **how often a surface paints is the surface's decision**, because a
+  100,000-image catalog crosses this boundary that many times and a DOM update does
+  not cost the same as a `u64`. A stopped build is `None` rather than a partial
+  `Plan`: a plan carrying *k* statuses would be a plan about a catalog whose other
+  images do not exist, and `#117` stops a scan back to source selection rather than
+  presenting one. Nothing is added to `fs` for this — a stop is a callback's return
+  value, not an operation — and `previews_db`'s own walk reports through its own
+  callback because this module may not be reached from it
+  (`specs/modules/previews-db.md`, *Decisions*).
 - **A suspect payload is recovered, not discarded.** Width and height may be
   swapped before calling it a disagreement, because the stored render is
   unrotated; a real photograph at the wrong declared size is still worth having,
