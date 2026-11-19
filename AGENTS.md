@@ -154,6 +154,9 @@ exactly how §6.4 kept a false ICC claim after the render disproved it.
   reviewing a diff, and before writing a claim a stranger will act on.
 - `docs/agents/issue-tracker.md` — read the ticket with this **before the first
   design round**, not after the code disagrees with it.
+- `docs/agents/writing-a-release-checklist.md` — read before writing or executing
+  a `docs/release-*.md`: the box shape, where each release fact lives, and the
+  two timings a version sentence has.
 - `docs/agents/rendering-a-test-cache.md` — how to make a cache Lightroom
   *rendered* rather than converted, what a new catalog decides on its own, and the
   five facts that make driving its GUI reliable rather than a lottery.

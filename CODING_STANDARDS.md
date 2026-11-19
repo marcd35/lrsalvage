@@ -42,6 +42,12 @@ a commit message that says why.
 - **A verified claim is re-measured, not re-read.** Changing a byte-level claim
   means running the family that measured it — `sh scripts/check.sh real` for most
   of §5, and the gate the section itself names where it is one of the others.
+- **A document that prescribes work names one owner per decision.** Two boxes
+  that place the same check in different modules is not emphasis; it is a
+  contradiction the implementer settles by guessing. The same goes for acts: a
+  box sits under the heading of the moment it happens, so a sentence that may only
+  be written after a publish is not a *before the tag* box. A checklist written
+  to remove ambiguity is the one document that cannot carry any.
 
 ## Code
 
