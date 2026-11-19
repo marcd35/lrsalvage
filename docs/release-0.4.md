@@ -120,7 +120,7 @@ reader closing the tracker can check coverage without re-deriving it:
 | Tracker's item | Where it is proved |
 |---|---|
 | 1. Every box ticked, or deleted with its reason | this page's rule; it has no box of its own |
-| 2. `v0.4.0` annotated, three archives and `SHA256SUMS` attached | [Making the tag](#making-the-tag) |
+| 2. `v0.4.0` annotated, three archives, `SHA256SUMS` and the five generated files attached | [Making the tag](#making-the-tag) |
 | 3. Both crates on crates.io, through the trusted-publisher job | [After the tag](#after-the-tag-irreversible) |
 | 4. `cargo install lrsalvage-cli --version 0.4.0` proved with no checkout | [After the tag](#after-the-tag-irreversible) |
 | 5. `cargo test` green in an unpacked `lrsalvage-core-0.4.0.crate` | [Artifact](#artifact--what-a-stranger-can-download)'s three boxes, and the appendix [Checking the 0.4.0 tarball by hand](#checking-the-040-tarball-by-hand) |
@@ -232,8 +232,10 @@ reader closing the tracker can check coverage without re-deriving it:
         what `readme.rs` was written to stop.
       - **The man page's synopsis and flag list are derived**, and its exit-code
         section has **one source**, named in the generator. A hand-typed second
-        table there is the `readme.rs` drift again; if the codes come from
-        `main.rs`'s mapping, the box says which test holds the two together.
+        table there is the `readme.rs` drift again; the codes come from
+        `exit::PUBLISHED`, and the test that holds the two together is
+        `main.rs`'s `the_published_exit_numbers_are_pinned_and_each_code_has_a_case`,
+        which pins the six constants and asserts `PUBLISHED` covers them.
       - **`release.yml` uploads the five files by explicit path, not a glob.** A
         `dist/*.tgz`-shaped addition would sweep a completion script into the
         archive set; the asset list itself is written once, in the Artifact box
@@ -244,6 +246,15 @@ reader closing the tracker can check coverage without re-deriving it:
       - **The README's Checks section names the new artifacts in one line**, which
         is #62's own done-when, and the ticket's horizon is corrected in the same
         pull request.
+      - *Measured 2026-11-19, in the slice's pull request:* the five bullets above
+        that a tree can carry are in
+        [#148](https://github.com/marcd35/lrsalvage/pull/148)'s tree, and the red
+        arm is proved twice there — a renamed flag, and a file dropped into the
+        committed directory, each failing `completions` in a scratch clone. The box
+        stays unticked: the `Verified` lines on slices 2–4 record a commit on
+        `main`, and this slice has none until it merges. The horizon correction is
+        drafted in [*Text held for approval*](#text-held-for-approval) and is
+        posted on approval, not before.
 - [ ] **6 — the bump.** `0.4.0` in the workspace manifest and in both
       `lrsalvage-core` pins (`lrsalvage-cli`, `lrsalvage-fixtures`, whose
       requirement must match or the workspace will not resolve), `Cargo.lock`
@@ -252,6 +263,14 @@ reader closing the tracker can check coverage without re-deriving it:
       *Measured 2026-11-18:* `rg '0\.3\.0' crates/` finds the two pins and the
       comment in `crates/lrsalvage-core/Cargo.toml` that records what was measured
       on 2026-11-17 — the pins move, the comment is history and keeps its number.
+      *Measured 2026-11-19:* it also finds the man page, twice —
+      `crates/lrsalvage-cli/artifacts/lrsalvage.1` carries `lrsalvage 0.3.0` in its
+      `.TH` line and `v0.3.0` in its `VERSION` section, both from `clap`'s
+      `version`. So this bump ends by regenerating the five artifacts —
+      `cargo run -p lrsalvage-cli --example artifacts -- crates/lrsalvage-cli/artifacts`
+      — and `sh scripts/check.sh completions` is the gate that says so if it is
+      forgotten. The artifacts move; like the comment above, no `0.3.0` of
+      history is rewritten in prose.
       The changelog section's content is decided below, under
       [Docs](#docs--the-record); the bump does not invent it.
 
@@ -315,11 +334,20 @@ holds.
       that is not yet on the index would otherwise be verified as the previous
       one.
 - [ ] The tag produces the release's assets: the three platform archives and
-      `SHA256SUMS` that `release.yml` already builds, plus the four completion
-      scripts and the man page #62 attaches. **This is the one place the list is
-      written** — the tag, binstall and changelog boxes point here rather than
-      recounting it — and the archive names stay the shape `release.yml`'s comment
-      explains they must keep.
+      `SHA256SUMS` that `release.yml` already builds, plus the five files #62
+      attaches — `lrsalvage.bash`, `_lrsalvage`, `lrsalvage.fish`,
+      `_lrsalvage.ps1` and `lrsalvage.1`, generated from the binary's own `clap`
+      definition, committed under `crates/lrsalvage-cli/artifacts/` and held to it
+      by `scripts/check.sh completions`. **This is the one place in this checklist
+      the list is written** — the tag, binstall and changelog boxes point here
+      rather than recounting it — and the archive names stay the shape
+      `release.yml`'s comment
+      explains they must keep. `release.yml` names the same five paths because a
+      workflow cannot read prose: that is this list's executable form, and
+      `if-no-files-found: error` is what fails a tag whose generator wrote one
+      fewer. `SHA256SUMS` stays the archive set's: a checksum
+      file whose shape changed with a new kind of asset is a different promise, so
+      the five are attached beside it, not inside it.
 
 ### Gates — the ones a script can run
 
