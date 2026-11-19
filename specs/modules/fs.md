@@ -57,9 +57,13 @@ the namespace arithmetic. The last two are compiled for the host as well, becaus
 they are arithmetic rather than browser, and their unit tests are the ones that
 can run without a page.
 
-The page-side host lives with the harness, not in this crate:
-`crates/lrsalvage-web/web/` holds the worker's bridge, the page's host and the
-parity page, and `scripts/browser-parity.sh` drives them.
+The page-side host lives with the page that uses it, not in this crate:
+`crates/lrsalvage-app/web/seam/` holds the worker's bridge (`lrsalvage-fs.js`), the
+page's host (`fs-host.js`) and their shared protocol (`protocol.js`), and
+`scripts/browser-parity.sh` and `scripts/browser-app.sh` drive them. It moved
+there from the parity harness in `#149`: a shipped page may not import from a
+crate nothing ships with, and the two halves of a hand-written bridge are exactly
+the pair that must not exist twice.
 
 ## Operations
 
@@ -156,7 +160,7 @@ costs the chunk and never the file. `list_files` and `walk_files` page the same
 way, and the host caches an enumeration until the next write.
 
 The host may make that call synchronous however it likes. The measured route is
-`crates/lrsalvage-web/web/lrsalvage-fs.js`: the run happens in a dedicated
+`crates/lrsalvage-app/web/seam/lrsalvage-fs.js`: the run happens in a dedicated
 worker, the worker posts the operation to the page and parks on a
 `SharedArrayBuffer` (`Atomics.wait`), and the page — which owns the handles and an
 event loop — awaits the operation and notifies it. Two consequences are the
@@ -174,8 +178,10 @@ per root, `install_store` (awaited, or `start_install` then `poll_install` from 
 macrotask for a host that cannot await), `seal`. Mounting is before the install
 because a `scratch_dir` needs a store mount to allocate under, and `seal` is after
 it because a run may only start once SQLite has a VFS. `reset` forgets all of it.
-`crates/lrsalvage-web` wraps that for a page and is the worked example — that
-order, in `crates/lrsalvage-web/src/wasm.rs`.
+`crates/lrsalvage-app` wraps that for a page and is the worked example — that
+order, in `crates/lrsalvage-app/src/wasm.rs`; `crates/lrsalvage-web` links it and
+re-exports the same three calls for the parity page, so the two pages cannot
+register the seam differently.
 
 ### What the browser does differently, and why
 
@@ -218,15 +224,28 @@ order, in `crates/lrsalvage-web/src/wasm.rs`.
   which resolves `tokio` into the lockfile on the host side of its manifest.
 - **`std::process::id` panics on this target**, so `extract`'s write-probe name
   uses a `cfg`-selected tag rather than the process id. That is one of the two
-  caller lines this slice had to move; neither has a signature.
+  caller lines this slice had to move; neither has a signature. `std::env::temp_dir`
+  is the other panic of the same kind, and it sat in `snapshot`'s scratch-directory
+  error path as the `path` a refusal is reported on: a page has no temporary
+  directory, so `#149` made that context the catalog the refusal is about. It is
+  the kind of thing only a real browser run finds — a native build answers a
+  question a page cannot ask.
 
 ### Where the harness lives
 
-`crates/lrsalvage-web` is a `publish = false` workspace member: a `cdylib` a page
-loads, one driver that compiles for both targets, and a native binary that builds
-the vault and runs the driver on the host. `scripts/browser-parity.sh` builds it,
-serves it, drives headless Chromium over the DevTools Protocol and compares the
-two reports with `MAIN_SEPARATOR` normalised.
+`crates/lrsalvage-app` is the shipped page (`0.1.0`, ADR 0012 D10) and
+`crates/lrsalvage-web` is the parity harness that measures the seam under it. Both
+are `publish = false` workspace members with a `cdylib` half; the app also holds
+the seam's page-side JavaScript, and the harness links the app rather than
+carrying a second copy of it (`#149`, DEC-S5).
+
+`crates/lrsalvage-web` publishes one driver that compiles for both targets and a
+native binary that builds the vault and runs the driver on the host.
+`scripts/browser-parity.sh` builds it, serves it, drives headless Chromium over
+the DevTools Protocol and compares the two reports with `MAIN_SEPARATOR`
+normalised. `scripts/browser-app.sh` does the same for the app's entry: seven
+vaults, one per way a scan can come back, plus a stop, a recheck and a cancelled
+picker.
 
 **It is not a gate.** `scripts/check.sh` is the gate list and a missing tool there
 is a failure rather than a skip, so a gate here would make every CI runner install
@@ -239,7 +258,9 @@ all.
 
 The harness lives in the tree rather than beside it (#126's lived outside, and
 `#142`'s brief was that nothing from outside goes in): a harness nobody can run
-from a checkout is a claim nobody can reproduce.
+from a checkout is a claim nobody can reproduce. Both scripts serve the checkout's
+`crates/` tree and nothing else of it, because the two pages import each other's
+modules across the crate boundary.
 
 What a machine needs to run it — named here because the script fails rather than
 skipping, and because only one of these is installed by default: `cargo` and

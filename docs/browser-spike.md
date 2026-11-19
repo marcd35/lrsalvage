@@ -362,9 +362,13 @@ clearest reminder of how much rides on that.
   target, its `wasm32` half answers from an origin-private store, a picked
   directory and a picked file ([the seam's spec](../specs/modules/fs.md)), and
   `scripts/browser-parity.sh` holds that half to the desktop's counts, statuses
-  and JPEG bytes with the separator normalised. What is still owed is the page:
-  the picker flow, progress, the grid and the saves, which are #117's own slices
-  — this page measures the costs, not the plan for them.
+  and JPEG bytes with the separator normalised. What was still owed is the page,
+  and the first slice of it has landed: `#149` built the entry and the scan —
+  folder picks, the catalog and its `-wal` copied into the store, progress, a stop,
+  the conditions that make a scan empty, and a recheck of the originals
+  ([the app's spec](../specs/app.md), and `scripts/browser-app.sh` for what it
+  measured). What remains of the page is the grid and the saves, which are #117's
+  later slices — this page measures the costs, not the plan for them.
 - **Which artifact ships.** A native shell writes through the operating system at
   23–108 files/s with no picker, no quota and no `-wal` question. The browser now
   writes at 27–29 files/s with no installer, no signing and a macOS route that does

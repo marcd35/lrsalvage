@@ -30,6 +30,12 @@ requires. Nothing ships with it, neither crate links it into a binary, and it is
 not a module in the table below — it exists so the byte shapes and the catalog
 fixtures have exactly one implementation (`fixtures`).
 
+Two more members are neither published nor test-only, and they are the browser
+line: `lrsalvage-app` is the shipped page's crate (`0.1.0`, ADR 0012 D10) and
+`lrsalvage-web` is the harness that measures the seam under it. Neither is a
+module of the pipeline below; `specs/app.md` owns the app and
+`specs/modules/fs.md` (*Where the harness lives*) owns the harness.
+
 The pipeline is a straight line, and every stage is pure with respect to the one
 before it:
 
@@ -96,7 +102,8 @@ field.
 | Item | Tier | Public because |
 |---|---|---|
 | `snapshot::CatalogSnapshot`, `.capture`, `.path` | seam | the stable copy every other opener takes by reference |
-| `catalog::Catalog`, `::from_snapshot`, `::images`, `::xmp`, `::versions` | seam | the catalog queries a run begins with, over a snapshot |
+| `catalog::Catalog`, `::from_snapshot`, `::images`, `::xmp`, `::versions`, `::root_folders` | seam | the catalog queries a run begins with, over a snapshot. `root_folders` is the recorded root folders with their image counts — the "last known folder" a front end shows, and a query rather than a derivation of a joined path |
+| `catalog::RootFolder` (+ `path`, `images`) | seam | what `root_folders` hands back |
 | `catalog::CatalogVersions` (+ `db_version`, `crs_version`) | seam | what `versions` hands back; `CacheFacts` carries the same two strings |
 | `catalog::Catalog::open` | convenience | `capture` + `from_snapshot` in one call |
 | `catalog::Catalog::image_count` | convenience | a count without materialising `images()`; no in-tree caller |

@@ -35,6 +35,14 @@ statuses, tiers or output paths — those belong to `plan` and `model`.
   `absolutePath`, then `pathFromRoot`, then the file name; the output tree later
   takes only the root's last segment (`model`), so the full absolute path is
   never reproduced under the destination.
+- **The roots are a query of their own, because a joined path cannot be split
+  back.** `root_folders` returns one `RootFolder` per `AgLibraryRootFolder` line
+  — the stored `absolutePath` verbatim, trailing separator and all — with the
+  image count under it. That is the "last known folder" a person recognises a
+  disconnected drive by, and asking it here rather than rebuilding it from
+  `original_path` keeps one reading of the schema. The counts are images, virtual
+  copies included, so their sum is every image whose file row is intact: an image
+  whose row is gone has no root to be counted under and is `plan`'s to report.
 - **The XMP blob is zlib-compressed text** and is parsed by hand for the handful
   of fields worth restoring. A missing field stays `None`; nothing is inferred
   from a neighbouring field, except the documented capture-time fallback to
