@@ -99,10 +99,12 @@ not allowed.
   the design agreeing are two different questions, and `tests/spec_graph.rs`
   only answers the second.
 - **The tests assert more than behaviour.** `tests/spec_graph.rs` checks each
-  module's `depends-on` against the modules it actually reaches, and
+  module's `depends-on` against the modules it actually reaches,
   `lrsalvage-cli`'s `tests/readme.rs` checks the README's flag and `--json`
-  tables against the binary. A new dependency or a new field lands with its spec
-  and its table.
+  tables against the binary, and `lrsalvage-cli`'s `tests/links.rs` holds every
+  relative link and heading anchor in this repository's prose to a file and a
+  heading that exist. A new dependency or a new field lands with its spec and
+  its table; a renamed heading lands with its links.
 - **The real-vault test asserts the numbers `format-notes.md` publishes**, and it
   is the only thing that can: §5.4 carried a false claim for months because
   nothing checked it. Editing a byte-level claim means running the gate that
