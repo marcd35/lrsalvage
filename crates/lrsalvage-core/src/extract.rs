@@ -281,8 +281,11 @@ impl Room {
     }
 
     /// Whether the run fits, and leaves under `NEARLY_FULL_HEADROOM` behind it.
+    ///
+    /// A run that would write nothing — a resume whose every output is already
+    /// there — is never nearly full: there is nothing left to warn about.
     pub fn is_nearly_full(&self) -> bool {
-        self.left() < NEARLY_FULL_HEADROOM
+        self.needed > 0 && self.left() < NEARLY_FULL_HEADROOM
     }
 
     /// What a run says about a destination that fits but barely, `None` when it
@@ -362,6 +365,33 @@ pub fn ensure_room(destination: &Path, needed: u64) -> Result<Preflight> {
     Ok(Preflight::Fits(Room { needed, available }))
 }
 
+/// The bytes this run would still write: the plan's own total, less every item
+/// whose destination already exists.
+///
+/// An existing destination is never written again unless `--force` is given — it
+/// is skipped when it verifies as this crate's own output and reported failed
+/// when it does not, and neither writes a byte — so those bytes are not room this
+/// run needs. Counting them anyway would make a first pass that filled the
+/// destination refuse every later resume, for the bytes it had already written,
+/// which is the one case a resume exists for (#64, review round).
+///
+/// It costs one `stat` per selected item and reads no destination file. Under
+/// `--force` nothing is subtracted, because a forced run may replace what is
+/// there; that over-estimates when a forced item would in fact have verified,
+/// which errs towards refusing rather than towards filling the disk.
+pub fn pending_bytes(plan: &Plan, options: &ExtractOptions) -> u64 {
+    plan.selected()
+        .filter(|item| {
+            options.force
+                || item
+                    .output
+                    .as_deref()
+                    .is_none_or(|output| !fs::exists(output).unwrap_or(false))
+        })
+        .map(|item| item.bytes)
+        .sum()
+}
+
 /// The nearest ancestor of `path` that exists, made absolute so a relative
 /// destination has one too.
 fn existing_ancestor(path: &Path) -> Option<PathBuf> {
@@ -382,7 +412,7 @@ fn byte_count(count: u64) -> String {
     if count == 1 {
         "1 byte".to_string()
     } else {
-        format!("{count} bytes")
+        format!("{} bytes", report::with_thousands(count))
     }
 }
 
@@ -781,6 +811,7 @@ mod tests {
                     tier: None,
                     declared: None,
                     smallest_level: None,
+                    bytes: 0,
                     selected: true,
                     note: None,
                 }],
@@ -1123,6 +1154,7 @@ mod tests {
             tier: None,
             declared: None,
             smallest_level: None,
+            bytes: 0,
             selected: true,
             note: None,
         }

@@ -104,8 +104,11 @@ fn ensure_room_refuses_a_total_no_destination_can_hold() {
     );
     let message = error.to_string();
     assert!(
-        message.contains(&u64::MAX.to_string()),
-        "the need is stated in bytes: {message}"
+        message.contains(&format!(
+            "{} bytes",
+            lrsalvage_core::report::with_thousands(u64::MAX)
+        )),
+        "the need is stated in bytes, with the separators the summary uses: {message}"
     );
     assert!(
         message.contains("MiB"),
@@ -143,4 +146,57 @@ fn ensure_room_measures_the_nearest_existing_ancestor() {
         room.available
     );
     assert!(!pending.exists(), "asking the question creates nothing");
+}
+
+/// The pre-flight's number is what the run has *left* to write.
+///
+/// `vault()` places a verified output at the item's own path, so this is the
+/// resume case: the destination already holds the bytes and needs no room for
+/// them — unless `--force` says it may replace them (#64, review round).
+#[test]
+fn pending_bytes_counts_only_what_the_destination_does_not_already_hold() {
+    let vault = vault();
+    let plan = vault.plan(&Options::default());
+    let settled = ExtractOptions {
+        force: false,
+        ..options(&vault)
+    };
+
+    assert_eq!(
+        plan.items.iter().map(|item| item.bytes).sum::<u64>(),
+        plan.stats.bytes,
+        "the plan publishes per item exactly the total it sums"
+    );
+    assert_eq!(
+        extract::pending_bytes(&plan, &settled),
+        0,
+        "an output already on disk is skipped or failed, never rewritten"
+    );
+    assert_eq!(
+        extract::pending_bytes(&plan, &options(&vault)),
+        plan.stats.bytes,
+        "`--force` may replace what is there, so none of it is discounted"
+    );
+}
+
+/// A destination that holds nothing needs room for every byte the plan selected.
+#[test]
+fn pending_bytes_is_the_plans_total_on_a_fresh_destination() {
+    let fresh = Vault::modern()
+        .image(ImageRow::new(1, "IMG_0001").cache(UUID))
+        .pyramid(PyramidRow::new(UUID).level(1600, 1200))
+        .level_file(Level::sized(UUID, 1600, 1200))
+        .write();
+    let plan = fresh.plan(&Options::default());
+    let settled = ExtractOptions {
+        force: false,
+        ..options(&fresh)
+    };
+
+    assert_eq!(
+        extract::pending_bytes(&plan, &settled),
+        plan.stats.bytes,
+        "nothing is there, so the run writes the plan's whole total"
+    );
+    assert!(plan.stats.bytes > 0, "the fixture writes something");
 }

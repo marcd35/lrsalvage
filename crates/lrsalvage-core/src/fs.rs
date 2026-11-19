@@ -215,8 +215,9 @@ pub fn set_mtime(path: &Path, unix_seconds: i64) -> io::Result<()> {
 /// answer: a page cannot know the destination's free space (`#117`).
 ///
 /// A debug build answers `LRSALVAGE_FREE_SPACE_BYTES` instead of asking the
-/// platform; that is the seam's one test aid, and a release build never reads
-/// the name.
+/// platform — on the native backend only; the `wasm32` one refuses every
+/// operation here by design. That is the seam's one test aid, and a release
+/// build never reads the name.
 pub fn available_space(path: &Path) -> io::Result<u64> {
     backend::available_space(path)
 }

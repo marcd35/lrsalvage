@@ -761,6 +761,13 @@ fn m18_all_levels_reports_the_levels_the_cap_left_behind() {
 
 #[test]
 fn m19_a_destination_without_room_is_refused_before_the_first_write() {
+    // The substitution this row needs is compiled into debug builds only
+    // (`specs/modules/fs.md`), so a release-profile test run cannot produce the
+    // refusal it asserts.
+    if !cfg!(debug_assertions) {
+        eprintln!("skipped: LRSALVAGE_FREE_SPACE_BYTES is compiled into debug builds only");
+        return;
+    }
     let pyramid = uuid(39);
     let vault = Vault::modern()
         .image(ImageRow::new(39, "IMG_0039").cache(&pyramid))

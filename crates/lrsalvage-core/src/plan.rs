@@ -138,6 +138,13 @@ pub struct PlanItem {
     /// The smallest level of a level-file pyramid, for the contact sheet. `None`
     /// for a container item, whose sheet walks its own chunks.
     pub smallest_level: Option<PathBuf>,
+    /// The payload bytes this item would write: a level file's own length, or the
+    /// container chunk that was certified. `0` for an item that writes nothing.
+    ///
+    /// `Stats::bytes` sums this over the selected items. `extract` sums it over the
+    /// ones a resume has left to write, which is why the plan publishes it per
+    /// item rather than only as a total.
+    pub bytes: u64,
     /// False when the level falls below the configured floor.
     pub selected: bool,
     pub note: Option<String>,
@@ -339,6 +346,7 @@ impl Plan {
                     tier: None,
                     declared: None,
                     smallest_level: None,
+                    bytes: 0,
                     selected: false,
                     note: Some("original still on disk".into()),
                 });
@@ -362,6 +370,7 @@ impl Plan {
                     tier: None,
                     declared: None,
                     smallest_level: None,
+                    bytes: 0,
                     selected: false,
                     note: Some("no previews.db row for this image".into()),
                 });
@@ -456,6 +465,7 @@ impl Plan {
                     tier: None,
                     declared: None,
                     smallest_level: None,
+                    bytes: 0,
                     selected: false,
                     note: Some(match tombstone {
                         Some(timestamp) => format!(
@@ -533,6 +543,7 @@ impl Plan {
                     tier: None,
                     declared: None,
                     smallest_level: None,
+                    bytes: 0,
                     selected: false,
                     note: Some(format!(
                         "payload exists but previews.db has no entry for it: {named}"
@@ -1193,14 +1204,18 @@ fn decide_levels(
         }
         let note = (!notes.is_empty()).then(|| notes.join("; "));
 
-        // Only a level that is actually written contributes bytes; a failed one
-        // is evaluated and reported, and writes nothing.
+        // Only a level this plan would write contributes bytes; a failed one is
+        // evaluated and reported, and writes nothing. What the *destination*
+        // already holds is not this module's question — it writes and stats
+        // nothing — so a resume's already-present outputs are still counted here
+        // and are taken off again by `extract::pending_bytes`.
         let writable = writable && !matches!(status, Status::Failed);
         if level.winner {
             image_status = Some(status);
         }
         tally.stats.levels += 1;
-        if writable && !below_floor && !above_cap {
+        let writes = writable && !below_floor && !above_cap;
+        if writes {
             tally.stats.bytes += level.bytes as u64;
         }
         if let Some(tier) = tier {
@@ -1222,6 +1237,7 @@ fn decide_levels(
             tier,
             declared: level.declared,
             smallest_level: smallest_level.clone(),
+            bytes: if writes { level.bytes as u64 } else { 0 },
             selected: !below_floor && !above_cap,
             note,
         });

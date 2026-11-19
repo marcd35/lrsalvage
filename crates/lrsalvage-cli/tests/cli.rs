@@ -273,6 +273,20 @@ fn plan_bytes(fixture: &Fixture) -> u64 {
 /// the platform (`specs/modules/fs.md`).
 const FREE_SPACE: &str = "LRSALVAGE_FREE_SPACE_BYTES";
 
+/// Whether that substitution exists in the build under test.
+///
+/// It is compiled into `debug_assertions` builds only, which is what `cargo test`
+/// builds; a `cargo test --release` run would otherwise "fail" every test below
+/// by measuring this machine's real, roomy disk. A skip says so rather than
+/// pretending the refusal is broken.
+fn free_space_substitution() -> bool {
+    cfg!(debug_assertions)
+}
+
+/// The line a skipped test prints, so a release-profile run is legible.
+const NO_SUBSTITUTION: &str =
+    "skipped: LRSALVAGE_FREE_SPACE_BYTES is compiled into debug builds only";
+
 /// #64: the refusal, proved against the real binary.
 ///
 /// No portable unprivileged machine can be made nearly full on demand, so the
@@ -281,6 +295,10 @@ const FREE_SPACE: &str = "LRSALVAGE_FREE_SPACE_BYTES";
 /// real destination, the real exit code.
 #[test]
 fn extract_refuses_a_destination_without_room_and_writes_nothing() {
+    if !free_space_substitution() {
+        eprintln!("{NO_SUBSTITUTION}");
+        return;
+    }
     let fixture = Fixture::new();
     let needed = plan_bytes(&fixture);
     let shortfall = needed / 2;
@@ -302,6 +320,10 @@ fn extract_refuses_a_destination_without_room_and_writes_nothing() {
 /// the plan's total itself proceeds.
 #[test]
 fn one_byte_short_is_refused_and_the_plans_own_total_proceeds() {
+    if !free_space_substitution() {
+        eprintln!("{NO_SUBSTITUTION}");
+        return;
+    }
     let fixture = Fixture::new();
     let needed = plan_bytes(&fixture);
 
@@ -332,6 +354,10 @@ fn one_byte_short_is_refused_and_the_plans_own_total_proceeds() {
 /// nothing either way.
 #[test]
 fn a_dry_run_makes_the_same_room_check_and_writes_nothing() {
+    if !free_space_substitution() {
+        eprintln!("{NO_SUBSTITUTION}");
+        return;
+    }
     let fixture = Fixture::new();
     let needed = plan_bytes(&fixture);
 
@@ -353,6 +379,41 @@ fn a_dry_run_makes_the_same_room_check_and_writes_nothing() {
         .stderr(predicate::str::contains("nearly full"))
         .stderr(predicate::str::contains("0 written (dry run)"));
     assert_empty_output(&fixture);
+}
+
+/// A resume is measured by what it has **left** to write, not by the plan's whole
+/// total.
+///
+/// The first pass filling the destination is the case a resume exists for; if the
+/// pre-flight counted the bytes already written, every later resume would be
+/// refused on the drive it had just filled (#64, review round).
+#[test]
+fn a_resume_is_measured_by_the_bytes_it_has_left_to_write() {
+    if !free_space_substitution() {
+        eprintln!("{NO_SUBSTITUTION}");
+        return;
+    }
+    let fixture = Fixture::new();
+    let needed = plan_bytes(&fixture);
+    assert!(needed > 0, "this fixture's plan writes something: {needed}");
+
+    // The first pass writes everything, with room to spare.
+    fixture.extract().assert().code(0);
+    assert!(
+        !jpeg_files(fixture.out()).is_empty(),
+        "the first pass wrote"
+    );
+
+    // Every output is now there, so this run would write nothing — and a
+    // destination with *no* free space therefore still fits it.
+    fixture
+        .extract()
+        .env(FREE_SPACE, "0")
+        .assert()
+        .code(0)
+        .stderr(predicate::str::contains("skipped"))
+        // Nothing left to write is nothing to call nearly full.
+        .stderr(predicate::str::contains("nearly full").not());
 }
 
 #[test]
