@@ -20,7 +20,15 @@
 # into another's and break it.
 #
 # `package` is the slow one — two builds and two test runs — so name it while
-# iterating and let the no-argument run carry it at hand-off.
+# iterating and let the no-argument run carry it at hand-off. The fast four earn
+# the same, and in this order:
+#
+#   scripts/check.sh fmt shell doc typos
+#
+# They run in seconds, and `doc` is the one a new public item breaks — a doc
+# comment that links a private item fails `-D warnings`. `doc` sits after `test`
+# in the full list, so a list run pays a test run to learn it and then starts
+# over; the four by name cost less than one of those restarts.
 #
 # A missing tool is a failure, never a skip: a green run must mean CI's green.
 #
