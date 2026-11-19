@@ -9,7 +9,9 @@ in [ADR 0012](adr/0012-two-release-lines.md) D4–D7 and
 what to check off.
 
 It is the output of the grilling on #125, in the shape
-[0.3's](release-0.3.md) was. Where the tracker already states something — the
+[0.3's](release-0.3.md) was, and that shape is written down in
+[writing a release checklist](agents/writing-a-release-checklist.md). Where the
+tracker already states something — the
 slices, their order, the constraint list — this page links rather than restates,
 because the two documents that disagree about a release are the release's own
 problem. What the tracker cannot carry is a box, so the boxes are here.
