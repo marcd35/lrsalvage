@@ -122,21 +122,25 @@ Read 2026-11-18. These are the facts #126's spike measures against.
 - **Measured 2026-11-18** ([browser-spike](browser-spike.md)): a 1 GiB copy ran at
   86–178 MB/s; the quota was 10.7–12.0 GB and moved between sessions;
   `persist()` was refused while the data nonetheless survived a restart; a picked
-  folder's grant survived a reload and became `prompt` after a restart; and the
+  folder's grant survived a reload and became `prompt` after a restart. The
   crate's *checked* import copies the main file only and resets the header to
-  rollback mode, so a live `-wal`'s committed rows were lost without an error — 78
-  images read where 128 exist. That last one is the import's design, not a platform
-  limit: SQLite needs no `-shm` for a single owner set to exclusive locking, and the
-  same crate offers a byte-preserving import. The desktop `snapshot` copies
-  `-wal`/`-shm` and checkpoints, which is why the same file reads 128 there. —
-  measured, with the fix unmeasured
-- **A page writes into a picked folder slowly, and that is the mechanism that
-  failed.** 1 000 payloads through `createWritable()` ran at 1.8–3.5 files/s with a
-  p95 of 0.6–1.4 s and a worst single file of 26 s, against 29 files/s for the same
-  call pattern into OPFS and 49–108 files/s for a native writer on the same disk. All
-  of those runs awaited each write and close before starting the next; many files in
-  flight was the one lever not tested, and Chromium's per-close hashing and
-  after-write checks explain why the cost tracks file count. — measured
+  rollback mode, so a live `-wal`'s committed rows are lost without an error — 78
+  images read where 128 exist. That is the import's design, not a platform limit:
+  importing the sidecar byte-preserving and opening with exclusive locking
+  recovered **128 of 128** with every digest equal to a native run, since SQLite
+  needs no `-shm` for a single owner. The desktop `snapshot` copies `-wal`/`-shm`
+  and checkpoints, which is why the same file reads 128 there. — measured
+- **A page writes into a picked folder at 27–29 files/s**, if it keeps eight to
+  sixteen streams in flight: 1 000 payloads in 34 s with a p95 of 619 ms and no gap
+  over 570 ms, 200 large payloads at 26.6/s, saturation between 8 and 16 streams
+  (64 streams buys latency, p50 2.4 s, and no rate). Sequentially it is 7–8 files/s
+  on a good session and 3.5 on a bad one. That is 2–4× a *bare* native write and at
+  parity with a native write plus `sync_all`, which is what the shipped writer
+  does; the same JavaScript into OPFS runs at 120–142 files/s. — measured
+- **A page writes into a picked folder slowly** when it writes one file at a time,
+  and the record above has the concurrent number that fixes it. Sequential runs
+  through `createWritable()` gave 1.8–8.1 files/s depending on the session, with a
+  p95 of 0.6–1.4 s and a worst single file of 3 s–26 s. — measured
 - **What a page cannot do**: open Explorer at the destination, integrate with the
   shell, keep running after the tab closes, or survive an OOM kill mid-write.
 

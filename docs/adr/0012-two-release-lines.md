@@ -262,16 +262,21 @@ Emscripten's `WORKERFS` and SQLite Explorer's blob VFS are that shape already.
 is usable only inside the origin private file system, so a VFS that must journal,
 recover or checkpoint cannot live on a picked file. The test was run against the
 mechanism that does exist — a copy into OPFS read through the `sahpool` VFS — and
-the browser path is **No-go** on two other rows, not on this one: writing JPEGs
-into a picked folder ran at 1.8–3.5 files/s with a worst single file of 26 s, and
-the import that carries a catalog into OPFS dropped a committed `-wal` and read 78
-images where 128 exist, without saying so. Neither row is finished being measured:
-the write rate was strictly one file at a time, and the `-wal` loss is the *checked*
-import's design, which a byte-preserving import plus exclusive locking is expected
-to fix (SQLite needs no `-shm` for a single owner). The numbers, the environment,
-the untested levers and the gates that would reopen this are in
-[browser-spike](browser-spike.md); the verdict and its follow-ups are on #126. The
-route this leaves is D9's, with the native shell as the constraint.
+the first reading was **No-go** on two other rows: writing JPEGs into a picked
+folder ran at 1.8–3.5 files/s with a worst single file of 26 s, and the import
+that carries a catalog into OPFS dropped a committed `-wal` and read 78 images
+where 128 exist. Both were then measured again, and **neither survived**: the
+`-wal` recovers to exact parity once the import is byte-preserving and the first
+statement is `PRAGMA locking_mode=EXCLUSIVE` (128 of 128 rows, every digest equal
+to a native run; SQLite needs no `-shm` for a single owner), and eight to sixteen
+streams in flight reach 27–29 files/s, which is the `sync_all`-and-rename speed of
+the writer this project ships. What the browser costs is 2–4× a *bare* native
+write, and it buys no installer, no signing, and a macOS route that needs no Mac.
+So D10's first test is **passed** against the mechanism that exists, its audience
+test is now the deciding question, and the two release lines are a choice between
+two working artifacts rather than one. The numbers, the platform's remaining
+costs and what was not exercised are in [browser-spike](browser-spike.md); the
+decision and its follow-ups are on #126.
 
 ### D11 — Accessibility is a level, not a sentiment
 

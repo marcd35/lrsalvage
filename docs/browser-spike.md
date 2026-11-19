@@ -23,11 +23,14 @@ constraints it was written against. This page holds what a throwaway harness the
 measured: `lrsalvage-core`'s SQLite dependency compiled to `wasm32`, this
 repository's `catalog` and `previews_db` modules run against a real catalog in a
 browser, payloads written into a folder a person picked, and the storage a page is
-offered. The verdict is one line: **No-go**, on the reasons in §3 and §2's last
-row. What §1 and §2 also record is that neither reason is a platform wall: the
-write rate was measured one file at a time and the `-wal` was lost by the import
-this spike chose, so both are worth one more measurement each before the decision
-is beyond appeal (§6).
+offered. The first reading was **No-go**, on §3's sequential write rate and on
+§2's dropped `-wal`. Both were then measured again in the configurations §6 named,
+and **neither survived**: the `-wal` recovers to exact parity, and with 8–16
+streams in flight the write rate reaches 27–29 files/s, which is the durable-write
+speed of the desktop writer the app actually ships (§3). What remains is a set of
+costs and unknowns in §7 — Chromium-only, quota, a 149.7 s stall after a reload —
+not a wall. The decision is the one D10 assigns to the audience test, not one a
+measurement can make.
 
 The harness lived outside the repository, included the modules through `#[path]`
 rather than transcribing their SQL, and ran a native binary over the same code so
@@ -126,11 +129,11 @@ that the OPFS route forces is seconds, not minutes — and §1's `FileReaderSync
 route would delete the copy altogether once the FFI is plumbed, at the cost of one
 slice per page read.
 
-**The `-wal` row was our import, not the platform.** The import used,
-`import_db`, has a *checked* mode that "resets the header's read/write versions to
-rollback mode", and it carried the main file only. Measured on the sidecar variant:
-**78 images read, 128 present**, no error and no hint. Two facts say that is a
-choice rather than a wall:
+**The `-wal` row was the import, not the platform — and the fix is measured.** The
+first import, `import_db`, has a *checked* mode that "resets the header's
+read/write versions to rollback mode", and it carried the main file only. Measured
+that way: **78 images read, 128 present**, no error and no hint. Two facts say that
+is a choice rather than a wall:
 
 - **A single owner does not need the `-shm`.** "Beginning in SQLite version 3.7.4
   (2010-12-07), WAL databases can be created, read, and written even if shared
@@ -143,15 +146,26 @@ choice rather than a wall:
   `-journal` companions, and a *checked* import whose companion is present fails
   with `RecoveryRequired` — an explicit signal, not silence.
 
-So the untested prototype is short: import the main file *unchecked*, then the
-`-wal` as its sibling, then let the first statement be
-`PRAGMA locking_mode=EXCLUSIVE`. A second-opinion run measured the same idea one
-layer down — a synthetic pair copied into ordinary OPFS and opened with the
-official `@sqlite.org/sqlite-wasm` non-pooled OPFS VFS under exclusive locking,
-with no supplied `-shm` — and read **128 of 128 rows**, `integrity_check` passing,
-with the main-only control at 78 (**reported**; its method, the WAL's 4 152 bytes
-and the post-reopen SHA-256 are in the review). Our own Rust path over that pair is
-still unmeasured, and §6 puts it second.
+So the pool was given the main file and its `-wal` unchecked, opened with
+`PRAGMA locking_mode=EXCLUSIVE` as the first statement, checkpointed, switched to
+`journal_mode=DELETE`, and closed. **128 of 128 images came back, and every digest
+matched a native run of the same pair exactly** — 61 ms of setup, no `-shm`
+supplied, and the pool's `-wal` slot gone afterwards.
+
+| | main + `-wal`, recovered | main only, checked import | native reference |
+|---|---|---|---|
+| images | **128** | 78 | 128 |
+| pyramids / level rows / index entries | 78 / 390 / 78 | 78 / 390 / 78 | 78 / 390 / 78 |
+| `images_fields_sha256` | `440129e3…` | `87f6b85e…` | `440129e3…` |
+| `images_sha256` (separator-normalised) | `6e9ed5e3…` | `9bb1b73e…` | `6e9ed5e3…` |
+| level paths / containers (normalised) | `70996c19…` / `c24780a2…` | same | `70996c19…` / `c24780a2…` |
+| `xmp_sha256` | `37968eb5…` | same | `37968eb5…` |
+
+Two limits on that result. The recovered database is a private copy that has been
+made writable, so this is the desktop's `snapshot` behaviour reproduced in OPFS,
+not a read of the user's file. And a *live* pair being written by Lightroom while
+it is copied is a separate snapshot-consistency question that neither the desktop
+nor the browser answers by itself (ADR 0001, `snapshot`'s verified acquisition).
 
 ## 3. Writing payloads
 
@@ -169,29 +183,52 @@ file).
 | Native, write + `fsync` | 417 019 B | 1 000 | 44.2 s | 36.2 ms | 101.9 ms | 278 ms | 23/s | measured |
 | Native, plain write | 28 059 B | 1 000 | 9.3 s | 4.3 ms | 29.8 ms | — | 108/s | measured |
 
-**Sequentially, this reads as a hang.** Every run above awaited each write and its
-close before starting the next. Two thousand files is 10–18 minutes by that
-arithmetic and five thousand is 24–46 (**projection**, not a run); the worst single
-file took 26 seconds. The same page writing the same bytes into OPFS is 8× faster
-and a native writer on the same disk is 9–60× faster, so the cost sits in the
-browser's external-file path rather than in the disk. Two caveats on that
-comparison: the native control is a bare write without `extract`'s destination
-checks, resume verification or rename, so it is a floor for the desktop rather than
-the shipped writer; and the 26-second outlier is one sample on one machine with an
-anti-malware product running, which is a correlation and not an attribution.
+**Sequential, this reads as a hang; concurrent, it does not.** Every run in the
+table above awaited each write and its close before starting the next. Keeping eight
+to sixteen streams in flight on distinct files — which the standard allows, and
+which VS Code's folder download and LinkUnzip both do — changes the shape:
 
-**Chromium's write path explains the cost, and names the lever left untested.** In
-the tested build the writer stages a swap file and, on close, takes a *safe move*
-path that hashes the content and requests after-write checks; for external targets
-Windows quarantine can then attach a zone identifier (`154` **verified** from the
-157.0.8103.79 sources). That work is per file and per close, which is consistent
-with a cost that tracks file count rather than bytes. Nothing in the standard
-exposes a commit-many-files call. What it does allow is **many files in flight at
-once**: a close need not be awaited before the next stream starts. VS Code for the
-web's folder download writes each file "without awaiting the promises" and lets
-traversal continue; LinkUnzip's extraction sink permits up to 64 pending closes.
-The spike never ran that experiment — every number above is strictly sequential —
-so the parallel curve is **unknown**, and §6 puts it first.
+| Streams in flight | Files | Total | Rate | p50 | p95 | Longest gap with no file |
+|---|---|---|---|---|---|---|
+| 1 | 128 | 15.8 s | 8.1/s | 122.7 ms | 144.3 ms | 174 ms |
+| 2 | 128 | 8.8 s | 14.5/s | 137.0 ms | 158.3 ms | 144 ms |
+| 4 | 128 | 5.9 s | 21.7/s | 180.0 ms | 213.7 ms | 165 ms |
+| 8 | 128 | 4.7 s | 27.1/s | 288.1 ms | 346.1 ms | 264 ms |
+| 16 | 128 | 4.5 s | **28.3/s** | 550.3 ms | 655.0 ms | 507 ms |
+| 32 | 128 | 4.6 s | 28.0/s | 1 116.9 ms | 1 284.3 ms | 935 ms |
+| 64 | 128 | 4.7 s | 27.3/s | 2 368.4 ms | 2 404.4 ms | 2 144 ms |
+| 16 | 1 000 | 34.1 s | **29.4/s** | 542.1 ms | 619.0 ms | **570 ms** |
+| 16 | 200 × 417 KB | 7.5 s | 26.6/s | 587.8 ms | 667.7 ms | 595 ms |
+| OPFS control, 1 stream | 128 | 1.1 s | 120.3/s | 8.0 ms | 10.2 ms | 14 ms |
+| OPFS control, 64 streams | 128 | 0.9 s | 141.7/s | 464.6 ms | 469.0 ms | 369 ms |
+
+Three things fall out. **Throughput saturates at about 28 files/s** between 8 and
+16 streams; more streams buy latency, not rate, and at 64 streams the per-file p50
+reaches 2.4 s with a 2.1 s gap between completions — the number that would read as
+a hang. **The payload size barely matters** (26.6/s at 417 KB against 29.4/s at
+28 KB), which is what a per-file, per-close cost predicts. And the same JavaScript
+into OPFS is four to five times faster, so the cost is the external commit:
+Chromium's safe-move path hashes the content and requests after-write checks on
+close, and Windows can then attach a zone identifier (verified in the 157.0.8103.79
+sources), none of which the standard lets anyone batch.
+
+**The right native baseline is the one that makes the browser look equal.** The
+shipped `extract` writer calls `sync_all` and then `rename` per file; a bare native
+write does neither. Against the bare write the browser is 2–4× slower (29.4/s
+against 108/s for 28 KB). Against the writer the app actually ships it is at parity
+or slightly ahead: 26.6/s at 417 KB against 23/s for a native write plus `fsync`,
+and 29.4/s at 28 KB against a native `fsync` rate this spike did not measure
+directly. The 5 000-file shape is 2.8 minutes by projection (34.1 s × 5) against a
+proposed product gate of 2 minutes — over, not absurd.
+
+**And the sink is not stable across sessions.** The same sequential 1 000 × 417 KB
+run took 140.4 s (7.1/s) on the day of the sweep and 286.0 s (3.5/s) in the first
+session, the worst single file falling from 3 037 ms to 1 018 ms; the sweep's
+one-stream level ran at 8.1/s. Free space, the destination's existing entry count
+and the anti-malware scanner's state all changed between the two, and nothing here
+separates them. The gain from concurrency is 3.5× over that day's own sequential
+rate and 8× over the first session's, so both framings are true and the honest one
+is a range.
 
 One write finding helps: **an aborted stream leaves the file untouched.** Writing
 512 KB over an existing 1 048 576-byte file and aborting left exactly
@@ -233,35 +270,54 @@ the OPFS route and cannot load a multi-file export at all. Only a single-file
 build with the wasm inlined would run — and then only the direct-paging route §1
 rules out for these modules.
 
-## 6. What was not measured, and in what order it would be
+## 6. The two experiments, and what is left
 
-The No-go rests on a sequential write rate and on an import that dropped a sidecar.
-Both are one measured configuration, not a proof. Three experiments would settle
-them, in this order:
+Both experiments §6 named the first time this page was written were run on the day
+it was written. What they returned is in §2 and §3; what they did not reach is
+here.
 
-1. **Bounded-concurrency write into a real picked folder.** The existing page, the
-   two payload sizes and a nested mixed-size tree, with 1, 2, 4, 8, 16, 32 and 64
-   streams in flight on distinct files and a byte cap; then the promising settings
-   three times over fresh 200-, 1 000- and 5 000-file trees in Chrome and Edge,
-   charging every write and close to wall time and recording the longest interval
-   with no completed file. This is the only lever the spike left untested that
-   could plausibly move the number by an order of magnitude. A product gate of
-   *5 000 committed files in 120 s, no gap over 1 s, zero wrong or missing outputs,
-   safe cancel and resume* would reopen the decision.
-2. **The `-wal` pair through the Rust path.** Unchecked main, then the `-wal` as a
-   sibling, exclusive locking first; if the pool refuses, recover in a private
-   directory with the official OPFS worker, switch to `journal_mode=DELETE`, close,
-   and import the clean main. Gate: 128/128 rows and native fingerprints after a
-   reopen, 78 in the main-only control, source hashes unchanged, and a truncated
-   or stale tail reported rather than swallowed.
-3. **Direct paging, only if the copy or the quota still matters.** A custom
-   read-only VFS in Rust over `FileReaderSync`, timed on a 1 GiB catalog against
-   copy-plus-query. It cannot change §3: reads are not the problem.
+1. **Bounded-concurrency writes — done, and it moved the number 3.5–8×.** Chrome
+   only, one run per setting, 128 files per level plus 1 000 files and 200 large
+   payloads at the winning setting, no byte cap needed at these payload sizes, no
+   cancellation or resume exercised, and no nested mixed-size tree. The plateau is
+   measured; a second machine, Edge, a repeat run and a mixed tree are not.
+2. **The `-wal` pair through this repository's Rust path — done, exact parity.**
+   Not yet exercised: a truncated or uncommitted WAL tail, a stale companion whose
+   `-shm` disagrees, an already-clean backup, a quota interruption mid-recovery,
+   and a pair captured while Lightroom is writing.
+3. **Direct paging over `FileReaderSync` — not attempted.** It cannot change §3,
+   because reads are not the constraint; it would only remove the copy and the
+   quota, and with them the 149.7 s pool-release stall in §4. Worth one afternoon
+   if the swarm ever reaches the copy.
 
-One machine, one disk, one anti-malware configuration, one browser profile. The
-picked-folder rate is a property of that combination; the OPFS and native controls
-are reported beside it precisely so the comparison means something and the single
-number does not.
+The header of this page still holds: one machine, one disk, one anti-malware
+configuration, one browser profile. §3's session-to-session variance is the
+clearest reminder of how much rides on that.
+
+## 7. What this does not decide
+
+- **The audience.** D10's test — *do users come out of this with previews worth
+  keeping?* — is now the deciding question, because the two mechanics that could
+  have answered it *no* have been measured back to *yes*.
+- **Chromium only.** `showDirectoryPicker` is absent from Firefox and Safari and
+  one vendor has filed a negative standards position. A browser path is a Windows
+  and macOS-Chromium promise, and macOS was never run.
+- **Storage the page does not own.** The quota moved 10.7 → 12.0 → 11.2 GB across
+  sessions; `persist()` was refused at the first load and true only after a restart;
+  a folder grant came back as `prompt` after a restart. None of that blocks a
+  recovery run, all of it has to be designed around.
+- **The 149.7 s stall.** Installing the pool after a reload waited that long for the
+  previous worker to release the OPFS directory. It is the worst user-visible
+  number in this page and it is not yet explained, let alone fixed.
+- **The seams an app front end has to own.** `previews_db` needs `Path::exists`
+  answered, `snapshot` needs a browser copy and checkpoint, and `MAIN_SEPARATOR`
+  differs. ADR 0012 D12's byte-for-byte parity needs the separator normalised
+  before it can hold on a wasm build.
+- **Which artifact ships.** A native shell writes through the operating system at
+  23–108 files/s with no picker, no quota and no `-wal` question. The browser now
+  writes at 27–29 files/s with no installer, no signing and a macOS route that does
+  not need a Mac to sign on. That is a trade-off between two working options rather
+  than a choice between one working option and one that fails.
 
 ## Sources
 
