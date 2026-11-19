@@ -27,7 +27,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use lrsalvage_core::catalog::Catalog;
-use lrsalvage_core::plan::{Options, Plan};
+use lrsalvage_core::plan::{Control, Options, Plan, Progress};
 use lrsalvage_core::previews_db;
 use rusqlite::{Connection, params};
 use tempfile::TempDir;
@@ -830,6 +830,33 @@ impl Vault {
         let (_snapshot, catalog) = Catalog::open(self.catalog()).expect("open the vault catalog");
         let index = previews_db::open(&self.previews().join("previews.db")).index;
         Plan::build(&catalog, &index, self.previews(), self.out(), options).expect("build a plan")
+    }
+
+    /// [`Self::plan`], reporting every unit and stoppable between two of them.
+    ///
+    /// `None` is a build `progress` stopped, which is not a failure: it is what a
+    /// surface that offers a stop asks for and gets.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the vault was not written, or if either store cannot be read.
+    pub fn plan_reported(
+        &self,
+        options: &Options,
+        progress: &mut dyn FnMut(Progress) -> Control,
+    ) -> Option<Plan> {
+        assert!(self.written, "call write() before plan()");
+        let (_snapshot, catalog) = Catalog::open(self.catalog()).expect("open the vault catalog");
+        let index = previews_db::open(&self.previews().join("previews.db")).index;
+        Plan::build_reported(
+            &catalog,
+            &index,
+            self.previews(),
+            self.out(),
+            options,
+            progress,
+        )
+        .expect("build a plan")
     }
 
     // -- writers ------------------------------------------------------------

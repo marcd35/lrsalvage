@@ -187,7 +187,7 @@ impl Default for Options {
 ///
 /// Status counters count **images**, not plan items: `--all-levels` emits one
 /// item per level but must not inflate how many photos were recovered.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Stats {
     pub images: u64,
     pub recoverable: u64,
@@ -235,7 +235,7 @@ pub struct Stats {
 /// layout and the two version strings are observations
 /// (`adr-0004-detect-layout-not-version`), and `shapes` describes files, never
 /// an image's status.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct CacheFacts {
     /// ADR 0004's five words, decided from the tree by `previews_db`.
     pub layout: Layout,
@@ -270,6 +270,31 @@ pub struct Plan {
     pub cache: CacheFacts,
 }
 
+/// What a build has done, reported once per unit.
+///
+/// One variant per stage, because the three stages count different things:
+/// a tree walk knows a file when it sees one, and the two stages that have a
+/// denominator say what it is. A report always carries the number of units
+/// **finished**, so a stop at a report leaves exactly that many done.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Progress {
+    /// A cache file the one tree walk has looked at. There is no total: nobody
+    /// knows how many files a tree holds until the walk has finished it.
+    Cache { files: u64 },
+    /// A level file whose own bytes have been read and measured. Total is known
+    /// before the first read, because the walk that just finished found them.
+    Payloads { done: u64, total: u64 },
+    /// A catalog image the plan has finished with.
+    Images { done: u64, total: u64 },
+}
+
+/// What a reporter says about carrying on, returned from every report.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Control {
+    Continue,
+    Stop,
+}
+
 impl Plan {
     /// Build a plan for every image in `catalog`, then sweep `cache_root` for
     /// payloads that no image claims.
@@ -280,13 +305,58 @@ impl Plan {
         output_root: &Path,
         options: &Options,
     ) -> Result<Self> {
+        // This *is* the reported build, with a callback that never stops and so
+        // cannot stop it: one path, so a surface that paints progress and one
+        // that does not cannot end up over two different plans.
+        let built = Self::build_reported(
+            catalog,
+            index,
+            cache_root,
+            output_root,
+            options,
+            &mut |_progress| Control::Continue,
+        )?;
+        Ok(built.expect("a callback that never stops cannot stop a build"))
+    }
+
+    /// [`Self::build`], reporting each unit and stoppable between two of them.
+    ///
+    /// `progress` is called once per unit — one cache file walked, one level
+    /// file measured, one catalog image finished — and its return value decides
+    /// whether the build carries on. `None` is a stopped build, never a partial
+    /// plan: a plan holding *k* statuses would be a plan about a catalog whose
+    /// other images do not exist, and `#117` stops a scan back to source
+    /// selection rather than presenting one.
+    ///
+    /// How often a surface paints is the surface's decision, not this
+    /// function's: a 100 000-image catalog crosses this boundary that many
+    /// times, and a DOM update does not cost what a `u64` does.
+    pub fn build_reported(
+        catalog: &Catalog,
+        index: &PreviewIndex,
+        cache_root: &Path,
+        output_root: &Path,
+        options: &Options,
+        progress: &mut dyn FnMut(Progress) -> Control,
+    ) -> Result<Option<Self>> {
         let images = catalog.images()?;
+        let total_images = images.len() as u64;
         let versions = catalog.versions()?;
         // One walk of the cache tree answers every cache-level question: the
         // layout, the shape histogram, which pyramids are superseded and which
         // nobody claims. A second pass would be a second answer.
-        let sweep = previews_db::sweep(cache_root);
-        let measured = measure(&sweep);
+        let swept = {
+            let mut walk = |files: u64| progress(Progress::Cache { files }) == Control::Continue;
+            previews_db::sweep(cache_root, &mut walk)
+        };
+        let Some(sweep) = swept else {
+            return Ok(None);
+        };
+        // Reading every level file whole is the second cache stage, and the one
+        // that costs the most bytes: it reads before the first image is decided.
+        let Some(measured) = measure(&sweep, progress) else {
+            return Ok(None);
+        };
         let mut cache = CacheFacts {
             layout: sweep.layout(),
             db_version: versions.db_version,
@@ -296,13 +366,14 @@ impl Plan {
         };
         let mut items = Vec::new();
         let mut stats = Stats {
-            images: images.len() as u64,
+            images: total_images,
             // An unrecognised file is never planned, so its count has no item
             // to come from.
             unrecognised: sweep.unrecognised.len() as u64,
             ..Stats::default()
         };
         let mut used: HashMap<String, u32> = HashMap::new();
+        let mut done = 0u64;
 
         // Seed the claim set from rows that resolve to a real image only. A
         // stale row (`imageId` no longer in `Adobe_images`) must not suppress
@@ -318,6 +389,17 @@ impl Plan {
         }
 
         for image in images {
+            // The boundary a stop lands on: reported before this image is read,
+            // carrying how many are finished. Every started image always
+            // finishes, so the count taken here is exact.
+            if progress(Progress::Images {
+                done,
+                total: total_images,
+            }) == Control::Stop
+            {
+                return Ok(None);
+            }
+            done += 1;
             let mut image = image;
             // Metadata is fetched here, once per image, so both the manifest
             // and the EXIF writer read the same facts.
@@ -564,11 +646,18 @@ impl Plan {
         stats.selected_items = items.iter().filter(|item| item.selected).count() as u64;
         stats.selected_images = distinct_selected_images(&items) as u64;
 
-        Ok(Plan {
+        // The last report is the stage's end, not a boundary: there is nothing
+        // left to stop, so what it answers is not consulted.
+        let _ = progress(Progress::Images {
+            done: total_images,
+            total: total_images,
+        });
+
+        Ok(Some(Plan {
             items,
             stats,
             cache,
-        })
+        }))
     }
 
     /// Every item the extractor evaluates: an item neither bound excluded,
@@ -769,12 +858,25 @@ impl Measurements {
 /// Each level file is read whole, and that is the cost this pass adds to a scan:
 /// a bounded prefix could cut an `APPn` segment in half and lose a frame that is
 /// really there, and a frame that cannot be read counts as no match.
-fn measure(sweep: &CacheSweep) -> Measurements {
+fn measure(
+    sweep: &CacheSweep,
+    progress: &mut dyn FnMut(Progress) -> Control,
+) -> Option<Measurements> {
     let mut measured = Measurements::default();
+    let total = sweep
+        .pyramids
+        .iter()
+        .map(|pyramid| pyramid.levels.len() as u64)
+        .sum::<u64>();
+    let mut done = 0u64;
     for pyramid in &sweep.pyramids {
         measured.shapes.level_file += pyramid.levels.len() as u64;
         measured.shapes.container += u64::from(pyramid.container.is_some());
         for level in &pyramid.levels {
+            if progress(Progress::Payloads { done, total }) == Control::Stop {
+                return None;
+            }
+            done += 1;
             let Some((width, height)) = measured_frame(level) else {
                 continue;
             };
@@ -784,7 +886,7 @@ fn measure(sweep: &CacheSweep) -> Measurements {
             measured.frames.insert(level.path.clone(), (width, height));
         }
     }
-    measured
+    Some(measured)
 }
 
 /// `is_file` through the seam, for a decision that only needs a yes or a no.

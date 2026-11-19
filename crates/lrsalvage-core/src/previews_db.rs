@@ -499,14 +499,37 @@ impl CacheSweep {
 ///
 /// Which of these pyramids an image claims, and what an unclaimed one becomes,
 /// is `plan`'s decision, not this module's.
-pub fn sweep(cache_root: &Path) -> CacheSweep {
+///
+/// `progress` is called with the number of files the walk has looked at, once
+/// per file, and its answer decides whether the next one is looked at: `false`
+/// stops the walk, and the `None` is how the stop is said. A stop therefore
+/// leaves exactly the reported number of files finished, which is what makes it
+/// land on a file boundary rather than inside one.
+///
+/// The count is a count and never a total — the walk cannot know how many files
+/// a tree holds until it has finished it — and a surface that wants a
+/// percentage takes its denominator from `plan`, which knows how many images
+/// the catalog has.
+#[must_use]
+pub fn sweep(cache_root: &Path, progress: &mut dyn FnMut(u64) -> bool) -> Option<CacheSweep> {
     let mut found: HashMap<(String, String), PyramidOnDisk> = HashMap::new();
     let mut unrecognised = Vec::new();
 
     // A root that cannot be walked is an empty sweep, which is what this walk
     // has always done with one; an unreadable folder inside the tree is skipped
     // by the seam rather than losing the payloads beside it.
-    for path in fs::walk_files(cache_root).unwrap_or_default() {
+    //
+    // The index of this enumeration is the answer: it is the number of files
+    // finished before this one, which is what a reporter is asked about and what
+    // a stop leaves.
+    for (walked, path) in fs::walk_files(cache_root)
+        .unwrap_or_default()
+        .into_iter()
+        .enumerate()
+    {
+        if !progress(walked as u64) {
+            return None;
+        }
         let Some((uuid, digest, level)) = leaf_identity(cache_root, &path) else {
             if crate::jpeg::is_payload_start(&path) {
                 unrecognised.push(path);
@@ -534,10 +557,10 @@ pub fn sweep(cache_root: &Path) -> CacheSweep {
     pyramids.sort_by(|a, b| (&a.uuid, &a.digest).cmp(&(&b.uuid, &b.digest)));
     unrecognised.sort();
 
-    CacheSweep {
+    Some(CacheSweep {
         pyramids,
         unrecognised,
-    }
+    })
 }
 
 /// The `(uuid, digest)` a file's leaf names and, for a level file, its long
@@ -685,6 +708,12 @@ mod tests {
 
     fn slashed(path: &Path) -> String {
         path.to_string_lossy().replace('\\', "/")
+    }
+
+    /// The walk with a reporter that never stops: what every test below wants,
+    /// and the shape a caller that paints nothing passes.
+    fn sweep(cache: &Path) -> CacheSweep {
+        super::sweep(cache, &mut |_files| true).expect("a walk that cannot stop cannot stop")
     }
 
     /// A pyramid key from its two halves, so a test says which pyramid it means.
