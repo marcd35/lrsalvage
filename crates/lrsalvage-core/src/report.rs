@@ -1,8 +1,6 @@
 //! Human and machine readable output: summary, CSV, JSON manifest, contact sheet.
 
 use std::collections::HashMap;
-use std::fs::File;
-use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 
 use base64::Engine as _;
@@ -10,6 +8,7 @@ use base64::engine::general_purpose::STANDARD;
 use serde_json::{Map, Value, json};
 
 use crate::error::{IoContext, Result};
+use crate::fs;
 use crate::model::Orientation;
 use crate::plan::{Options, Payload, Plan, PlanItem, Shapes, Stats, Tier};
 use crate::previews_db::{self, Layout};
@@ -233,14 +232,17 @@ fn payload_path(item: &PlanItem) -> Option<String> {
 const CSV_HEADER: &str = "status,tier,width,height,long_edge,color_profile,quality,orientation,selected,output,original_path,capture_time,rating,note,payload,payload_metadata";
 
 /// `report.csv`, one row per plan item.
+///
+/// The rows are assembled in memory and handed to one whole-file write, because
+/// the seam has no stream to hand out: a row is under two hundred bytes, and the
+/// bytes are the same either way.
 pub fn write_csv(plan: &Plan, path: &Path) -> Result<()> {
-    let file = File::create(path).at(path)?;
-    let mut writer = BufWriter::new(file);
+    let mut text = String::with_capacity(CSV_HEADER.len() + 2 + plan.items.len() * 192);
     let mut line = String::with_capacity(256);
 
     line.push_str(CSV_HEADER);
     line.push_str("\r\n");
-    writer.write_all(line.as_bytes()).at(path)?;
+    text.push_str(&line);
 
     for item in &plan.items {
         line.clear();
@@ -296,10 +298,10 @@ pub fn write_csv(plan: &Plan, path: &Path) -> Result<()> {
         push_csv_field(&mut line, &item.payload_metadata.to_string());
         line.push_str("\r\n");
 
-        writer.write_all(line.as_bytes()).at(path)?;
+        text.push_str(&line);
     }
 
-    writer.flush().at(path)?;
+    fs::write(path, text.as_bytes()).at(path)?;
     Ok(())
 }
 
@@ -414,7 +416,7 @@ pub fn write_json(plan: &Plan, path: &Path, version: &str) -> Result<()> {
             source: std::io::Error::other(format!("manifest serialisation failed: {error}")),
         })?;
     text.push('\n');
-    std::fs::write(path, text).at(path)?;
+    fs::write(path, text.as_bytes()).at(path)?;
     Ok(())
 }
 
@@ -588,7 +590,7 @@ pub fn write_verification(
         }
     })?;
     text.push('\n');
-    std::fs::write(path, text).at(path)?;
+    fs::write(path, text.as_bytes()).at(path)?;
     Ok(())
 }
 
@@ -729,7 +731,7 @@ pub fn write_contact_sheet(plan: &Plan, path: &Path, cache_root: &Path) -> Resul
     }
 
     html.push_str("</body>\n</html>\n");
-    std::fs::write(path, html).at(path)?;
+    fs::write(path, html.as_bytes()).at(path)?;
     Ok(())
 }
 
@@ -787,14 +789,14 @@ fn thumbnail_data_url(item: &PlanItem, cache_root: &Path) -> Option<String> {
         // payload's hundreds of kilobytes.
         Payload::LevelFile { .. } => {
             let path = resolve_payload(item.smallest_level.as_deref()?, cache_root);
-            let bytes = std::fs::read(path).ok()?;
+            let bytes = fs::read(&path).ok()?;
             // A broken small level is not something to inline.
             jpeg::certify(&bytes).ok().filter(|c| c.complete)?;
             bytes
         }
         // A container is walked for its smallest chunk, as it always was.
         Payload::Container { .. } => {
-            let bytes = std::fs::read(resolve_payload(payload.path(), cache_root)).ok()?;
+            let bytes = fs::read(&resolve_payload(payload.path(), cache_root)).ok()?;
             let parsed = lrprev::Lrprev::parse(&bytes).ok()?;
             smallest_level(&parsed)?.to_vec()
         }

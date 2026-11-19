@@ -8,6 +8,8 @@
 //! * [`previews_db`] — reads `previews.db`, the authoritative image → payload map.
 //! * [`lrprev`] / [`header`] / [`jpeg`] — the `AgHg` chunk container and its parts.
 //! * [`plan`] — turns the above into a list of decisions, without writing anything.
+//! * [`fs`] — the one module that touches a filesystem, so the others can build
+//!   for a target that has none.
 //!
 //! Two rules are load-bearing and recorded as ADRs:
 //!
@@ -19,9 +21,14 @@ pub mod catalog;
 pub mod error;
 pub mod exif;
 pub mod extract;
+pub mod fs;
 pub mod header;
 pub mod jpeg;
 pub mod lrprev;
+// Mask export is a desktop feature: the app line does not carry it (#117), so
+// the module is not compiled for `wasm32` at all. Everything else in the crate
+// is, and `scripts/check.sh wasm` keeps it that way.
+#[cfg(not(target_arch = "wasm32"))]
 pub mod masks;
 pub mod model;
 pub mod plan;

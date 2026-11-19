@@ -12,9 +12,9 @@ use std::path::{Component, Path, PathBuf};
 
 use rusqlite::Connection;
 use rusqlite::types::ValueRef;
-use walkdir::WalkDir;
 
 use crate::error::Result;
+use crate::fs;
 use crate::model::{CacheEntry, Pyramid, PyramidLevel};
 
 /// The index file at a cache root. The one place its name is written, so the CLI
@@ -300,17 +300,14 @@ impl PreviewIndex {
 
         // The widening, inside the row's own identity: this pyramid's shard
         // folder and nothing else. A level the index forgot is a file here.
-        if let Ok(entries) = std::fs::read_dir(shard(cache_root, uuid)) {
-            for entry in entries.flatten() {
-                if !entry.file_type().is_ok_and(|kind| kind.is_file()) {
-                    continue;
-                }
-                let Ok(name) = entry.file_name().into_string() else {
+        if let Ok(paths) = fs::list_files(&shard(cache_root, uuid)) {
+            for path in paths {
+                let Some(name) = path.file_name().and_then(std::ffi::OsStr::to_str) else {
                     continue;
                 };
-                if let Some(long_edge) = level_leaf_long_edge(&name, uuid, digest) {
+                if let Some(long_edge) = level_leaf_long_edge(name, uuid, digest) {
                     named.push(Candidate {
-                        path: entry.path(),
+                        path,
                         row: None,
                         long_edge,
                     });
@@ -384,6 +381,9 @@ pub enum IndexProblem {
     Missing,
     /// SQLite refused the file: its own error text, prefix included, so a hint
     /// can print it without re-deriving one. A damaged file never aborts a run.
+    /// A target that cannot look for the file at all — `wasm32` with no browser
+    /// backend yet — takes this arm too, because "I cannot see it" is not
+    /// "there is nothing there".
     Unreadable(String),
 }
 
@@ -401,14 +401,29 @@ pub struct Opened {
 ///
 /// A missing and an unreadable index degrade identically, because nothing is
 /// mapped either way and the payloads sitting beside the file are still worth
-/// listing (`adr-0006-degrade-without-guessing` ¶1–¶2). Which of those two it
-/// was travels in [`Opened::problem`], for the caller's one hint.
+/// listing (`adr-0006-degrade-without-guessing` ¶1–¶2). Which of those it was
+/// travels in [`Opened::problem`], for the caller's one hint — and there is a
+/// third answer besides absent and refused: a target that cannot ask. That one
+/// takes the unreadable arm, never `Missing`, so a browser build stops claiming
+/// a present database is not there (`docs/browser-spike.md` §1).
 pub fn open(db: &Path) -> Opened {
-    if !db.exists() {
-        return Opened {
-            index: PreviewIndex::default(),
-            problem: Some(IndexProblem::Missing),
-        };
+    // `exists` is fallible so a target that cannot look says so instead of
+    // reporting absence: on `wasm32` this gate used to answer `Missing` about a
+    // database that was present and readable (`docs/browser-spike.md` §1).
+    match fs::exists(db) {
+        Ok(true) => {}
+        Ok(false) => {
+            return Opened {
+                index: PreviewIndex::default(),
+                problem: Some(IndexProblem::Missing),
+            };
+        }
+        Err(error) => {
+            return Opened {
+                index: PreviewIndex::default(),
+                problem: Some(IndexProblem::Unreadable(error.to_string())),
+            };
+        }
     }
     match PreviewIndex::read(db) {
         Ok(index) => Opened {
@@ -488,16 +503,13 @@ pub fn sweep(cache_root: &Path) -> CacheSweep {
     let mut found: HashMap<(String, String), PyramidOnDisk> = HashMap::new();
     let mut unrecognised = Vec::new();
 
-    for entry in WalkDir::new(cache_root)
-        .into_iter()
-        .filter_map(std::result::Result::ok)
-    {
-        if !entry.file_type().is_file() {
-            continue;
-        }
-        let Some((uuid, digest, level)) = leaf_identity(cache_root, entry.path()) else {
-            if crate::jpeg::is_payload_start(entry.path()) {
-                unrecognised.push(entry.into_path());
+    // A root that cannot be walked is an empty sweep, which is what this walk
+    // has always done with one; an unreadable folder inside the tree is skipped
+    // by the seam rather than losing the payloads beside it.
+    for path in fs::walk_files(cache_root).unwrap_or_default() {
+        let Some((uuid, digest, level)) = leaf_identity(cache_root, &path) else {
+            if crate::jpeg::is_payload_start(&path) {
+                unrecognised.push(path);
             }
             continue;
         };
@@ -510,11 +522,8 @@ pub fn sweep(cache_root: &Path) -> CacheSweep {
                 container: None,
             });
         match level {
-            Some(long_edge) => pyramid.levels.push(LevelOnDisk {
-                path: entry.into_path(),
-                long_edge,
-            }),
-            None => pyramid.container = Some(entry.into_path()),
+            Some(long_edge) => pyramid.levels.push(LevelOnDisk { path, long_edge }),
+            None => pyramid.container = Some(path),
         }
     }
 
@@ -665,6 +674,8 @@ fn signed(value: ValueRef<'_>) -> i64 {
 
 #[cfg(test)]
 mod tests {
+    // Observe the disk directly: a test that checked the seam with the seam
+    // would prove nothing.
     use std::fs;
     use std::path::PathBuf;
 

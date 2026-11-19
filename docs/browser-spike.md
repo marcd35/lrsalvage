@@ -357,7 +357,12 @@ clearest reminder of how much rides on that.
 - **The seams an app front end has to own.** `previews_db` needs `Path::exists`
   answered, `snapshot` needs a browser copy and checkpoint, and `MAIN_SEPARATOR`
   differs. ADR 0012 D12's byte-for-byte parity needs the separator normalised
-  before it can hold on a wasm build.
+  before it can hold on a wasm build. The first of those is no longer unowned: the
+  crate's `fs` seam holds every filesystem operation behind one signature per
+  target, and its `wasm32` half refuses rather than reports absence
+  ([the seam's spec](../specs/modules/fs.md)). What is still owed is the browser
+  *implementation* of that seam, which is #117's own slices — this page measures
+  the costs, not the plan for them.
 - **Which artifact ships.** A native shell writes through the operating system at
   23–108 files/s with no picker, no quota and no `-wal` question. The browser now
   writes at 27–29 files/s with no installer, no signing and a macOS route that does

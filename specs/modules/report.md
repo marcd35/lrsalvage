@@ -11,6 +11,7 @@ depends-on:
   - model
   - previews-db
   - snapshot
+  - fs
 references:
   - adr-0005-discover-payloads-by-index
   - adr-0006-degrade-without-guessing
@@ -29,11 +30,12 @@ sheet, and the path-free verification report `scan --report` writes.
 
 ## Boundary
 
-Reads a plan and, for the contact sheet, the payload files it needs. Writes to the
-path its caller named and invents no path of its own; the numbered-name rule for
-report files belongs to `cli`. It decides nothing and adds no metadata. The
-digest pair a verified run proved is a value handed to it, not a fact it
-measures: no module here opens the catalog.
+Reads a plan and, for the contact sheet, the payload files it needs — both
+through `fs`, and `report.csv` as one whole-file write rather than a stream.
+Writes to the path its caller named and invents no path of its own; the
+numbered-name rule for report files belongs to `cli`. It decides nothing and adds
+no metadata. The digest pair a verified run proved is a value handed to it, not a
+fact it measures: no module here opens the catalog.
 
 The verification report is the one artifact here that leaves the machine, so it is
 built from a struct of its own — the curated fields below — rather than from a

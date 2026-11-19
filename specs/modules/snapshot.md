@@ -4,6 +4,8 @@ type: module-design
 title: "snapshot: a stable, read-only copy of the catalog"
 status: draft
 parent: architecture
+depends-on:
+  - fs
 ---
 
 # snapshot
@@ -18,12 +20,15 @@ catalog before the copy and the copy after it, and hand back the pair — or fai
 
 ## Boundary
 
-The only module that copies a catalog file. It also owns the read-only opener
-that `catalog` and `previews_db` share, so no other module assembles a SQLite URI
-by hand. It queries nothing — `catalog` does — and it writes nothing outside its
-own temporary directory. It exposes the copy's path; when the snapshot is dropped
-the copy goes with it, so a caller that needs bytes beyond the snapshot's life
-has to read them in time.
+The only module that copies a catalog file, and it copies through `fs` — the
+copy, the digest, the scratch directory and the sidecar removals are that seam's
+operations. It also owns the read-only opener that `catalog` and `previews_db`
+share, so no other module assembles a SQLite URI by hand. It queries nothing —
+`catalog` does — and it writes nothing outside its own temporary directory. It
+exposes the copy's path; when the snapshot is dropped the copy goes with it, so a
+caller that needs bytes beyond the snapshot's life has to read them in time. A
+target whose `fs` cannot copy also cannot snapshot, and says so rather than
+producing an empty copy.
 
 ## Decisions
 
@@ -54,9 +59,10 @@ has to read them in time.
 - **The catalog file is hashed; the sidecars are not.** `-wal` and `-shm` are
   copied because SQLite needs them and a session appending to the WAL is the case
   the snapshot exists to tolerate, so hashing them would refuse runs the rest of
-  the module was built to accept. `sha256_file` is the one definition of the hex:
-  it is public so a surface that shows a digest computes it the same way this
-  module does, not against a second implementation.
+  the module was built to accept. `sha256_file` is public so a surface that shows
+  a digest computes it the same way this module does, not against a second
+  implementation; the streaming itself is `fs::sha256_file`'s, and this function
+  is the name that hands the hex back with `error::Error` context attached.
 - **A benign mismatch is possible and is accepted.** A Lightroom checkpoint that
   lands inside the copy window changes the catalog's own bytes, so a copy that is
   perfect can still be refused: the pair is two observations of a file someone

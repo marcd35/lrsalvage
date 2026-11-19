@@ -1,6 +1,5 @@
 //! Minimal JPEG inspection: framing, dimensions and completeness.
 
-use std::io::Read;
 use std::ops::Range;
 use std::path::Path;
 
@@ -153,11 +152,7 @@ pub fn dimensions(bytes: &[u8]) -> Result<(u32, u32)> {
 /// An unreadable file is not payload-like: this is a classification of what was
 /// seen, never a claim about what could not be.
 pub fn is_payload_start(path: &Path) -> bool {
-    let mut start = [0u8; 2];
-    match std::fs::File::open(path) {
-        Ok(mut file) => file.read_exact(&mut start).is_ok() && start == [0xFF, 0xD8],
-        Err(_) => false,
-    }
+    crate::fs::read_prefix(path, 2).is_ok_and(|start| start == [0xFF, 0xD8])
 }
 
 /// Start-of-frame markers whose payload carries `height` then `width`.

@@ -14,7 +14,7 @@ use crate::previews_db::{
 };
 use crate::{
     exif::{self, PayloadMetadata},
-    jpeg, lrprev, previews_db,
+    fs, jpeg, lrprev, previews_db,
 };
 
 /// Where a payload lives, decided once so no reader has to sniff it.
@@ -321,7 +321,7 @@ impl Plan {
             // An image whose original is still on disk needs no salvage. The
             // stat is skipped entirely when `include_present` is set, so that
             // opt-in run costs nothing per image.
-            if !options.include_present && image.original_path.is_file() {
+            if !options.include_present && is_file(&image.original_path) {
                 stats.original_present += 1;
                 let orientation = image.orientation;
                 items.push(PlanItem {
@@ -390,13 +390,13 @@ impl Plan {
             let present: Vec<Candidate<'_>> = index
                 .candidates(cache_root, &key)
                 .into_iter()
-                .filter(|candidate| candidate.path.is_file())
+                .filter(|candidate| is_file(&candidate.path))
                 .collect();
 
             let read = if !present.is_empty() {
                 let (levels, smallest_level) = level_file_levels(present, &measured, options);
                 Some((levels, smallest_level, pyramid, None))
-            } else if container.is_file() {
+            } else if is_file(&container) {
                 Some((
                     container_levels(index, &key, &container, options),
                     None,
@@ -408,7 +408,7 @@ impl Plan {
                     let available: Vec<Candidate<'_>> = index
                         .candidates(cache_root, companion)
                         .into_iter()
-                        .filter(|candidate| candidate.path.is_file())
+                        .filter(|candidate| is_file(&candidate.path))
                         .collect();
                     // A classified companion holds at least one level on disk by
                     // construction; the guard keeps "no file, no rescue" true
@@ -776,9 +776,18 @@ fn measure(sweep: &CacheSweep) -> Measurements {
     measured
 }
 
+/// `is_file` through the seam, for a decision that only needs a yes or a no.
+///
+/// A path the seam cannot answer for is not a file, which is exactly what
+/// `Path::is_file` has always meant here: a payload that is not there is a fact
+/// about the cache, and this module decides about caches rather than disks.
+fn is_file(path: &Path) -> bool {
+    fs::is_file(path).unwrap_or(false)
+}
+
 /// The frame this level file's own bytes declare, `None` when they declare none.
 fn measured_frame(level: &LevelOnDisk) -> Option<(u32, u32)> {
-    let bytes = std::fs::read(&level.path).ok()?;
+    let bytes = fs::read(&level.path).ok()?;
     jpeg::certify(&bytes)
         .ok()
         .map(|certified| certified.dimensions)
@@ -890,7 +899,7 @@ fn level_file_levels(
         .into_iter()
         .map(|index| {
             let candidate = &ranked[index];
-            let read = std::fs::read(&candidate.path);
+            let read = fs::read(&candidate.path);
             let (dimensions, failure, metadata, declared_orientation) = match &read {
                 Ok(bytes) => match jpeg::certify(bytes) {
                     Ok(certified) => (
@@ -969,7 +978,7 @@ fn container_levels(
         bytes: 0,
     };
 
-    let bytes = match std::fs::read(container) {
+    let bytes = match fs::read(container) {
         Ok(bytes) => bytes,
         Err(e) => return vec![failed(format!("unreadable payload: {e}"))],
     };

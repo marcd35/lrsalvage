@@ -40,6 +40,29 @@ minor saying so here before one is removed, renamed or given a different meaning
   carries. `scripts/check.sh package` tests that tarball rather than only
   building it, so the property cannot rot back.
 
+### Build
+
+- **`lrsalvage-core` builds for `wasm32-unknown-unknown`, and every filesystem
+  operation it performs goes through one module**
+  ([#142](https://github.com/marcd35/lrsalvage/issues/142)). No module's shipped
+  code other than `fs` names `std::fs`, `tempfile` or `filetime` — `masks` is
+  the recorded exception, keeping its own walk — and the target picks one of two
+  implementations by `cfg`, with the `wasm32` one refusing an operation rather
+  than answering it — which is the difference between "absent" and "cannot
+  look" that a browser build previously got wrong, reporting a present
+  `previews.db` as missing. `scripts/check.sh wasm` compiles the crate for the
+  target, and `tests/fs_seam.rs` fails if a module reaches around the seam. **No
+  behaviour changes** in anything a run decides or writes: the native backend is
+  the code the modules already ran, and the flags, the fields, the exit codes and
+  every successful run's bytes are identical. One failure note moves — a write
+  that cannot be staged or renamed now says `cannot write <destination>`, where
+  there used to be a message naming the staging sibling and another for the
+  failed rename — and a note is a CSV field, so a *failed* run's file can differ
+  by that one string. The browser implementation of the seam is its own slice
+  ([#117](https://github.com/marcd35/lrsalvage/issues/117));
+  [the module spec](https://github.com/marcd35/lrsalvage/blob/main/specs/modules/fs.md)
+  records the decision and the operation set.
+
 ## [0.3.0]
 
 0.3.0 is the trust minor. [ADR 0011](https://github.com/marcd35/lrsalvage/blob/main/docs/adr/0011-0-3-is-the-trust-minor.md)

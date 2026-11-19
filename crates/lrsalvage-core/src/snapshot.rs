@@ -1,15 +1,12 @@
 //! A stable, read-only snapshot of a catalog file and its WAL sidecars.
 
 use std::ffi::OsString;
-use std::fs;
-use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use rusqlite::{Connection, OpenFlags};
-use sha2::{Digest, Sha256};
-use tempfile::TempDir;
 
 use crate::error::{Error, IoContext, Result};
+use crate::fs::{self, ScratchDir};
 
 /// A catalog copied to a temporary directory together with `-wal` and `-shm`.
 ///
@@ -25,7 +22,7 @@ use crate::error::{Error, IoContext, Result};
 /// unchanging file, so [`Catalog::from_snapshot`](crate::catalog::Catalog::from_snapshot)
 /// can open it immutably without going stale.
 pub struct CatalogSnapshot {
-    _dir: TempDir,
+    _dir: ScratchDir,
     catalog_path: PathBuf,
     digests: Option<SourceDigests>,
 }
@@ -61,13 +58,10 @@ impl CatalogSnapshot {
             ),
         })?;
 
-        let dir = tempfile::Builder::new()
-            .prefix("lrsalvage-")
-            .tempdir()
-            .map_err(|source| Error::Io {
-                path: std::env::temp_dir(),
-                source,
-            })?;
+        let dir = fs::scratch_dir("lrsalvage-").map_err(|source| Error::Io {
+            path: std::env::temp_dir(),
+            source,
+        })?;
 
         // The catalog as it was when this run started, before anything we do to
         // it could be mistaken for what it always was.
@@ -91,8 +85,8 @@ impl CatalogSnapshot {
 
         for suffix in ["-wal", "-shm"] {
             let sidecar = with_suffix(catalog, suffix);
-            if sidecar.is_file() {
-                fs::copy(&sidecar, with_suffix(&copy, suffix)).at(&sidecar)?;
+            if fs::is_file(&sidecar).unwrap_or(false) {
+                fs::copy(&sidecar, &with_suffix(&copy, suffix)).at(&sidecar)?;
             }
         }
 
@@ -164,21 +158,7 @@ fn verify_copy(catalog: &Path, source: &str, copy: &Path) -> Result<SourceDigest
 /// asserts the report's `source_sha256` against it, so the field and the file's
 /// bytes cannot drift into two definitions of the same hex.
 pub fn sha256_file(path: &Path) -> Result<String> {
-    let mut file = fs::File::open(path).at(path)?;
-    let mut hasher = Sha256::new();
-    let mut buffer = [0u8; 64 * 1024];
-    loop {
-        let read = file.read(&mut buffer).at(path)?;
-        if read == 0 {
-            break;
-        }
-        hasher.update(&buffer[..read]);
-    }
-    Ok(hasher
-        .finalize()
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect())
+    fs::sha256_file(path).at(path)
 }
 
 /// Fold the copied WAL into the copied database, then drop the sidecars.
@@ -189,7 +169,7 @@ pub fn sha256_file(path: &Path) -> Result<String> {
 /// returning a usable snapshot.
 fn checkpoint_copy(copy: &Path) {
     let wal = with_suffix(copy, "-wal");
-    if !wal.is_file() {
+    if !fs::is_file(&wal).unwrap_or(false) {
         return;
     }
 
@@ -206,7 +186,7 @@ fn checkpoint_copy(copy: &Path) {
     // explicit: a leftover empty `-wal` would force the slower fallback path.
     if checkpointed {
         let _ = fs::remove_file(&wal);
-        let _ = fs::remove_file(with_suffix(copy, "-shm"));
+        let _ = fs::remove_file(&with_suffix(copy, "-shm"));
     }
 }
 
@@ -225,7 +205,7 @@ pub(crate) fn with_suffix(path: &Path, suffix: &str) -> PathBuf {
 /// checkpoint did not happen — `immutable=1` would silently hide committed
 /// rows, so fall back to a plain read-only open that replays the WAL.
 pub(crate) fn open_readonly(path: &Path) -> Result<Connection> {
-    let query = if with_suffix(path, "-wal").is_file() {
+    let query = if fs::is_file(&with_suffix(path, "-wal")).unwrap_or(false) {
         "mode=ro"
     } else {
         "mode=ro&immutable=1"

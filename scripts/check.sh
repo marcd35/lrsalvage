@@ -111,6 +111,35 @@ gate_build() {
     cargo build --release --locked
 }
 
+# The second target. `lrsalvage-core` is the crate a browser app links, so
+# `wasm32-unknown-unknown` is a target the gate list keeps compiling — ADR 0012
+# D10's warning, and #117's runway.
+#
+# Compile-only on purpose: it proves the crate graph builds for the target —
+# including SQLite, which `sqlite-wasm-rs` compiles from its amalgamation with a
+# C compiler — and proves nothing about a run, which is the browser slices' own
+# tests. `--lib` is the surface the app links; the test targets need
+# `lrsalvage-fixtures`, which is native-only.
+#
+# Two tools have to be there and neither is skipped. The target is checked here
+# and fails with the command that installs it. The C compiler is not checked
+# here, because `cc` finds it for this target on PATH (`clang`, which CI's runner
+# has) or from `CC_wasm32_unknown_unknown`, which a machine may point anywhere —
+# a machine-local path this file must not guess. A machine without one fails the
+# build with `cc` naming the tool it could not run, which is loud; the variable
+# is documented in `.env.example`.
+gate_wasm() {
+    printf '%s\n' '== wasm32-unknown-unknown'
+    require rustup 'rustup.rs'
+    if ! rustup target list --installed | grep -qx wasm32-unknown-unknown; then
+        printf '%s\n' \
+            'wasm32-unknown-unknown is not installed: rustup target add wasm32-unknown-unknown' >&2
+        exit 1
+    fi
+    load_env
+    cargo check --lib --locked --target wasm32-unknown-unknown -p lrsalvage-core
+}
+
 # The artifact, not the tree. Every other gate reads this checkout, so a package
 # that cannot build from its own generated manifest — a test tree the published
 # metadata drops, a dev-dependency Cargo strips, a README the crate page points at
@@ -332,7 +361,7 @@ gate_real_discard() {
     cargo test -p lrsalvage-cli --test discard -- --ignored
 }
 
-all_gates='fmt shell clippy test doc build package typos deny msrv'
+all_gates='fmt shell clippy test doc wasm build package typos deny msrv'
 
 if [ "$#" -eq 0 ]; then
     set -- $all_gates
@@ -364,7 +393,7 @@ for gate in "$@"; do
         real-render) gate_real_render ;;
         real-1to1) gate_real_1to1 ;;
         real-discard) gate_real_discard ;;
-        fmt | shell | clippy | test | doc | build | package | typos | deny | msrv | real) "gate_$gate" ;;
+        fmt | shell | clippy | test | doc | wasm | build | package | typos | deny | msrv | real) "gate_$gate" ;;
         *)
             # A usage error, not a gate that ran and failed.
             gate_in_flight=''
