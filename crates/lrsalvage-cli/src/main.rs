@@ -3,139 +3,17 @@
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use clap::{Parser, Subcommand};
+use clap::Parser;
 use indicatif::{ProgressBar, ProgressStyle};
+use lrsalvage_cli::cli::{Cli, Command, ExtractArgs, MasksArgs, ScanArgs};
+use lrsalvage_cli::exit::{
+    EXIT_EVIDENCE, EXIT_NOTHING, EXIT_OK, EXIT_PARTIAL, EXIT_UNSAFE, EXIT_USAGE,
+};
 use lrsalvage_core::catalog::Catalog;
 use lrsalvage_core::extract::{self, ExtractOptions, OutcomeStatus};
 use lrsalvage_core::plan::{Options, Plan, Status, Tier};
 use lrsalvage_core::previews_db::{IndexProblem, Layout};
 use lrsalvage_core::{Error, Result, masks, previews_db, report};
-
-const EXIT_OK: u8 = 0;
-const EXIT_USAGE: u8 = 1;
-const EXIT_PARTIAL: u8 = 2;
-const EXIT_NOTHING: u8 = 3;
-const EXIT_UNSAFE: u8 = 4;
-/// The catalog is not the file it was when the run started reading. Its own
-/// code because it is its own problem: not a bad destination (`4`), not a
-/// half-done extraction (`2`), and not something to retry unchanged.
-const EXIT_EVIDENCE: u8 = 5;
-
-/// The one wording both commands' `--verify-source` help uses: two copies of a
-/// promise drift, and clap's own `--help` is where a user meets it.
-const VERIFY_SOURCE_HELP: &str = "Prove the catalog was only read: hash it, copy it, hash the copy, and fail if the two disagree.";
-
-#[derive(Debug, Parser)]
-#[command(
-    name = "lrsalvage",
-    version,
-    about = "Recover JPEG previews from Adobe Lightroom Classic catalogs",
-    long_about = "Reads a Lightroom catalog and its preview cache, and writes out the largest \
-                  cached JPEG for every image whose original file is gone.\n\n\
-                  Everything is opened read-only. Output never lands inside the catalog or \
-                  the preview cache."
-)]
-struct Cli {
-    #[command(subcommand)]
-    command: Command,
-}
-
-#[derive(Debug, Subcommand)]
-enum Command {
-    /// Report what is recoverable. Writes nothing except the files you name.
-    Scan(ScanArgs),
-    /// Write the recoverable JPEGs, plus a report and a JSON manifest.
-    Extract(ExtractArgs),
-    /// Decode `.lrcat-data` AI mask layers to PNG.
-    Masks(MasksArgs),
-}
-
-#[derive(Debug, clap::Args)]
-struct ScanArgs {
-    /// Catalog file (`*.lrcat`).
-    #[arg(long)]
-    catalog: PathBuf,
-    /// Preview cache directory (`* Previews.lrdata`).
-    #[arg(long)]
-    previews: PathBuf,
-    /// Emit a machine-readable summary instead of a table.
-    #[arg(long)]
-    json: bool,
-    /// Write a self-contained HTML contact sheet of the best previews.
-    #[arg(long)]
-    contact_sheet: Option<PathBuf>,
-    /// Write the path-free verification report to this file.
-    #[arg(long)]
-    report: Option<PathBuf>,
-    /// Print one line per plan item instead of only totals.
-    #[arg(long)]
-    verbose: bool,
-    /// Ignore previews below this long edge.
-    #[arg(long, default_value_t = 640)]
-    min_long_edge: u32,
-    /// Write the largest preview at or below this long edge, not the largest
-    /// present. `0` disables the cap.
-    #[arg(long, default_value_t = 0)]
-    max_long_edge: u32,
-    /// Inspect every level, not only the best one.
-    #[arg(long)]
-    all_levels: bool,
-    /// Also include images whose original file is still present.
-    #[arg(long)]
-    include_present: bool,
-    #[arg(long, help = VERIFY_SOURCE_HELP)]
-    verify_source: bool,
-}
-
-#[derive(Debug, clap::Args)]
-struct ExtractArgs {
-    #[arg(long)]
-    catalog: PathBuf,
-    #[arg(long)]
-    previews: PathBuf,
-    /// Destination directory. Must not be inside the catalog or cache.
-    #[arg(long)]
-    out: PathBuf,
-    /// Do everything except write files.
-    #[arg(long)]
-    dry_run: bool,
-    /// Ignore previews below this long edge.
-    #[arg(long, default_value_t = 640)]
-    min_long_edge: u32,
-    /// Write the largest preview at or below this long edge, not the largest
-    /// present. `0` disables the cap.
-    #[arg(long, default_value_t = 0)]
-    max_long_edge: u32,
-    #[arg(long)]
-    all_levels: bool,
-    /// Also include images whose original file is still present.
-    #[arg(long)]
-    include_present: bool,
-    #[arg(long, help = VERIFY_SOURCE_HELP)]
-    verify_source: bool,
-    /// Do not add EXIF, XMP rating or the ICC profile to the recovered JPEGs.
-    ///
-    /// Such output carries no marker, so a later run cannot prove it wrote the
-    /// file: every destination is reported as not a verified extraction and is
-    /// left untouched unless --force is given.
-    #[arg(long)]
-    no_metadata: bool,
-    /// Do not set file modification times to the capture time.
-    #[arg(long)]
-    no_timestamps: bool,
-    /// Replace an existing destination file that is not a verified extraction.
-    #[arg(long)]
-    force: bool,
-}
-
-#[derive(Debug, clap::Args)]
-struct MasksArgs {
-    /// A `<catalog>.lrcat-data` directory.
-    #[arg(long)]
-    data: PathBuf,
-    #[arg(long)]
-    out: PathBuf,
-}
 
 fn main() -> ExitCode {
     match run() {
@@ -722,6 +600,23 @@ mod tests {
             ],
             [0, 1, 2, 3, 4, 5],
             "the numbers are the contract; the README's table is their prose"
+        );
+
+        // The man page's `EXIT STATUS` section is `exit::PUBLISHED`, whose numbers
+        // are the constants above. A code that reached one and not the other is
+        // this line's failure — which is what makes the generated man page's exit
+        // section derived rather than a second table.
+        assert_eq!(
+            lrsalvage_cli::exit::PUBLISHED.map(|(code, _)| code),
+            [
+                EXIT_OK,
+                EXIT_USAGE,
+                EXIT_PARTIAL,
+                EXIT_NOTHING,
+                EXIT_UNSAFE,
+                EXIT_EVIDENCE
+            ],
+            "every published code needs a row in the man page's EXIT STATUS section"
         );
 
         let path = PathBuf::from("C:/evidence/2023.lrcat");

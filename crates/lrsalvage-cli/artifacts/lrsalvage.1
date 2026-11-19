@@ -1,0 +1,147 @@
+.ie \n(.g .ds Aq \(aq
+.el .ds Aq '
+.TH lrsalvage 1  "lrsalvage 0.3.0" 
+.SH NAME
+lrsalvage \- Recover JPEG previews from Adobe Lightroom Classic catalogs
+.SH SYNOPSIS
+\fBlrsalvage\fR [\fB\-h\fR|\fB\-\-help\fR] [\fB\-V\fR|\fB\-\-version\fR] <\fIsubcommands\fR>
+.SH DESCRIPTION
+Reads a Lightroom catalog and its preview cache, and writes out the largest cached JPEG for every image whose original file is gone.
+.PP
+Everything is opened read\-only. Output never lands inside the catalog or the preview cache.
+.SH OPTIONS
+.TP
+\fB\-h\fR, \fB\-\-help\fR
+Print help (see a summary with \*(Aq\-h\*(Aq)
+.TP
+\fB\-V\fR, \fB\-\-version\fR
+Print version
+.SH COMMANDS
+.TP
+\fBscan\fR
+Report what is recoverable. Writes nothing except the files you name
+.TP
+\fBextract\fR
+Write the recoverable JPEGs, plus a report and a JSON manifest
+.TP
+\fBmasks\fR
+Decode `.lrcat\-data` AI mask layers to PNG
+.SH SCAN
+.SS SYNOPSIS
+\fBlrsalvage scan\fR [\fB\-\-json\fR] [\fB\-\-contact\-sheet\fR] [\fB\-\-report\fR] [\fB\-\-verbose\fR] [\fB\-\-min\-long\-edge\fR] [\fB\-\-max\-long\-edge\fR] [\fB\-\-all\-levels\fR] [\fB\-\-include\-present\fR] [\fB\-\-verify\-source\fR] [\fB\-h\fR|\fB\-\-help\fR] <\fB\-\-catalog\fR> <\fB\-\-previews\fR> 
+.SS OPTIONS
+.TP
+\fB\-\-catalog\fR \fI<CATALOG>\fR
+Catalog file (`*.lrcat`)
+.TP
+\fB\-\-previews\fR \fI<PREVIEWS>\fR
+Preview cache directory (`* Previews.lrdata`)
+.TP
+\fB\-\-json\fR
+Emit a machine\-readable summary instead of a table
+.TP
+\fB\-\-contact\-sheet\fR \fI<CONTACT_SHEET>\fR
+Write a self\-contained HTML contact sheet of the best previews
+.TP
+\fB\-\-report\fR \fI<REPORT>\fR
+Write the path\-free verification report to this file
+.TP
+\fB\-\-verbose\fR
+Print one line per plan item instead of only totals
+.TP
+\fB\-\-min\-long\-edge\fR \fI<MIN_LONG_EDGE>\fR [default: 640]
+Ignore previews below this long edge
+.TP
+\fB\-\-max\-long\-edge\fR \fI<MAX_LONG_EDGE>\fR [default: 0]
+Write the largest preview at or below this long edge, not the largest present. `0` disables the cap
+.TP
+\fB\-\-all\-levels\fR
+Inspect every level, not only the best one
+.TP
+\fB\-\-include\-present\fR
+Also include images whose original file is still present
+.TP
+\fB\-\-verify\-source\fR
+Prove the catalog was only read: hash it, copy it, hash the copy, and fail if the two disagree.
+.TP
+\fB\-h\fR, \fB\-\-help\fR
+Print help
+.SH EXTRACT
+.SS SYNOPSIS
+\fBlrsalvage extract\fR [\fB\-\-dry\-run\fR] [\fB\-\-min\-long\-edge\fR] [\fB\-\-max\-long\-edge\fR] [\fB\-\-all\-levels\fR] [\fB\-\-include\-present\fR] [\fB\-\-verify\-source\fR] [\fB\-\-no\-metadata\fR] [\fB\-\-no\-timestamps\fR] [\fB\-\-force\fR] [\fB\-h\fR|\fB\-\-help\fR] <\fB\-\-catalog\fR> <\fB\-\-previews\fR> <\fB\-\-out\fR> 
+.SS OPTIONS
+.TP
+\fB\-\-catalog\fR \fI<CATALOG>\fR
+
+.TP
+\fB\-\-previews\fR \fI<PREVIEWS>\fR
+
+.TP
+\fB\-\-out\fR \fI<OUT>\fR
+Destination directory. Must not be inside the catalog or cache
+.TP
+\fB\-\-dry\-run\fR
+Do everything except write files
+.TP
+\fB\-\-min\-long\-edge\fR \fI<MIN_LONG_EDGE>\fR [default: 640]
+Ignore previews below this long edge
+.TP
+\fB\-\-max\-long\-edge\fR \fI<MAX_LONG_EDGE>\fR [default: 0]
+Write the largest preview at or below this long edge, not the largest present. `0` disables the cap
+.TP
+\fB\-\-all\-levels\fR
+
+.TP
+\fB\-\-include\-present\fR
+Also include images whose original file is still present
+.TP
+\fB\-\-verify\-source\fR
+Prove the catalog was only read: hash it, copy it, hash the copy, and fail if the two disagree.
+.TP
+\fB\-\-no\-metadata\fR
+Do not add EXIF, XMP rating or the ICC profile to the recovered JPEGs.
+
+Such output carries no marker, so a later run cannot prove it wrote the file: every destination is reported as not a verified extraction and is left untouched unless \-\-force is given.
+.TP
+\fB\-\-no\-timestamps\fR
+Do not set file modification times to the capture time
+.TP
+\fB\-\-force\fR
+Replace an existing destination file that is not a verified extraction
+.TP
+\fB\-h\fR, \fB\-\-help\fR
+Print help (see a summary with \*(Aq\-h\*(Aq)
+.SH MASKS
+.SS SYNOPSIS
+\fBlrsalvage masks\fR [\fB\-h\fR|\fB\-\-help\fR] <\fB\-\-data\fR> <\fB\-\-out\fR> 
+.SS OPTIONS
+.TP
+\fB\-\-data\fR \fI<DATA>\fR
+A `<catalog>.lrcat\-data` directory
+.TP
+\fB\-\-out\fR \fI<OUT>\fR
+
+.TP
+\fB\-h\fR, \fB\-\-help\fR
+Print help
+.SH "EXIT STATUS"
+.TP
+\fB0\fR
+Success, including \-\-help and \-\-version.
+.TP
+\fB1\fR
+Usage or input error: bad arguments, a catalog that cannot be read, or a preview cache path that is not a directory.
+.TP
+\fB2\fR
+extract completed, and at least one selected image could not be written.
+.TP
+\fB3\fR
+Nothing was selected to do.
+.TP
+\fB4\fR
+Unsafe, unwritable or too small a destination: the destination is inside the evidence, cannot be written, or does not have the free space this run would still write.
+.TP
+\fB5\fR
+The catalog changed while it was being read, so nothing was planned from the copy.
+.SH VERSION
+v0.3.0
