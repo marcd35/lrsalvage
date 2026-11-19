@@ -163,12 +163,16 @@ mentions.
 
 ### D7 — #67 closes when #88 merges
 
-Its decision 2 was the only live part, and #88 lands the two README non-goals that
-decision promised and never wrote. Decisions 1, 3 and 4 stand as declined and are
-already recorded on the issue.
+Its decision 2 was the only live part, and #88 lands it. The two README non-goals
+are decision 1's promise, and that pull request wrote them down too; decisions 3
+and 4 stand as declined and are already recorded on the issue.
 
 Rules out: keeping an exploration open for a decision that shipped; re-opening
 the naming-template half without a product change, which decision 3 refuses.
+
+**Corrected 2026-11-18:** this decision credited the two README non-goals to
+decision 2, which is the cap. They are decision 1's, and #88 landed both;
+`docs/release-0.4.md` carries the slice that reads the issue against this record.
 
 ### D8 — The app's path is spike → seam → stack, and no tracker before both land
 
