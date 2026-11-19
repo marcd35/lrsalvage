@@ -52,6 +52,16 @@ minor saying so here before one is removed, renamed or given a different meaning
   drops; an unpacked crate now builds `--all-targets` and runs the suite it
   carries. `scripts/check.sh package` tests that tarball rather than only
   building it, so the property cannot rot back.
+- **Four completion scripts and a man page are attached to the release**
+  ([#62](https://github.com/marcd35/lrsalvage/issues/62)): `lrsalvage.bash`,
+  `_lrsalvage` for zsh, `lrsalvage.fish`, `_lrsalvage.ps1` and `lrsalvage.1`.
+  All five are generated from the binary's own `clap` definition — the synopsis,
+  every flag, every default, and the man page's `EXIT STATUS` rows — so there is
+  no hand-kept second copy of the flag list. `scripts/check.sh completions`
+  regenerates them into a temporary directory and diffs the result against the
+  committed copies, so an artifact that no longer matches the binary fails a run
+  rather than a user. Nothing is added to the CLI's contract: there is no
+  `completions` subcommand, and the flag and exit-code surfaces are unchanged.
 
 ### Build
 
