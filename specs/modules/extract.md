@@ -77,30 +77,40 @@ half-perform. It decides nothing about which image deserves recovery — that is
   lexically, so `--out catalog/../catalog/out` is refused while the directory
   still does not exist. The same rule covers `.lrcat-data` for `masks`.
 - **The destination's room is checked before the first write (#64).**
-  `extract::ensure_room` compares the plan's own total — `plan.stats.bytes`, the
-  payload bytes this run would write at these options, so `--min-long-edge`,
-  `--max-long-edge` and `--all-levels` move it — against the free space of the
+  `extract::pending_bytes` is the number: the plan's own total — `plan.stats.bytes`,
+  which `--min-long-edge`, `--max-long-edge` and `--all-levels` move because it is
+  what this run would write at those options — less every item whose destination
+  already exists. An existing destination is skipped when it verifies as ours and
+  reported failed when it does not, and neither writes a byte, so those bytes are
+  not room this run needs; counting them would make a first pass that filled the
+  destination refuse every later resume, for the bytes it had already written. It
+  costs one `stat` per selected item and reads no destination. Under `--force`
+  nothing is subtracted, because a forced run may replace what is there — an
+  over-estimate in the one case a forced item would in fact have verified, which
+  errs towards refusing rather than towards filling the disk.
+  `extract::ensure_room` compares that number against the free space of the
   nearest existing ancestor. That ancestor is asked because the destination may
   not exist yet: a dry run creates nothing, and a real run asks about the
   directory its own destination check has already created — so both ask a path
-  that exists, and neither may create one in order to ask. The comparison has no margin —
-  exactly enough proceeds, one byte short is refused — and the refusal is
+  that exists, and neither may create one in order to ask. The comparison has no
+  margin — exactly enough proceeds, one byte short is refused — and the refusal is
   `error::Error::Destination`, the crate's existing "this destination cannot be
   used" variant, so exit `4` gains a trigger and no code. The message states the
   shortfall twice, in exact bytes and in `report`'s MiB form. A destination that
   fits but would be left under 1 GiB free is *nearly full*, which the run says
   rather than leaving a reader to subtract two numbers; that constant is a
-  statement about what is left behind, never a margin the comparison adds. A
-  destination that cannot be measured — a share whose filesystem will not answer
-  — proceeds with one note rather than becoming unextractable: the check is a
-  guard, not the run's premise, and `wasm32` answers every operation this way by
-  design (`fs`). `--dry-run` runs the same check and prints the same verdict,
-  and it is where the numbers are most useful, since it writes nothing.
-- **The room it measures is the payload total, and the message says so.** The
-  EXIF/XMP/ICC segments this module adds are not counted, so a destination
-  holding exactly the plan's total still lets the last file fail on space, as it
-  does today. The shortfall a run states is the plan's, not a promise about the
-  finished sizes.
+  statement about what is left behind, never a margin the comparison adds, and a
+  run with nothing left to write is never nearly full. A destination that cannot
+  be measured — a share whose filesystem will not answer — proceeds with one note
+  rather than becoming unextractable: the check is a guard, not the run's premise,
+  and `wasm32` answers every operation this way by design (`fs`). `--dry-run` runs
+  the same check and prints the same verdict, and it is where the numbers are most
+  useful, since it writes nothing.
+- **The room it measures is the payload still to be written, and the message says
+  so.** The EXIF/XMP/ICC segments this module adds are not counted, so a
+  destination holding exactly what is left still lets the last file fail on space,
+  as it does today. The shortfall a run states is the plan's, not a promise about
+  the finished sizes.
 - **A dry run writes nothing but does all the rest**: same selection, same
   metadata assembly, same verification, `dry-run` outcomes, no report files.
 - **Metadata is a segment-level edit.** The payload's compressed image data is

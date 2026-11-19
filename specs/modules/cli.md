@@ -123,8 +123,10 @@ it needs to know about an image comes from a `Plan`.
   why the path-free object is `--report` and not a flag on this one. The
   numbers are the plan's: this module formats them and computes none of them.
 - **The free-space verdict prints on stderr, in both modes (#64).** `extract`
-  hands the plan's total to `extract::ensure_room` once the plan exists and before
-  the first file is written, so no JPEG, no `extract.csv`, no `manifest.json` and
+  hands `extract::ensure_room` what the run has left to write —
+  `extract::pending_bytes`: the plan's total less the outputs the destination
+  already holds, because those are skipped or failed and never rewritten — once
+  the plan exists and before the first file is written, so no JPEG, no `extract.csv`, no `manifest.json` and
   no report exists when a refusal fires. Three verdicts, three lines: silence
   when the run fits with room behind it; the shortfall, in bytes and in MiB,
   through the ordinary error path when it does not; and one note when the
