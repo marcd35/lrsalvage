@@ -39,6 +39,18 @@ jobs:
   # with every other gate, so a local run and this job are one command. It follows
   # `rust-version` in Cargo.toml, which is what raises the number and nothing else
   # — a second literal here is what let the published floor drift below the truth.
+  msrv:
+    name: msrv
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Check on the published MSRV
+        run: sh scripts/check.sh msrv
+
   # The second target. `lrsalvage-core` builds for `wasm32-unknown-unknown` and
   # must keep doing so: ADR 0012 D10 makes the target a fourth one the gate list
   # owes, and the browser app (#117) links this crate unchanged. The gate is in
@@ -63,18 +75,6 @@ jobs:
 
       - name: Check
         run: sh scripts/check.sh wasm
-
-  msrv:
-    name: msrv
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
-
-      - name: Check on the published MSRV
-        run: sh scripts/check.sh msrv
 
   typos:
     name: typos

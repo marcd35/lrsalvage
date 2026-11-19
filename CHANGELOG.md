@@ -44,16 +44,21 @@ minor saying so here before one is removed, renamed or given a different meaning
 
 - **`lrsalvage-core` builds for `wasm32-unknown-unknown`, and every filesystem
   operation it performs goes through one module**
-  ([#142](https://github.com/marcd35/lrsalvage/issues/142)). `fs` is the only
-  module that names `std::fs`, `tempfile` or `filetime`; the target picks one of
-  two implementations by `cfg`, and the `wasm32` one refuses an operation rather
+  ([#142](https://github.com/marcd35/lrsalvage/issues/142)). No module's shipped
+  code other than `fs` names `std::fs`, `tempfile` or `filetime` — `masks` is
+  the recorded exception, keeping its own walk — and the target picks one of two
+  implementations by `cfg`, with the `wasm32` one refusing an operation rather
   than answering it — which is the difference between "absent" and "cannot
   look" that a browser build previously got wrong, reporting a present
   `previews.db` as missing. `scripts/check.sh wasm` compiles the crate for the
   target, and `tests/fs_seam.rs` fails if a module reaches around the seam. **No
-  behaviour changes**: the native backend is the code the modules already ran,
-  and the CLI's bytes, flags, fields and exit codes are identical. The browser
-  implementation of the seam is its own slice
+  behaviour changes** in anything a run decides or writes: the native backend is
+  the code the modules already ran, and the flags, the fields, the exit codes and
+  every successful run's bytes are identical. One failure note moves — a write
+  that cannot be staged or renamed now says `cannot write <destination>`, where
+  there used to be a message naming the staging sibling and another for the
+  failed rename — and a note is a CSV field, so a *failed* run's file can differ
+  by that one string. The browser implementation of the seam is its own slice
   ([#117](https://github.com/marcd35/lrsalvage/issues/117));
   [the module spec](https://github.com/marcd35/lrsalvage/blob/main/specs/modules/fs.md)
   records the decision and the operation set.

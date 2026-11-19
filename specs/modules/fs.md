@@ -23,10 +23,13 @@ in the one place where the answer can differ per target.
 
 ## Boundary
 
-Every other module asks this module; nothing else in `lrsalvage-core` names
-`std::fs`, `tempfile` or `filetime`, and `tests/fs_seam.rs` fails when that stops
-being true. The one recorded exception is `masks`, which is native-only and
-outside this seam (see below).
+Six modules ask this module — `snapshot`, `previews_db`, `jpeg`, `plan`,
+`extract` and `report`, and the operation table below records which of them asks
+for what. No other module's shipped code in `lrsalvage-core` names `std::fs`,
+`tempfile` or `filetime`, and `tests/fs_seam.rs` fails when that stops being
+true; its own `#[cfg(test)]` modules do, and the test knows the difference. The
+one recorded exception is `masks`, which is native-only and outside this seam
+(see below).
 
 No format knowledge, no SQL, no path convention beyond what an operation needs:
 this module does not know that `-wal` is a sidecar or that `.partial` is
@@ -69,8 +72,9 @@ system, `wasm` for `wasm32-unknown-unknown` — chosen by `cfg` at compile time.
 - **A `cfg`-selected concrete module, not a trait object and not a generic
   parameter.** Both alternatives keep one signature, and both cost something this
   does not: a trait object puts a vtable behind the payload read at the centre of
-  every run, and a generic parameter would put a type parameter on eight modules
-  to express a choice made once, at compile time, by the target. The cost of
+  every run, and a generic parameter would put a type parameter on every module
+  that asks for an operation, to express a choice made once, at compile time, by
+  the target. The cost of
   `cfg` is that the two implementations are kept in step by the compiler instead
   of by a test: a function present in one and missing in the other does not
   build, so the wasm gate is what holds that.
@@ -123,7 +127,10 @@ system, `wasm` for `wasm32-unknown-unknown` — chosen by `cfg` at compile time.
 - **Native first, and unchanged.** The native backend is the code those modules
   already had, moved: the same `std::fs` calls, the same `tempfile` builder and
   prefix, the same 64 KiB hashing buffer, the same `.stem.pid-n.partial` staging
-  name, the same `fs::copy` semantics for the catalog trio. The only user-visible
-  difference a failed write produces is which path its note names — the
-  destination instead of the staging sibling — because the staging name is now an
-  implementation detail this module does not hand out.
+  name, the same `fs::copy` semantics for the catalog trio. One user-visible
+  string moves: a write that fails now produces one note, `cannot write
+  <destination>`, where there used to be two — `cannot write <staging sibling>`
+  when the staging file could not be written and `cannot finalise <destination>`
+  when the rename did not land. The note is a field of the per-file CSV, so this
+  is the one byte a *failed* run can differ by; a successful run's bytes, the
+  flags, the fields and the exit codes are identical.

@@ -51,8 +51,9 @@ segments.
   writing atomically, copying, removing, a scratch directory, a file's digest,
   path resolution and a modification time. A `cfg`-selected backend gives each
   target its own implementation with one signature; on `wasm32` the operations
-  refuse rather than lie. Nothing else in the crate names `std::fs`, `tempfile`
-  or `filetime`, and `crates/lrsalvage-core/tests/fs_seam.rs` holds that.
+  refuse rather than lie. No other shipped code in the crate names `std::fs`,
+  `tempfile` or `filetime` — `masks` is the recorded exception and keeps its own
+  walk — and `crates/lrsalvage-core/tests/fs_seam.rs` holds that.
 - `masks` — decodes `.lrcat-data` AI mask layers to PNG.
 - `error` — the single error type and its I/O path context.
 - `cli` — arguments and presentation; no format knowledge.

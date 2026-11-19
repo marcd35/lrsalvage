@@ -1,10 +1,13 @@
 //! The crate's one filesystem seam.
 //!
-//! Every other module asks this one for bytes, listings and writes. It is the
-//! only place in `lrsalvage-core` that names `std::fs`, `tempfile` or
-//! `filetime`, and `tests/fs_seam.rs` fails if that stops being true. One
-//! exception is recorded rather than hidden: `masks` keeps its own `walkdir`
-//! walk, because it is native-only and outside the seam (`crate::masks`).
+//! Every module asks this one for bytes, listings and writes. No other module's
+//! shipped code in `lrsalvage-core` names `std::fs`, `tempfile` or `filetime`,
+//! and `tests/fs_seam.rs` fails when that stops being true: it reads each source
+//! file up to its own `#[cfg(test)]` module, so a test may still look at the disk
+//! directly. Two exceptions are recorded rather than hidden. `masks` keeps its
+//! own `walkdir` walk, because it is native-only and outside the seam
+//! (`crate::masks`); and `lrsalvage-cli` is a separate crate that names
+//! `std::fs` for its own files, which is not this seam's to own.
 //!
 //! # The operations are the call sites, not POSIX
 //!
@@ -21,8 +24,8 @@
 //! The backend is chosen by `cfg` at compile time: `native` for every target
 //! that has an operating system, `wasm` for `wasm32-unknown-unknown`. There is
 //! no trait object and no generic parameter, so a payload read costs a call
-//! rather than a vtable lookup, and the callers in the eight modules that use
-//! this seam are identical on both targets. The cost is that the two
+//! rather than a vtable lookup, and the callers are identical on both targets.
+//! The cost is that the two
 //! implementations are kept in step by the compiler rather than by a test: a
 //! function added to one and forgotten in the other does not build.
 //!
