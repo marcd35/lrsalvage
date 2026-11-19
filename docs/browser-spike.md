@@ -29,8 +29,11 @@ and **neither survived**: the `-wal` recovers to exact parity, and with 8–16
 streams in flight the write rate reaches 27–29 files/s, which is the durable-write
 speed of the desktop writer the app actually ships (§3). What remains is a set of
 costs and unknowns in §7 — Chromium-only, quota, a 149.7 s stall after a reload —
-not a wall. The decision is the one D10 assigns to the audience test, not one a
-measurement can make.
+not a wall. [ADR 0012](adr/0012-two-release-lines.md) D10 records the resolution on
+the strength of these numbers — the browser is the `0.1.0` artifact, the executable
+is deferred rather than cancelled — together with the durability judgement it rests
+on. D10's audience test is still owed; it decides the release claim, not the
+engineering, since the seam work and the UI are shared by both artifacts.
 
 The harness lived outside the repository, included the modules through `#[path]`
 rather than transcribing their SQL, and ran a native binary over the same code so

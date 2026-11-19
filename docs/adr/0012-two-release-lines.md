@@ -193,6 +193,11 @@ The costs and conditions of each route, with a source and a date on every row,
 are in `app-distribution` §1–§3. This record states the decision and does not
 restate a price.
 
+**Deferred with the executable, 2026-11-18.** D10's resolution puts `0.1.0` in the
+browser, where none of the above applies: no installer, no signature, no warning
+screen to earn, no Apple account. Signing waits for the binary it signs, and the
+routes below are what that binary inherits, not a decision anyone has to make now.
+
 ### D10 — The browser-or-desktop question is decided by a rubric, not by the spike
 
 A spike answers *feasible*; it never answers *better*, and a green spike pulls
@@ -277,6 +282,33 @@ test is now the deciding question, and the two release lines are a choice betwee
 two working artifacts rather than one. The numbers, the platform's remaining
 costs and what was not exercised are in [browser-spike](browser-spike.md); the
 decision and its follow-ups are on #126.
+
+**Resolved 2026-11-18: the browser is the `0.1.0` artifact, and the executable is
+deferred.** The first test is green on measurement, above. The third is a judgement,
+and here it is: **this tool's durable artifact is the engine, not the front end.**
+The core line ships a crate, a binary and three archives that any machine can
+install in 2030 without this project's cooperation; the page is a front end over
+that engine, so if the page dies the recovery path does not. The page's own risk is
+narrower than it first looks: a hosted page in 2030 needs (a) the project still
+hosting it and (b) Chromium's File System Access API to survive, and one vendor has
+filed a negative standards position on standardising it. Four commitments buy that
+down, and each is cheap now and expensive later:
+
+- **A static export** — HTML, wasm and nothing else: no server, no database, no
+  telemetry, deployable from any static host or a directory.
+- **A tagged deploy per release**, so a version can be redeployed from git rather
+  than reconstructed.
+- **The core line stays the offline artifact**, and the page states which core it
+  was built against.
+- **The UI is stack-agnostic**: a shell wrapping the same HTML over the same core is
+  a later slice, and it is what happens if the API or the hosting lapses.
+
+The second test — the audience test — has not run. It does not gate this
+resolution's *engineering*, because the seam work and the UI are shared by both
+artifacts; it gates the *release claim*. If it comes back favouring an executable,
+the page ships as the trial page #117's prototype already is, and the shell moves
+from "deferred" to "next". D10's rule against shipping two front ends at once is
+unchanged.
 
 ### D11 — Accessibility is a level, not a sentiment
 

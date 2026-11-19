@@ -33,7 +33,11 @@ does not have to carry a price list that goes stale.
 
 ## 1. What signing costs
 
-Read 2026-11-18.
+Read 2026-11-18. **This is now a later-binaries question.**
+[ADR 0012](adr/0012-two-release-lines.md) resolved D10 to the browser for `0.1.0`,
+so none of these rows apply to the first release: a page has no installer, no
+signature, no SmartScreen reputation and no Apple account. They apply to the
+deferred shell, and they are kept here because it will be bought back with them.
 
 | Route | Cost | Constraints | Label |
 |---|---|---|---|
@@ -88,10 +92,18 @@ Read 2026-11-18.
 - **MSIX must be signed before it installs at all**, including outside the Store,
   where App Installer handles updates — so "MSIX" is not a way to avoid signing
   unless it goes through the Store. — verified
+- **A page trades a signing route for a hosting one**, and a lapsed host is as dead
+  as an expired certificate. There is no purchase to make and no queue to join, so
+  the mitigation is structural rather than financial: a static export, a tagged
+  deploy per release, and the core line as the artifact that outlives the page.
+  — judgement; ADR 0012's D10 resolution is where the risk is accepted
 
 ## 4. The browser route's hard constraints
 
-Read 2026-11-18. These are the facts #126's spike measures against.
+Read 2026-11-18. These are the facts #126's spike measures against, and — since
+[ADR 0012](adr/0012-two-release-lines.md) resolved D10 to the browser for `0.1.0` —
+the constraints the first release is designed inside rather than weighed against.
+[browser-spike](browser-spike.md) has the numbers.
 
 - **`showDirectoryPicker` is Chromium-only**: Chrome and Edge 86+, **not Firefox**
   (through 163 at the time of reading) and **not Safari**. MDN marks it "Limited
