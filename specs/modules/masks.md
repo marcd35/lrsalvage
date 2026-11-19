@@ -22,7 +22,11 @@ Reads `.lrcat-data` payload files and nothing else: no catalog query, no
 `previews.db`, no `.lrprev`. The layer's file name is its own identity (it equals
 the `MaskDigest` in the develop settings), so no lookup is needed. Gated behind
 the `masks` cargo feature, which is what makes `png` an optional dependency;
-everything else in the crate compiles without it.
+everything else in the crate compiles without it. Also gated on the target: the
+module is not compiled for `wasm32`, because the app line does not export masks
+(#117), and it is the one module that keeps its own directory walk instead of
+asking `fs` — `list` reports a walk error where the cache sweep skips one, and a
+target that has no walk at all never reaches it.
 
 ## Decisions
 

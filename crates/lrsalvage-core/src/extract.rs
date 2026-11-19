@@ -7,16 +7,15 @@
 //! byte-identical unless `--force` asked for a replacement, so a same-size
 //! foreign JPEG is never mistaken for ours.
 //!
-//! A write goes to a unique `.<stem>.<pid>-<n>.partial` beside the destination,
-//! is flushed with `sync_all`, and is then renamed into place. There is no
-//! delete-then-rename step: `rename` replaces an existing file on both Windows
-//! and POSIX, so an interrupted run cannot destroy the file it was replacing.
+//! A write is staged and renamed into place by [`crate::fs::write_atomic`]: a
+//! unique sibling, flushed to the device, then renamed over the destination.
+//! There is no delete-then-rename step: `rename` replaces an existing file on
+//! both Windows and POSIX, so an interrupted run cannot destroy the file it was
+//! replacing.
 //!
 //! Nothing is written inside the catalog or the preview cache.
 //! [`ensure_safe_destination_create`] refuses a destination before creating it.
 
-use std::fs;
-use std::io::Write as _;
 use std::path::{Component, Path, PathBuf};
 
 use jiff::tz::TimeZone;
@@ -27,7 +26,7 @@ use crate::jpeg;
 use crate::lrprev;
 use crate::model::Orientation;
 use crate::plan::{Payload, Plan, PlanItem, Status};
-use crate::{exif, report};
+use crate::{exif, fs, report};
 
 #[derive(Debug, Clone)]
 pub struct ExtractOptions {
@@ -198,12 +197,8 @@ fn probe_writable(dir: &Path) -> Result<()> {
             COUNTER.fetch_add(1, Ordering::Relaxed)
         );
         let probe = dir.join(format!(".lrsalvage-write-probe.{unique}"));
-        match fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&probe)
-        {
-            Ok(_) => {
+        match fs::create_new(&probe) {
+            Ok(()) => {
                 let _ = fs::remove_file(&probe);
                 return Ok(());
             }
@@ -224,7 +219,7 @@ fn probe_writable(dir: &Path) -> Result<()> {
 }
 
 fn canonical(path: &Path) -> PathBuf {
-    path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
+    fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
 }
 
 /// Resolve `path` so it is comparable with the canonical evidence roots.
@@ -236,11 +231,14 @@ fn resolve_pending(path: &Path) -> PathBuf {
     let absolute = if path.is_absolute() {
         path.to_path_buf()
     } else {
-        std::env::current_dir()
+        fs::current_dir()
             .map(|cwd| cwd.join(path))
             .unwrap_or_else(|_| path.to_path_buf())
     };
-    let Some(ancestor) = absolute.ancestors().find(|candidate| candidate.exists()) else {
+    let Some(ancestor) = absolute
+        .ancestors()
+        .find(|candidate| fs::exists(candidate).unwrap_or(false))
+    else {
         return canonical(&absolute);
     };
     let mut resolved = canonical(ancestor);
@@ -309,7 +307,7 @@ fn extract_one(item: &PlanItem, options: &ExtractOptions) -> Outcome {
     // A metadata-free run verifies nothing at all: its own output has nowhere to
     // record identity, and a metadata-bearing file must not be silently kept by
     // a run that promised the payload's bytes (`adr-0003` §6).
-    if output.exists() {
+    if fs::exists(output).unwrap_or(false) {
         if options.write_metadata
             && let Ok(existing) = fs::read(output)
             && verifies_as_ours(&existing, expected)
@@ -433,28 +431,10 @@ fn extract_one(item: &PlanItem, options: &ExtractOptions) -> Outcome {
         return failed(output.clone(), format!("cannot create {parent:?}: {e}"));
     }
 
-    // A unique temp name per write: two concurrent runs cannot rename each
-    // other's file away, and a stale `.partial` from a killed run is never
-    // reused. `sync_all` means a rename only ever exposes durable bytes.
-    let temp = partial_sibling(output);
-    let write = (|| -> std::io::Result<()> {
-        let mut file = fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&temp)?;
-        file.write_all(&bytes)?;
-        file.sync_all()
-    })();
-    if let Err(e) = write {
-        let _ = fs::remove_file(&temp);
-        return failed(output.clone(), format!("cannot write {temp:?}: {e}"));
-    }
-
-    // `rename` replaces an existing file on Windows and POSIX; never remove
-    // the old file first, or an interrupted run loses both copies.
-    if let Err(e) = fs::rename(&temp, output) {
-        let _ = fs::remove_file(&temp);
-        return failed(output.clone(), format!("cannot finalise {output:?}: {e}"));
+    // Staged under a unique name, flushed, then renamed into place, so a reader
+    // sees the file that was there or the whole new one and never a mixture.
+    if let Err(e) = fs::write_atomic(output, &bytes) {
+        return failed(output.clone(), format!("cannot write {output:?}: {e}"));
     }
 
     if options.set_timestamps {
@@ -478,24 +458,6 @@ fn extract_one(item: &PlanItem, options: &ExtractOptions) -> Outcome {
             Some(notes.join("; "))
         },
     }
-}
-
-/// `.<stem>.<pid>-<counter>.partial` beside the destination.
-fn partial_sibling(output: &Path) -> PathBuf {
-    use std::sync::atomic::{AtomicU64, Ordering};
-
-    static COUNTER: AtomicU64 = AtomicU64::new(0);
-
-    let stem = output
-        .file_stem()
-        .map(|stem| stem.to_string_lossy().into_owned())
-        .unwrap_or_else(|| "output".to_string());
-    let unique = format!(
-        "{}-{}",
-        std::process::id(),
-        COUNTER.fetch_add(1, Ordering::Relaxed)
-    );
-    output.with_file_name(format!(".{stem}.{unique}.partial"))
 }
 
 /// One line describing a finished run, e.g. `78 evaluated, 0 written (dry run)`.
@@ -529,7 +491,7 @@ pub fn outcome_summary(outcomes: &[Outcome], dry_run: bool) -> String {
 /// the two instants is a guess (`adr-0006-degrade-without-guessing`). The
 /// decision is separate from the write below so a test can hold a fold to it
 /// without depending on the zone this machine happens to be in.
-fn capture_time_mtime(raw: &str, zone: &TimeZone) -> Option<filetime::FileTime> {
+fn capture_time_mtime(raw: &str, zone: &TimeZone) -> Option<i64> {
     // `catalog` has already reduced the value to `YYYY-MM-DDTHH:MM:SS`
     // (`catalog::normalise_timestamp`, `specs/modules/catalog.md`); the slice is
     // defence against a caller handing over more, not a shape expected here.
@@ -538,10 +500,7 @@ fn capture_time_mtime(raw: &str, zone: &TimeZone) -> Option<filetime::FileTime> 
     // midnight: a time of day the catalog did not record must not be invented.
     let civil = jiff::civil::DateTime::strptime("%Y-%m-%dT%H:%M:%S", trimmed).ok()?;
     let zoned = zone.to_ambiguous_zoned(civil).unambiguous().ok()?;
-    Some(filetime::FileTime::from_unix_time(
-        zoned.timestamp().as_second(),
-        0,
-    ))
+    Some(zoned.timestamp().as_second())
 }
 
 /// Set the file's modification time to the capture time, when known.
@@ -569,13 +528,11 @@ fn apply_capture_time(output: &Path, raw: &str, zone: &TimeZone) {
     let Some(mtime) = capture_time_mtime(raw, zone) else {
         return;
     };
-    let _ = filetime::set_file_mtime(output, mtime);
+    let _ = fs::set_mtime(output, mtime);
 }
 
 /// `report.csv` next to the extracted files, so a run is auditable.
 pub fn write_outcomes_csv(outcomes: &[Outcome], path: &Path) -> Result<()> {
-    use std::io::Write;
-
     let mut text = String::with_capacity(outcomes.len() * 96);
     text.push_str("status,bytes,sha256,output,note\r\n");
     for o in outcomes {
@@ -592,9 +549,7 @@ pub fn write_outcomes_csv(outcomes: &[Outcome], path: &Path) -> Result<()> {
         text.push_str(&report::escape_csv(o.note.as_deref().unwrap_or("")));
         text.push_str("\r\n");
     }
-    let mut file = fs::File::create(path).at(path)?;
-    file.write_all(text.as_bytes()).at(path)?;
-    file.flush().at(path)?;
+    fs::write(path, text.as_bytes()).at(path)?;
     Ok(())
 }
 
@@ -619,6 +574,10 @@ pub fn below_floor(plan: &Plan) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+    // Observe the disk directly, as a test always has: checking the seam's work
+    // with the seam would prove nothing.
+    use std::fs;
+
     use crate::model::{CatalogImage, XmpMetadata};
     use crate::plan::Stats;
 
@@ -916,11 +875,11 @@ mod tests {
         // two refusals above rest on is the ambiguity and not the parse.
         assert_eq!(
             capture_time_mtime("2024-11-03T03:30:00", &zone),
-            Some(filetime::FileTime::from_unix_time(1_730_622_600, 0))
+            Some(1_730_622_600)
         );
         assert_eq!(
             capture_time_mtime("2024-03-10T01:30:00", &zone),
-            Some(filetime::FileTime::from_unix_time(1_710_052_200, 0))
+            Some(1_710_052_200)
         );
 
         // A value with no time of day is a refusal, never midnight of the local
@@ -929,7 +888,7 @@ mod tests {
         // reaches here, so this half is the defence rather than a real shape.
         assert_eq!(
             capture_time_mtime("2024-03-10T01:30:00.500+01:00", &zone),
-            Some(filetime::FileTime::from_unix_time(1_710_052_200, 0))
+            Some(1_710_052_200)
         );
         assert_eq!(capture_time_mtime("2009-08-06", &zone), None);
     }

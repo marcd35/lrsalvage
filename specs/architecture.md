@@ -118,12 +118,13 @@ field.
 | `model::sanitize_component` | not supported | the security boundary `relative_output_path` already applies; the properties test is its only outside caller |
 | `error::Error` (+ variants), `error::Result` | seam | one error type, as the invariants below require, and a front-end matches its variants to decide what to tell a user |
 | `error::IoContext` | convenience | attaches a path when a caller composes its own `io::Error`; no seam call needs it |
+| `fs` (every operation in it) | not supported | the crate's own seam onto a filesystem, reached by eight modules and by no front-end; changing it is a change to the modules that ask it, not to a promise |
 | `jpeg::certify`, `Certified` (+ fields), `Segment` (+ `marker`, `range`, `payload`), `dimensions`, `is_complete`, `is_payload_start` | not supported | the certification the plan already performed; a front-end reads `PlanItem`'s width, `payload_metadata` and `effective_orientation` instead. `lrsalvage-fixtures` and the tests are the outside callers |
 | `lrprev::Lrprev` (+ `parse`, `header`, `levels`, `best_level`), `Chunk` (+ `name`, `data`), `chunk_data`, `level_index`, `MAGIC` | not supported | the container walk, done once by the plan; a front-end reads the `Payload` an item names |
 | `exif::PayloadMetadata` (+ `is_empty`) | seam | it is a `PlanItem` field, and its three flags are what a report says about a payload |
 | `exif::MetadataInput` (+ fields, `with_marker`, `is_empty`), `Injection`, `inject`, `inject_full`, `inject_icc`, `from_catalog`, `from_catalog_with_profile`, `inventory`, `orientation`, `software`, `icc_profile`, `marker`, `SOFTWARE_PREFIX` | not supported | the writer's own parts: `extract` composes them, and the `Software` identity they spell is promised as bytes on disk (`adr-0010-what-0-2-promises`, its item 8), not as a Rust helper |
 | `header::PyramidHeader` (+ fields), `parse` | not supported | no production path calls it: `previews.db` is the authority for sizes, profile and mapping, so the module is documented and unused |
-| `pub mod` × 14, and the twelve-name `pub use` block in `lib.rs` | — | a module carries the seam items listed above; thirteen do and `header` does not. The re-export block is not a second home |
+| `pub mod` × 15, and the twelve-name `pub use` block in `lib.rs` | — | a module carries the seam items listed above; fourteen do and `header` does not. The re-export block is not a second home |
 
 Two functions are already `pub(crate)` (`snapshot::with_suffix` and
 `snapshot::open_readonly`) and so make no claim at all; they are named here only
@@ -160,18 +161,19 @@ listed for it:
 
 | Module | Depends on |
 |---|---|
-| `snapshot` | `error` |
+| `snapshot` | `fs`, `error` |
 | `catalog` | `snapshot`, `model`, `error` |
-| `previews_db` | `snapshot`, `model`, `error` |
+| `previews_db` | `snapshot`, `fs`, `model`, `error` |
 | `lrprev` | `jpeg`, `error` |
-| `jpeg` | `error` |
+| `jpeg` | `fs`, `error` |
 | `header` | `error` |
 | `model` | — (no internal dependencies, no I/O) |
-| `plan` | `catalog`, `previews_db`, `lrprev`, `jpeg`, `exif`, `model`, `error` |
-| `extract` | `plan`, `exif`, `jpeg`, `lrprev`, `model`, `report`, `error` |
+| `plan` | `catalog`, `previews_db`, `lrprev`, `jpeg`, `exif`, `model`, `fs`, `error` |
+| `extract` | `plan`, `exif`, `jpeg`, `lrprev`, `model`, `report`, `fs`, `error` |
 | `exif` | `model`, `jpeg`, `error` |
-| `report` | `plan`, `lrprev`, `jpeg`, `model`, `previews-db`, `error` |
+| `report` | `plan`, `lrprev`, `jpeg`, `model`, `previews-db`, `snapshot`, `fs`, `error` |
 | `masks` | `error` |
+| `fs` | — (no internal dependencies; its errors are `std::io::Error`) |
 | `error` | — |
 | `cli` | any of the above, as a consumer |
 
@@ -183,8 +185,9 @@ segment walk that both a payload's certification and its metadata reading use;
 `extract` calls it to write the resume marker and to read it back — which is why
 both edges appear. `previews_db` borrows `snapshot`'s
 read-only opener for the cache's own database, which is why it appears in the
-table. `masks` is gated behind the `masks` cargo feature (`png` is optional);
-everything else is always compiled. `report` reads its two name templates from
+table. `masks` is gated behind the `masks` cargo feature (`png` is optional) and
+on the target — it is not compiled for `wasm32`, which is why it keeps its own
+`walkdir` walk instead of asking `fs`; everything else is always compiled. `report` reads its two name templates from
 `previews_db` rather than restating a naming rule in a presentation module.
 
 ## Invariants the code enforces
@@ -202,6 +205,13 @@ everything else is always compiled. `report` reads its two name templates from
   database, `catalog` owns the `.lrcat` schema, `jpeg` owns marker framing,
   `exif` owns metadata segments, `masks` owns `.lrcat-data`. `plan` composes
   their answers and never learns a byte offset.
+- **One module answers the filesystem.** `fs` is the only module that names
+  `std::fs`, `tempfile` or `filetime`; every other module asks it, and
+  `crates/lrsalvage-core/tests/fs_seam.rs` fails when one reaches around it.
+  `masks` is the one recorded exception, because it is not compiled for the app
+  line at all. The seam is `cfg`-selected rather than a trait object, so the
+  target is a compile-time choice with no dispatch behind a payload read, and the
+  `wasm32` build is held by `scripts/check.sh wasm` rather than by hope.
 - **Decide, then write.** `plan` decides status, selection, tier and output path
   and writes nothing; `extract` writes and decides nothing about which image
   deserves to be recovered. A scan and an extract for the same inputs therefore

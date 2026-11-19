@@ -66,7 +66,12 @@ fn module_name(path: &Path) -> String {
 /// prefers, so a scan of `use` statements alone would see almost nothing.
 fn dependencies(path: &Path, modules: &[String]) -> Vec<String> {
     let source = fs::read_to_string(path).expect("a readable source file");
-    let source = strip_comments_and_strings(&source);
+    dependencies_of(&source, modules)
+}
+
+/// [`dependencies`] over text, so the reading itself can be tested.
+fn dependencies_of(source: &str, modules: &[String]) -> Vec<String> {
+    let source = strip_comments_and_strings(source);
     // The test module is not the module's design: it may reach anything.
     let source = source
         .split("#[cfg(test)]")
@@ -78,13 +83,7 @@ fn dependencies(path: &Path, modules: &[String]) -> Vec<String> {
         let rest = &source[occurrence.0 + "crate::".len()..];
         let names: Vec<String> = match rest.strip_prefix('{') {
             // `crate::{a, b}`: every name in the group.
-            Some(group) => group
-                .split('}')
-                .next()
-                .unwrap_or_default()
-                .split(',')
-                .filter_map(identifier)
-                .collect(),
+            Some(group) => group_names(group),
             // `crate::a::b`: the first segment.
             None => identifier(rest).into_iter().collect(),
         };
@@ -96,6 +95,40 @@ fn dependencies(path: &Path, modules: &[String]) -> Vec<String> {
     }
     found.sort();
     found
+}
+
+/// The module names a `crate::{…}` group imports, at any nesting depth.
+///
+/// `crate::{exif::{self, PayloadMetadata}, jpeg}` names two modules, and the
+/// crate writes that shape: a group nests, so splitting on the first `}` finds
+/// one entry where there are two, and the names after it go unchecked. Entries
+/// are trimmed, because a group written across lines puts a newline and four
+/// spaces in front of each one.
+fn group_names(group: &str) -> Vec<String> {
+    let mut names = Vec::new();
+    let mut entry = String::new();
+    let mut depth = 0usize;
+    for ch in group.chars() {
+        match ch {
+            '{' => {
+                depth += 1;
+                entry.push(ch);
+            }
+            // The group's own closing brace ends it; a nested one closes an entry.
+            '}' if depth == 0 => break,
+            '}' => {
+                depth -= 1;
+                entry.push(ch);
+            }
+            ',' if depth == 0 => {
+                names.extend(identifier(entry.trim_start()));
+                entry.clear();
+            }
+            _ => entry.push(ch),
+        }
+    }
+    names.extend(identifier(entry.trim_start()));
+    names
 }
 
 /// The leading identifier of `text`, if it starts with one.
@@ -254,6 +287,39 @@ fn a_flow_style_depends_on_reads_like_a_block_one() {
             .depends_on
             .is_empty(),
         "an empty flow list is still an empty list"
+    );
+}
+
+#[test]
+fn a_grouped_import_declares_every_name_in_it() {
+    let modules: Vec<String> = ["jpeg", "lrprev", "fs", "model"]
+        .iter()
+        .map(|name| (*name).to_string())
+        .collect();
+
+    // The three shapes the crate writes: one line, a wrapped group, and a
+    // narrower group inside a wider one. A reader that stopped at the first
+    // comma's untrimmed tail saw only the first name and called the rest absent.
+    for source in [
+        "use crate::{jpeg, lrprev};\n",
+        "use crate::{jpeg,\n    lrprev,\n};\n",
+        "use crate::{\n    jpeg::{self, Certified},\n    lrprev,\n    fs,\n};\n",
+    ] {
+        let found = dependencies_of(source, &modules);
+        assert!(
+            found.contains(&"jpeg".to_string()) && found.contains(&"lrprev".to_string()),
+            "a grouped use of {source:?} must declare every name in it, found {found:?}"
+        );
+    }
+
+    assert_eq!(
+        dependencies_of("use crate::model;\n", &modules),
+        vec!["model"],
+        "a single path is one dependency"
+    );
+    assert!(
+        dependencies_of("// use crate::jpeg;\n", &modules).is_empty(),
+        "prose about a module is not a dependency on it"
     );
 }
 

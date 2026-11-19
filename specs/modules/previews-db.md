@@ -8,6 +8,7 @@ depends-on:
   - snapshot
   - model
   - jpeg
+  - fs
 references:
   - adr-0002-map-via-previews-db
   - adr-0005-discover-payloads-by-index
@@ -32,11 +33,12 @@ therefore the **layout** the cache holds.
 ## Boundary
 
 Knows the index schema and the cache's directory layout; knows nothing about
-catalog rows beyond the `imageId` it is given, and never writes. It reads
-directory entries and names, and opens a payload only through `jpeg`'s two-byte
-sniff — never more than its first two bytes, and never to interpret them. The
-database is opened through `snapshot`'s read-only opener. Which rows are live,
-which are stale, and what to do about either is `plan`'s decision.
+catalog rows beyond the `imageId` it is given, and never writes. It asks `fs` for
+directory entries, names and the one tree walk, and opens a payload only through
+`jpeg`'s two-byte sniff — never more than its first two bytes, and never to
+interpret them. The database is opened through `snapshot`'s read-only opener.
+Which rows are live, which are stale, and what to do about either is `plan`'s
+decision.
 
 ## Decisions
 
@@ -110,7 +112,11 @@ which are stale, and what to do about either is `plan`'s decision.
   the only public way in degrades and no caller can mistake "no index" for a
   failure. A `previews.db` that exists and a directory by that name both take the
   `Unreadable` arm; only an absent path is `Missing`
-  (`adr-0006-degrade-without-guessing` ¶1–¶2).
+  (`adr-0006-degrade-without-guessing` ¶1–¶2). The gate is `fs::exists`, which
+  unlike `Path::exists` can fail: a target that cannot answer takes the
+  `Unreadable` arm too, because "I cannot look" is not "there is nothing there" —
+  the measured failure that made `wasm32` report a present database as `Missing`
+  (`docs/browser-spike.md` §1).
 - **The two name templates live here, beside the rule they describe.**
   `CONTAINER_GRAMMAR` is `<uuid[0]>/<uuid[0..4]>/<UUID>-<digest>.lrprev`, and
   `LEVEL_FILE_GRAMMAR` is that path with `_<longedge>` in place of the extension.

@@ -11,6 +11,7 @@ depends-on:
   - jpeg
   - exif
   - model
+  - fs
 references:
   - adr-0001-parse-dont-carve
   - adr-0002-map-via-previews-db
@@ -36,9 +37,11 @@ the cache's files took.
 ## Boundary
 
 Composes what `catalog`, `previews_db`, `lrprev`, `jpeg` and `exif` report; learns
-no byte offset and decides nothing about bytes. It reads payload files but writes
-nothing — not one byte, not one directory. Everything that ends up on disk is
-`extract`'s work, which is what makes `scan` a true rehearsal of `extract`.
+no byte offset and decides nothing about bytes. It reads payload files — whole
+files, through `fs`, and only to measure and certify what a decision is about —
+but writes nothing: not one byte, not one directory. Everything that ends up on
+disk is `extract`'s work, which is what makes `scan` a true rehearsal of
+`extract`.
 
 A plan records what the run decided, not the knobs that shaped it: the `Options`
 the caller passed stay the caller's, so a surface that echoes them takes them

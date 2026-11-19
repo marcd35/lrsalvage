@@ -11,6 +11,7 @@ depends-on:
   - lrprev
   - model
   - report
+  - fs
 references:
   - adr-0003-preserve-preview-bytes
   - adr-0006-degrade-without-guessing
@@ -28,7 +29,9 @@ its byte count, SHA-256 and note.
 ## Boundary
 
 The only module that writes user-visible output, and the only one that refuses a
-destination. It decides nothing about which image deserves recovery — that is
+destination. Every read and write it performs is an `fs` operation, so the
+staging name, the `fsync` and the `rename` are one call this module cannot
+half-perform. It decides nothing about which image deserves recovery — that is
 `plan` — and knows no format grammar beyond asking `lrprev` / `jpeg` / `exif`.
 
 ## Decisions
@@ -61,11 +64,13 @@ destination. It decides nothing about which image deserves recovery — that is
   metadata-bearing file must not be silently kept by a run that promised the
   payload's bytes. Either way the destination is reported as not a verified
   extraction and asks for `--force`. The flag's help says so.
-- **Temp-then-rename, never delete-then-rename.** The write goes to a unique
-  `.<stem>.<pid>-<n>.partial` beside the destination, is flushed with `sync_all`,
-  and is renamed into place; `rename` replaces an existing file on both Windows
-  and POSIX, so an interrupted run cannot destroy the file it was replacing and
-  cannot leave a half-JPEG wearing the recovered name.
+- **Temp-then-rename, never delete-then-rename.** The write is
+  `fs::write_atomic`: a unique sibling, flushed to the device, then renamed into
+  place; `rename` replaces an existing file on both Windows and POSIX, so an
+  interrupted run cannot destroy the file it was replacing and cannot leave a
+  half-JPEG wearing the recovered name. Because it is one operation, a note about
+  a failed write names the destination rather than the staging file it never
+  handed out.
 - **Destination safety is checked before the directory is created.** Both the
   already-existing and the not-yet-existing case are handled: the nearest
   existing ancestor is canonicalised and the remaining components applied

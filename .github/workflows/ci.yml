@@ -39,6 +39,31 @@ jobs:
   # with every other gate, so a local run and this job are one command. It follows
   # `rust-version` in Cargo.toml, which is what raises the number and nothing else
   # — a second literal here is what let the published floor drift below the truth.
+  # The second target. `lrsalvage-core` builds for `wasm32-unknown-unknown` and
+  # must keep doing so: ADR 0012 D10 makes the target a fourth one the gate list
+  # owes, and the browser app (#117) links this crate unchanged. The gate is in
+  # scripts/check.sh with every other one, so a local run and this job are the
+  # same command; what this job adds is the two things that target needs — the
+  # rust target, and the C compiler `sqlite-wasm-rs` uses for SQLite's
+  # amalgamation, which is on the runner's PATH as `clang`.
+  wasm:
+    name: wasm
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.100.0
+          targets: wasm32-unknown-unknown
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Check
+        run: sh scripts/check.sh wasm
+
   msrv:
     name: msrv
     runs-on: ubuntu-latest

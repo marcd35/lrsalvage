@@ -4,6 +4,8 @@ type: module-design
 title: "jpeg: dimensions and completeness, no pixels"
 status: draft
 parent: architecture
+depends-on:
+  - fs
 references: [adr-0001-parse-dont-carve, adr-0004-detect-layout-not-version]
 ---
 
@@ -22,9 +24,10 @@ its first two bytes: is this payload-like at all.
 
 A walking segment parser over a `&[u8]` and an `error::Error`, plus one two-byte
 read of a file. No pixel access, no metadata interpretation. The only file it
-ever opens is the payload-like sniff, which reads at most two bytes and scans
-nothing; everything else takes bytes, so no caller has to teach this module about
-files. Callers decide what a disagreement or an incompleteness means.
+reads is the payload-like sniff, and even that asks `fs` for at most two bytes
+and scans nothing; everything else takes bytes, so no caller has to teach this
+module about files. Callers decide what a disagreement or an incompleteness
+means.
 
 ## Decisions
 
@@ -49,7 +52,8 @@ files. Callers decide what a disagreement or an incompleteness means.
   `Exif`, an XMP packet or neither belongs to `exif`, which consumes the same
   list. One walk per file, two readers of its result.
 - **The payload-like test is two bytes, and it is not a scan.**
-  `is_payload_start(path)` reads at most the file's first two bytes and answers
+  `is_payload_start(path)` asks `fs::read_prefix` for at most the file's first two
+  bytes and answers
   whether they are `FF D8`. That is ADR 0004's rule for what counts as
   payload-like, and its narrowness is the decision: a file that merely *contains*
   a `FF D8` is not payload-like, so nothing is searched for and an embedded
