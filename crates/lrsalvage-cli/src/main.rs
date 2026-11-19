@@ -446,6 +446,22 @@ fn extract(args: ExtractArgs) -> Result<u8> {
         return Ok(EXIT_NOTHING);
     }
 
+    // #64: the destination's own answer, before the first file is written. A
+    // dry run asks the same question and reports the same verdict — it is where
+    // a careful user looks first, and it writes nothing either way. The number
+    // is the plan's total, so the bounds this run applied move it.
+    match extract::ensure_room(&args.out, plan.stats.bytes)? {
+        extract::Preflight::Fits(room) => {
+            if let Some(note) = room.nearly_full_note(&args.out) {
+                eprintln!("{note}");
+            }
+        }
+        extract::Preflight::Unmeasured(reason) => eprintln!(
+            "the destination's free space could not be measured, so the pre-flight was \
+             skipped: {reason}"
+        ),
+    }
+
     let extract_options = ExtractOptions {
         output_root: args.out.clone(),
         dry_run: args.dry_run,

@@ -255,6 +255,137 @@ fn resolve_pending(path: &Path) -> PathBuf {
     resolved
 }
 
+/// The headroom a run that fits must still leave behind it before the
+/// destination is called *nearly* full: one gibibyte.
+///
+/// A statement, not a margin. The comparison below it is exact — a destination
+/// holding precisely the plan's total proceeds — so this can never refuse a run
+/// the ticket's decision 5 lets through. The size is the room left for the run's
+/// own `report.csv` and `manifest.json`, and for whatever else writes there; one
+/// constant, one home.
+const NEARLY_FULL_HEADROOM: u64 = 1 << 30;
+
+/// What a destination has room for, as the pre-flight measured it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Room {
+    /// The payload bytes this run would write: `plan.stats.bytes`.
+    pub needed: u64,
+    /// What the destination's filesystem reports as free right now.
+    pub available: u64,
+}
+
+impl Room {
+    /// The bytes this run would leave free.
+    pub fn left(&self) -> u64 {
+        self.available.saturating_sub(self.needed)
+    }
+
+    /// Whether the run fits, and leaves under [`NEARLY_FULL_HEADROOM`] behind it.
+    pub fn is_nearly_full(&self) -> bool {
+        self.left() < NEARLY_FULL_HEADROOM
+    }
+
+    /// What a run says about a destination that fits but barely, `None` when it
+    /// leaves room behind.
+    ///
+    /// Said rather than computed twice: the verdict and the sentence about it
+    /// are the same measurement, so the sentence prints in a dry run and in a
+    /// real one alike.
+    pub fn nearly_full_note(&self, destination: &Path) -> Option<String> {
+        self.is_nearly_full().then(|| {
+            format!(
+                "the destination {} would be nearly full after this run: {} of previews needed, \
+                 {} free now, {} left",
+                destination.display(),
+                report::mebibytes(self.needed),
+                report::mebibytes(self.available),
+                report::mebibytes(self.left())
+            )
+        })
+    }
+}
+
+/// What the pre-flight could say about a destination.
+#[derive(Debug, Clone)]
+pub enum Preflight {
+    /// The destination answered, and the run fits.
+    Fits(Room),
+    /// Nothing could be measured, so nothing was compared. The run proceeds with
+    /// a note: this check is a guard, not the run's premise, and a filesystem
+    /// that cannot answer must not make a destination unextractable.
+    Unmeasured(String),
+}
+
+/// Refuse a destination the plan would not fit into, before the first write.
+///
+/// `needed` is the plan's own total — `plan.stats.bytes`, the payload bytes this
+/// run would write at these options — so the bounds a caller applied move it and
+/// there is no second measurement to disagree with the plan.
+///
+/// The destination may not exist yet: a dry run creates nothing, so the question
+/// is asked of the nearest existing ancestor, which is the filesystem the
+/// directory would land on when it is created.
+///
+/// The comparison is exact, with no margin: `available == needed` proceeds. It is
+/// the payload total rather than the finished file sizes — the metadata segments
+/// this module adds are not counted — so a destination with exactly this much
+/// room still lets a later file fail on space, as it already does (exit `2`).
+pub fn ensure_room(destination: &Path, needed: u64) -> Result<Preflight> {
+    let Some(measured) = existing_ancestor(destination) else {
+        return Ok(Preflight::Unmeasured(
+            "no directory on the way to it exists".to_string(),
+        ));
+    };
+    let available = match fs::available_space(&measured) {
+        Ok(available) => available,
+        Err(error) => return Ok(Preflight::Unmeasured(error.to_string())),
+    };
+    if available < needed {
+        let shortfall = needed - available;
+        // `Error::Destination` is the crate's existing "this destination cannot
+        // be used" refusal, so the shortfall reuses exit `4` and `error` gains
+        // no presentation-only variant (ADR 0010's rule: no sixth code).
+        return Err(Error::Destination {
+            path: destination.to_path_buf(),
+            source: std::io::Error::other(format!(
+                "this run's previews need {} ({}) and the destination has {} ({}) free — \
+                 {} ({}) short. Nothing was written.",
+                byte_count(needed),
+                report::mebibytes(needed),
+                byte_count(available),
+                report::mebibytes(available),
+                byte_count(shortfall),
+                report::mebibytes(shortfall),
+            )),
+        });
+    }
+    Ok(Preflight::Fits(Room { needed, available }))
+}
+
+/// The nearest ancestor of `path` that exists, made absolute so a relative
+/// destination has one too.
+fn existing_ancestor(path: &Path) -> Option<PathBuf> {
+    let absolute = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        fs::current_dir().map_or_else(|_| path.to_path_buf(), |cwd| cwd.join(path))
+    };
+    absolute
+        .ancestors()
+        .find(|candidate| fs::exists(candidate).unwrap_or(false))
+        .map(Path::to_path_buf)
+}
+
+/// `1 byte`, `12 bytes`: the refusal is read by a person, and a bare count would
+/// read `1 bytes`.
+fn byte_count(count: u64) -> String {
+    if count == 1 {
+        "1 byte".to_string()
+    } else {
+        format!("{count} bytes")
+    }
+}
+
 /// Write every selected item. `progress` is called once per outcome.
 pub fn extract(
     plan: &Plan,

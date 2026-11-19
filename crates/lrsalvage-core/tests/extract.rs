@@ -65,3 +65,77 @@ fn a_preexisting_verified_file_is_skipped_and_its_bytes_untouched() {
         "a verified destination is never rewritten"
     );
 }
+
+/// The names under one directory, so a refusal can be shown to have changed
+/// nothing.
+fn entries(dir: &Path) -> Vec<String> {
+    let mut names: Vec<String> = fs::read_dir(dir)
+        .expect("a readable directory")
+        .map(|entry| {
+            entry
+                .expect("a directory entry")
+                .path()
+                .strip_prefix(dir)
+                .unwrap_or_else(|_| Path::new(""))
+                .to_string_lossy()
+                .into_owned()
+        })
+        .collect();
+    names.sort();
+    names
+}
+
+/// #64: the pre-flight's own decision, against the filesystem's real answer.
+///
+/// `u64::MAX` is a total no destination can hold, so the refusal is exercised
+/// without filling a disk. The exact boundary — one byte short refuses, the
+/// plan's own total proceeds — is `lrsalvage-cli`'s test, where a debug build
+/// answers that total on the nose (`specs/modules/fs.md`).
+#[test]
+fn ensure_room_refuses_a_total_no_destination_can_hold() {
+    let vault = vault();
+    let untouched = entries(vault.out());
+
+    let error = extract::ensure_room(vault.out(), u64::MAX).expect_err("no disk holds u64::MAX");
+    let message = error.to_string();
+    assert!(
+        message.contains(&u64::MAX.to_string()),
+        "the need is stated in bytes: {message}"
+    );
+    assert!(
+        message.contains("MiB"),
+        "and in the human unit the reports use: {message}"
+    );
+    assert!(message.contains("short"), "{message}");
+    assert!(message.contains("Nothing was written"), "{message}");
+    assert_eq!(
+        entries(vault.out()),
+        untouched,
+        "a refused run leaves the destination exactly as it found it"
+    );
+}
+
+/// The question is asked of the nearest existing ancestor, since a dry run
+/// creates nothing, and the number compared is the plan's own total.
+#[test]
+fn ensure_room_measures_the_nearest_existing_ancestor() {
+    let vault = vault();
+    let plan = vault.plan(&Options::default());
+    let pending = vault.out().join("not").join("created");
+
+    let extract::Preflight::Fits(room) = extract::ensure_room(&pending, plan.stats.bytes)
+        .expect("a destination under a real folder")
+    else {
+        panic!("this machine cannot measure free space, which is its own surprise");
+    };
+    assert_eq!(
+        room.needed, plan.stats.bytes,
+        "the plan's total is the number compared, not a second measurement"
+    );
+    assert!(
+        room.available > 0,
+        "a filesystem this test writes to reports room, got {}",
+        room.available
+    );
+    assert!(!pending.exists(), "asking the question creates nothing");
+}

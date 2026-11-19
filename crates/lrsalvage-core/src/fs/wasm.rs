@@ -98,3 +98,7 @@ pub(super) fn current_dir() -> io::Result<PathBuf> {
 pub(super) fn set_mtime(_path: &Path, _unix_seconds: i64) -> io::Result<()> {
     Err(not_available())
 }
+
+pub(super) fn available_space(_path: &Path) -> io::Result<u64> {
+    Err(not_available())
+}

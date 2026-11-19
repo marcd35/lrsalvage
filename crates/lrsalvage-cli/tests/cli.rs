@@ -10,6 +10,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use assert_cmd::Command;
+use lrsalvage_core::plan::Options;
 use lrsalvage_fixtures::vault::{ImageRow, Level, PyramidRow, Vault};
 use predicates::prelude::*;
 
@@ -259,6 +260,99 @@ fn extract_refuses_an_output_inside_the_preview_cache() {
         "a refused --out must not be created: {}",
         inside.display()
     );
+}
+
+/// The payload total the pre-flight compares: the plan's own number, built the
+/// way a run builds it, so the tests below can set the destination's room to the
+/// exact boundary that check uses.
+fn plan_bytes(fixture: &Fixture) -> u64 {
+    fixture.vault.plan(&Options::default()).stats.bytes
+}
+
+/// The name the seam's native backend answers in a debug build instead of asking
+/// the platform (`specs/modules/fs.md`).
+const FREE_SPACE: &str = "LRSALVAGE_FREE_SPACE_BYTES";
+
+/// #64: the refusal, proved against the real binary.
+///
+/// No portable unprivileged machine can be made nearly full on demand, so the
+/// seam answers [`FREE_SPACE`] in a debug build — which is what `cargo test`
+/// compiles. Everything else is the shipped path: the real plan's total, the
+/// real destination, the real exit code.
+#[test]
+fn extract_refuses_a_destination_without_room_and_writes_nothing() {
+    let fixture = Fixture::new();
+    let needed = plan_bytes(&fixture);
+    let shortfall = needed / 2;
+
+    fixture
+        .extract()
+        .env(FREE_SPACE, (needed - shortfall).to_string())
+        .assert()
+        .code(4)
+        .stderr(predicate::str::contains(format!("{shortfall} bytes")))
+        .stderr(predicate::str::contains("MiB"))
+        .stderr(predicate::str::contains("short"))
+        .stderr(predicate::str::contains("Nothing was written"));
+
+    assert_empty_output(&fixture);
+}
+
+/// The comparison has no margin: one byte under the plan's total is refused and
+/// the plan's total itself proceeds.
+#[test]
+fn one_byte_short_is_refused_and_the_plans_own_total_proceeds() {
+    let fixture = Fixture::new();
+    let needed = plan_bytes(&fixture);
+
+    fixture
+        .extract()
+        .env(FREE_SPACE, (needed - 1).to_string())
+        .assert()
+        .code(4)
+        .stderr(predicate::str::contains("1 byte"))
+        .stderr(predicate::str::contains("short"));
+    assert_empty_output(&fixture);
+
+    fixture
+        .extract()
+        .env(FREE_SPACE, needed.to_string())
+        .assert()
+        .code(0)
+        // It fits, and leaves nothing behind it — which is said rather than
+        // silently called a fit (decision 5).
+        .stderr(predicate::str::contains("nearly full"));
+    assert!(
+        !jpeg_files(fixture.out()).is_empty(),
+        "a destination with exactly enough room writes the previews"
+    );
+}
+
+/// `--dry-run` asks the same question and reports the same verdict, and writes
+/// nothing either way.
+#[test]
+fn a_dry_run_makes_the_same_room_check_and_writes_nothing() {
+    let fixture = Fixture::new();
+    let needed = plan_bytes(&fixture);
+
+    fixture
+        .extract()
+        .arg("--dry-run")
+        .env(FREE_SPACE, (needed - 1).to_string())
+        .assert()
+        .code(4)
+        .stderr(predicate::str::contains("short"));
+    assert_empty_output(&fixture);
+
+    fixture
+        .extract()
+        .arg("--dry-run")
+        .env(FREE_SPACE, needed.to_string())
+        .assert()
+        .code(0)
+        .stderr(predicate::str::contains("nearly full"))
+        .stderr(predicate::str::contains("0 written (dry run)"));
+    assert_empty_output(&fixture);
 }
 
 #[test]

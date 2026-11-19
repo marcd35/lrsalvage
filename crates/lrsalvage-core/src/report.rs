@@ -147,7 +147,12 @@ fn with_thousands(value: u64) -> String {
 /// Tenths of a mebibyte, rounded half up, printed with one decimal and the
 /// unit it actually is: `1 MiB = 1,048,576 bytes`. `stats.bytes` stays exact in
 /// the JSON manifest.
-fn mebibytes(bytes: u64) -> String {
+///
+/// Public because it is the one home for the human form of a byte count: the
+/// free-space refusal (`extract::ensure_room`) states its shortfall in bytes
+/// *and* in this unit, and a second formatter would be a second answer to one
+/// question.
+pub fn mebibytes(bytes: u64) -> String {
     let tenths = (u128::from(bytes) * 10 + (1 << 19)) / (1 << 20);
     format!(
         "{}.{} MiB",

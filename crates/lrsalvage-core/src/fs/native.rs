@@ -185,3 +185,49 @@ pub(super) fn current_dir() -> io::Result<PathBuf> {
 pub(super) fn set_mtime(path: &Path, unix_seconds: i64) -> io::Result<()> {
     filetime::set_file_mtime(path, filetime::FileTime::from_unix_time(unix_seconds, 0))
 }
+
+pub(super) fn available_space(path: &Path) -> io::Result<u64> {
+    // A test's answer, before the platform's: `cargo test` builds with
+    // `debug_assertions` and no portable unprivileged machine can be made
+    // nearly full on demand, so this is how a real binary performs a real
+    // refusal (`specs/modules/fs.md`).
+    #[cfg(debug_assertions)]
+    {
+        if let Some(bytes) = test_free_space() {
+            return Ok(bytes);
+        }
+    }
+
+    #[cfg(any(unix, windows))]
+    {
+        // `f_bavail` and `lpFreeBytesAvailableToCaller`: what a non-privileged
+        // writer may still use, rather than the blocks a superuser could.
+        fs4::available_space(path)
+    }
+
+    // An operating system `fs4` has no answer for. `wasm32` never reaches this
+    // file; it has its own backend and its own refusal.
+    #[cfg(not(any(unix, windows)))]
+    {
+        let _ = path;
+        Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "this target cannot report a filesystem's free space",
+        ))
+    }
+}
+
+/// The free space a debug build answers instead of asking the operating system.
+///
+/// `cargo test` compiles with `debug_assertions`, so a test can hand the real
+/// binary a destination with too little room; a release build does not read the
+/// name and always asks the platform. One name, one meaning, and it is recorded
+/// where the seam's decisions live (`specs/modules/fs.md`).
+#[cfg(debug_assertions)]
+fn test_free_space() -> Option<u64> {
+    std::env::var("LRSALVAGE_FREE_SPACE_BYTES")
+        .ok()?
+        .trim()
+        .parse()
+        .ok()
+}
