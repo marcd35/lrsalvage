@@ -97,6 +97,11 @@ fn ensure_room_refuses_a_total_no_destination_can_hold() {
     let untouched = entries(vault.out());
 
     let error = extract::ensure_room(vault.out(), u64::MAX).expect_err("no disk holds u64::MAX");
+    assert!(
+        matches!(&error, lrsalvage_core::Error::Destination { .. }),
+        "the refusal is the crate's destination variant — the one `main.rs`'s \
+         exit-code test pins to `4`, so the code is held by the pair: {error:?}"
+    );
     let message = error.to_string();
     assert!(
         message.contains(&u64::MAX.to_string()),
