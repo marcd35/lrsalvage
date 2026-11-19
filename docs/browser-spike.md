@@ -12,10 +12,18 @@ tags:
 # The browser route, measured: spike #126
 
 > Everything below was measured on one Windows machine in November 2026 against
-> this repository's own modules. Each table row carries its evidence: **measured**
-> (a run on this machine), **verified** (a vendor, registry or specification
-> statement, with the date it was read), or **reported** (a third party said so
-> and nobody here confirmed it). A claim that is none of those is a bug.
+> this repository's own modules. The labels are
+> [app-distribution](app-distribution.md)'s, which owns this project's platform
+> facts: **measured** (a run on this machine — the run-shaped form of the evidence
+> standard's *verified*), **verified** (a vendor, registry or specification
+> statement, with the date it was read), **reported** (a third party said so and
+> nobody here confirmed it), **unverified** (a working hypothesis), **TODO** (nobody
+> has looked yet). A claim that is none of those is a bug.
+>
+> [format-notes](format-notes.md) keeps its own meaning for *verified* — observed
+> directly on real catalog or cache files here — because a Lightroom claim and a
+> platform claim are checked with different instruments. A Lightroom byte claim in
+> this page therefore cites format-notes rather than labelling itself.
 
 [ADR 0012](adr/0012-two-release-lines.md) D10 makes the browser-or-desktop
 question a rubric, and [app-distribution](app-distribution.md) §4 holds the
@@ -24,16 +32,28 @@ measured: `lrsalvage-core`'s SQLite dependency compiled to `wasm32`, this
 repository's `catalog` and `previews_db` modules run against a real catalog in a
 browser, payloads written into a folder a person picked, and the storage a page is
 offered. The first reading was **No-go**, on §3's sequential write rate and on
-§2's dropped `-wal`. Both were then measured again in the configurations §6 named,
-and **neither survived**: the `-wal` recovers to exact parity, and with 8–16
-streams in flight the write rate reaches 27–29 files/s, which is the durable-write
-speed of the desktop writer the app actually ships (§3). What remains is a set of
-costs and unknowns in §7 — Chromium-only, quota, a 149.7 s stall after a reload —
-not a wall. [ADR 0012](adr/0012-two-release-lines.md) D10 records the resolution on
-the strength of these numbers — the browser is the `0.1.0` artifact, the executable
-is deferred rather than cancelled — together with the durability judgement it rests
-on. D10's audience test is still owed; it decides the release claim, not the
-engineering, since the seam work and the UI are shared by both artifacts.
+§2's dropped `-wal`. The three experiments in §6
+were run, and they moved both rows a long way. The `-wal` now recovers **to exact
+parity** (§2): 128 of 128 images, every digest equal to a native run. Writes with
+8–16 streams in flight reach **27–29 files/s** (§3) — the durable-write speed of
+the writer this project ships, and 3.5–8× the sequential rate that produced the
+first verdict.
+
+What that does *not* do is turn the pre-registered gate green. The write row was
+scored before measuring against per-file latency — median ≤4 ms, p95 ≤20 ms, no
+stall >1 s, red above a 20 ms median — and a stream pool deliberately trades
+per-file latency for throughput: 34.1 s for 1 000 files with a 542 ms median. By
+the letter that is **red**; by the failure it was written to catch — a run that
+looks hung — it is not, because no gap between completed files exceeded 570 ms.
+The gate is therefore *revised*, explicitly and with its reason, in
+[ADR 0012](adr/0012-two-release-lines.md) D10's resolution, and the revision's own
+criterion (5 000 files in 120 s) is **not yet met**: 2.8 minutes by projection,
+with cancellation and resume never exercised. What remains beyond the writes is
+§7's list of costs and unknowns — Chromium-only, quota, a 149.7 s stall after a
+reload — not a wall.
+
+D10's audience test is still owed. It gates the release claim rather than the
+engineering, because the seam work and the UI are shared by both artifacts.
 
 The harness lived outside the repository, included the modules through `#[path]`
 rather than transcribing their SQL, and ran a native binary over the same code so
@@ -58,7 +78,9 @@ Data: the real catalog pair on the machine that produced `format-notes` — a
 100 078-image catalog (42 770 432 bytes) with an 83 304 480-byte index, built by
 appending rows to copies of the same schemas. A third copy carries a 70 072-byte
 `-wal` sidecar holding its newest 50 committed images, verified by reading 128
-images with the sidecar and 78 without.
+images with the sidecar and 78 without — the byte-level fact is
+[format-notes](format-notes.md) §7's, and this page measures only what a browser
+does with it.
 
 ## 1. The SQLite path to `wasm32`
 
@@ -219,10 +241,30 @@ sources), none of which the standard lets anyone batch.
 shipped `extract` writer calls `sync_all` and then `rename` per file; a bare native
 write does neither. Against the bare write the browser is 2–4× slower (29.4/s
 against 108/s for 28 KB). Against the writer the app actually ships it is at parity
-or slightly ahead: 26.6/s at 417 KB against 23/s for a native write plus `fsync`,
-and 29.4/s at 28 KB against a native `fsync` rate this spike did not measure
-directly. The 5 000-file shape is 2.8 minutes by projection (34.1 s × 5) against a
-proposed product gate of 2 minutes — over, not absurd.
+at the payload size that was measured both ways: **26.6/s at 417 KB against 23/s
+for a native write plus `fsync`**. The 28 KB native `fsync` rate was not measured,
+so no parity claim is made for it. The 5 000-file shape is 2.8 minutes by
+projection (34.1 s × 5) against a proposed product gate of 2 minutes — over, not
+absurd.
+
+**Scored against the gate agreed before measuring.** The thresholds were written
+down first, and they are reported here whether or not the browser survives them:
+
+| Pre-registered threshold | Result | Verdict |
+|---|---|---|
+| real catalog open and query ≤2 s (red >5 s) | 4 + 9 ms | **green** |
+| 100 078-image catalog query ≤10 s (red >30 s) | 0.74 + 1.93 s | **green** |
+| OPFS copy ~1 GB ≥50 MB/s (red <10) | 86–178 MB/s | **green** |
+| 1 000 writes: median ≤4 ms, p95 ≤20 ms, no stall >1 s | 542 / 619 ms median and p95, no gap over 570 ms | **red on the median** (the rule is red above 20 ms); the stall condition passes |
+| quota ≥5× the largest catalog | 10.7 GB against a 2.6 MB catalog | **green** |
+
+So the honest score is one red row and four green, and the red row is the one whose
+*shape* the replacement gate changed after the fact. A pre-registered gate that is
+revised after seeing the data is the move this repository treats as a bug unless
+the revision is recorded with its reason — which is why ADR 0012 D10 now carries
+both the original number and the revision, and why the revision's own threshold
+(5 000 committed files in ≤120 s, no gap over 1 s, zero wrong or missing outputs,
+safe cancel and resume) is stated as **not met** rather than quietly dropped.
 
 **And the sink is not stable across sessions.** The same sequential 1 000 × 417 KB
 run took 140.4 s (7.1/s) on the day of the sweep and 286.0 s (3.5/s) in the first

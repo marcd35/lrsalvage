@@ -1318,7 +1318,36 @@ in a cache whose payloads carry their own, because those bytes won (§5.8).
 
 ---
 
-## 7. Sources
+## 7. The catalog's `-wal` — VERIFIED
+
+`snapshot` copies `<catalog>`, `<catalog>-wal` and `<catalog>-shm` and lets SQLite
+checkpoint the private copy. That is not a detail of the copy: while Lightroom is
+open, or after it was closed uncleanly, the newest committed rows of the catalog
+live in the `-wal` and nowhere else.
+
+Measured on a copy of the 78-image catalog this tree's fixtures descend from, on
+2026-11-18: with a 70,072-byte `-wal` beside it, a read that replays the sidecar
+returns **128** images; the same main file with the sidecar ignored —
+`immutable=1`, or a copy of the main file alone — returns **78**. The other 50 rows
+existed only in the WAL, and the loss is silent: no error, and no count that looks
+wrong unless you already know what the catalog held. — verified
+
+Two consequences, both of them load-bearing elsewhere:
+
+- **A main file copied without its `-wal` is not the catalog that was there.** The
+  `.lrcat` alone is a consistent database, which is what makes the mistake
+  invisible.
+- **Replaying it needs no `-shm`.** The shared-memory file is a rebuildable index;
+  a single owner that selects `locking_mode=EXCLUSIVE` before the first WAL access
+  gets one in heap memory, so a reader with only the main file and the `-wal` can
+  recover every committed row. `docs/browser-spike.md` §2 is where that decided a
+  browser's viability.
+
+Not measured: a `-wal` whose tail is torn (a crash mid-write), and a pair copied
+while Lightroom was actively writing. Both are the consistency question `snapshot`
+answers with a verified acquisition rather than with these bytes. — TODO
+
+## 8. Sources
 
 | Source | What it contributes | Label |
 |---|---|---|

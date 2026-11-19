@@ -22,6 +22,9 @@ does not have to carry a price list that goes stale.
 
 - **Every row carries a label and a date it was read.** `verified` means the
   vendor's or the project's own page said it; `reported` means a third party did;
+  `measured` means a run on this machine, recorded in
+  [browser-spike](browser-spike.md); `judgement` means a decision-shaped opinion
+  with no source to re-read, stated so a later reader can argue with it;
   `unverified` means nobody could confirm it and nobody should build on it.
 - **These are not Lightroom claims**, so `format-notes.md`'s evidence standard is
   the *shape* followed here rather than its subject.
@@ -131,28 +134,19 @@ the constraints the first release is designed inside rather than weighed against
   The cost is the copy time and the origin's quota. `navigator.storage.persist()`
   asks the browser not to evict it. Exact quota figures vary by browser, profile
   and free disk. — reported
-- **Measured 2026-11-18** ([browser-spike](browser-spike.md)): a 1 GiB copy ran at
-  86–178 MB/s; the quota was 10.7–12.0 GB and moved between sessions;
-  `persist()` was refused while the data nonetheless survived a restart; a picked
-  folder's grant survived a reload and became `prompt` after a restart. The
-  crate's *checked* import copies the main file only and resets the header to
-  rollback mode, so a live `-wal`'s committed rows are lost without an error — 78
-  images read where 128 exist. That is the import's design, not a platform limit:
-  importing the sidecar byte-preserving and opening with exclusive locking
-  recovered **128 of 128** with every digest equal to a native run, since SQLite
-  needs no `-shm` for a single owner. The desktop `snapshot` copies `-wal`/`-shm`
-  and checkpoints, which is why the same file reads 128 there. — measured
-- **A page writes into a picked folder at 27–29 files/s**, if it keeps eight to
-  sixteen streams in flight: 1 000 payloads in 34 s with a p95 of 619 ms and no gap
-  over 570 ms, 200 large payloads at 26.6/s, saturation between 8 and 16 streams
-  (64 streams buys latency, p50 2.4 s, and no rate). Sequentially it is 7–8 files/s
-  on a good session and 3.5 on a bad one. That is 2–4× a *bare* native write and at
-  parity with a native write plus `sync_all`, which is what the shipped writer
-  does; the same JavaScript into OPFS runs at 120–142 files/s. — measured
-- **A page writes into a picked folder slowly** when it writes one file at a time,
-  and the record above has the concurrent number that fixes it. Sequential runs
-  through `createWritable()` gave 1.8–8.1 files/s depending on the session, with a
-  p95 of 0.6–1.4 s and a worst single file of 3 s–26 s. — measured
+- **Measured 2026-11-18** ([browser-spike](browser-spike.md)): the copy, the
+  quota, `persist()`, a folder grant across a restart, and the `-wal` — including
+  that the crate's *checked* import copies the main file only and resets the header
+  to rollback mode, which loses a live `-wal`'s committed rows silently, while a
+  byte-preserving import opened with exclusive locking recovers all of them. The
+  desktop `snapshot` copies `-wal`/`-shm` and checkpoints, which is why the same
+  file reads 128 rows there and 78 through the checked import. The figures are the
+  page's; this row states the mechanism. — measured
+- **Writing is no longer the constraint throughput-wise**, and the one row still
+  red against the pre-registered gate is *latency*, because a stream pool trades
+  per-file latency for rate. [browser-spike](browser-spike.md) §3 has the
+  concurrency curve, the native comparison and the scoring table for all five
+  thresholds; this page does not repeat those figures. — measured
 - **What a page cannot do**: open Explorer at the destination, integrate with the
   shell, keep running after the tab closes, or survive an OOM kill mid-write.
 
