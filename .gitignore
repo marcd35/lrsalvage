@@ -15,3 +15,7 @@ lrsalvage-report-*
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# The wasm-bindgen output the browser harness generates; the sources are in
+# `crates/lrsalvage-web/web/` and `scripts/browser-parity.sh` rebuilds this.
+/crates/lrsalvage-web/web/pkg/

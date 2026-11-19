@@ -1,0 +1,55 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>lrsalvage — the fs seam in a browser</title>
+<!--
+  The harness's page. It is not the product's UI (#117's other slices are): it
+  mounts one synthetic vault and prints whether the browser answered what the
+  desktop answered. `scripts/browser-parity.sh` serves this directory and reads
+  `window.__result` back over the Chrome DevTools Protocol.
+
+  It must be served with `Cross-Origin-Opener-Policy: same-origin` and
+  `Cross-Origin-Embedder-Policy: require-corp`: the seam's synchronous bridge
+  parks a worker on a `SharedArrayBuffer`, and a page that is not cross-origin
+  isolated cannot make one.
+-->
+<style>
+  :root {
+    color-scheme: light dark;
+    font: 14px/1.5 ui-sans-serif, system-ui, sans-serif;
+  }
+  body {
+    margin: 0;
+    padding: 2rem;
+    max-width: 70rem;
+  }
+  h1 {
+    font-size: 1.1rem;
+    margin: 0 0 0.5rem;
+  }
+  p {
+    margin: 0 0 1rem;
+    color: #666;
+  }
+  pre {
+    background: #f4f4f5;
+    border-radius: 6px;
+    padding: 1rem;
+    overflow: auto;
+    white-space: pre-wrap;
+  }
+  @media (prefers-color-scheme: dark) {
+    p {
+      color: #a1a1aa;
+    }
+    pre {
+      background: #18181b;
+    }
+  }
+</style>
+<h1>lrsalvage — the <code>fs</code> seam, in a browser</h1>
+<p>
+  Runs the same driver the native comparison binary runs, against the same vault,
+  and compares the two reports. The result is <code>window.__result</code>.
+</p>
+<pre id="log"></pre>
+<script type="module" src="./parity.js"></script>

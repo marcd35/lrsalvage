@@ -36,29 +36,56 @@
 //! buffer, same `.partial` staging name, same error kinds. Nothing about a run
 //! of the CLI changed when this module appeared.
 //!
-//! # `wasm32` is honest, not silent
+//! # The second target answers, from a mount table
 //!
-//! On `wasm32-unknown-unknown` every operation returns [`io::ErrorKind::Unsupported`]
-//! with one message. That is not the browser implementation — that is its own
-//! slice — but it is the difference between "this target cannot answer" and the
-//! answers `std::fs` gives there today: `Path::exists` is `false`, `File::open`
-//! fails, and a caller cannot tell "absent" from "unanswerable". The measured
-//! consequence was `previews_db::open` reporting a present database as
-//! `Missing` (`docs/browser-spike.md` §1). The seam keeps [`exists`] fallible
-//! for exactly that reason.
+//! `wasm32-unknown-unknown` has no filesystem, and #142's stub said so with one
+//! [`io::ErrorKind::Unsupported`] for all seventeen operations it then had. That
+//! was the
+//! honest answer while nothing could answer better; it was never the browser's
+//! implementation, and `previews_db::open` reporting a present database as
+//! `Missing` was the measurement that produced the seam. The browser backend
+//! replaces the stub: paths resolve against a registered table of roots (an
+//! origin-private store SQLite can open, a picked directory, a picked file), the
+//! store is answered in this process, and everything else goes through one
+//! blocking call the host installs. `crate::fs::wasm` is the routing and
+//! `crate::fs::bridge` the protocol; both carry the registration contract in
+//! their module docs, and `specs/modules/fs.md` records it as the seam's browser
+//! half.
 //!
-//! A caller that only needs a `bool` and has no use for a reason writes
-//! `unwrap_or(false)`; on `wasm32` those are the sites the browser slice has to
-//! revisit, and they are the `plan` and `extract` checks that cannot run there
-//! yet.
+//! Two operations stay refused there. `set_mtime`, because the File System API
+//! cannot set a modification time; and `available_space`, because a page cannot
+//! know the destination's free space — `navigator.storage.estimate()` describes
+//! the origin's quota, not the disk the folder is on (`#117`). `extract` already
+//! treats that refusal as an unmeasured destination and proceeds. `current_dir`
+//! answers `/` instead of refusing: a page has no working directory, so a
+//! relative path resolves to no mount and is `NotFound` rather than being
+//! anchored somewhere a user cannot see.
+//!
+//! A caller that only needs a `bool` and has no use for a reason still writes
+//! `unwrap_or(false)`, and on the browser those are the sites that read a refusal
+//! as absence. The seam keeps [`exists`] fallible for exactly that reason, and
+//! `docs/browser-spike.md` §1 is the measurement.
 
 use std::io;
 use std::path::{Path, PathBuf};
 
 #[cfg(not(target_arch = "wasm32"))]
 mod native;
+// The browser half is the crate's browser-facing surface: a page has to install
+// it before a run, which is why this module is public on that target while the
+// native backend, whose `std` does the installing, stays private.
 #[cfg(target_arch = "wasm32")]
-mod wasm;
+pub mod wasm;
+
+// The browser half's two pure pieces: where a path resolves, and what the host
+// is asked. Both are compiled for the host as well, because both are arithmetic
+// rather than browser, and their unit tests are the only ones that can run
+// without a page. On the host nothing calls them, which is what the `dead_code`
+// allowance says rather than leaving a reviewer to wonder.
+#[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
+pub(crate) mod bridge;
+#[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
+pub(crate) mod mounts;
 
 #[cfg(not(target_arch = "wasm32"))]
 use native as backend;
@@ -211,13 +238,13 @@ pub fn set_mtime(path: &Path, unix_seconds: i64) -> io::Result<()> {
 /// existing ancestor, which is what `extract` does — it refuses before its first
 /// write, so it may not create the destination to ask.
 ///
-/// On `wasm32` this refuses like every other operation here, which is the honest
-/// answer: a page cannot know the destination's free space (`#117`).
+/// On `wasm32` this refuses, which is the honest answer: a page cannot know the
+/// destination's free space (`#117`), and `navigator.storage.estimate()`
+/// describes the origin's quota rather than the disk a picked folder is on.
 ///
 /// A debug build answers `LRSALVAGE_FREE_SPACE_BYTES` instead of asking the
-/// platform — on the native backend only; the `wasm32` one refuses every
-/// operation here by design. That is the seam's one test aid, and a release
-/// build never reads the name.
+/// platform — on the native backend only, because the `wasm32` one refuses this
+/// operation and never reads the name. That is the seam's one test aid.
 pub fn available_space(path: &Path) -> io::Result<u64> {
     backend::available_space(path)
 }

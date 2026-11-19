@@ -120,7 +120,7 @@ field.
 | `model::sanitize_component` | not supported | the security boundary `relative_output_path` already applies; the properties test is its only outside caller |
 | `error::Error` (+ variants), `error::Result` | seam | one error type, as the invariants below require, and a front-end matches its variants to decide what to tell a user |
 | `error::IoContext` | convenience | attaches a path when a caller composes its own `io::Error`; no seam call needs it |
-| `fs` (every operation in it) | not supported | the crate's own seam onto a filesystem, reached by six modules — the edge table below is the list — and by no front-end; changing it is a change to the modules that ask it, not to a promise |
+| `fs` (every operation in it) | not supported | the crate's own seam onto a filesystem, reached by six modules — the edge table below is the list — and by no front-end; changing it is a change to the modules that ask it, not to a promise. The one exception is the browser's registration point: on `wasm32` `fs::wasm`'s `install_bridge`, `install_store`, `mount`, `seal`, `reset` and `store_installed` are public, because a page has to install the backend before a run |
 | `jpeg::certify`, `Certified` (+ fields), `Segment` (+ `marker`, `range`, `payload`), `dimensions`, `is_complete`, `is_payload_start` | not supported | the certification the plan already performed; a front-end reads `PlanItem`'s width, `payload_metadata` and `effective_orientation` instead. `lrsalvage-fixtures` and the tests are the outside callers |
 | `lrprev::Lrprev` (+ `parse`, `header`, `levels`, `best_level`), `Chunk` (+ `name`, `data`), `chunk_data`, `level_index`, `MAGIC` | not supported | the container walk, done once by the plan; a front-end reads the `Payload` an item names |
 | `exif::PayloadMetadata` (+ `is_empty`) | seam | it is a `PlanItem` field, and its three flags are what a report says about a payload |
@@ -215,8 +215,13 @@ on the target — it is not compiled for `wasm32`, which is why it keeps its own
   is not compiled for the app line at all and keeps its own walk; `cli` is a
   separate crate and names `std::fs` for its own files, which is not this seam's
   to own. The seam is `cfg`-selected rather than a trait object, so the target is
-  a compile-time choice with no dispatch behind a payload read, and the `wasm32`
-  build is held by `scripts/check.sh wasm` rather than by hope.
+  a compile-time choice with no dispatch behind a payload read, and both targets
+  answer it: `wasm32` is a **mount table** over an origin-private store, a picked
+  directory and a picked file, with one blocking bridge to the page for the two
+  that only a page can answer (`specs/modules/fs.md`, *The browser half*). That
+  half is compiled and linted for the target by `scripts/check.sh wasm`, and its
+  parity with the desktop is measured by `scripts/browser-parity.sh`, which is not
+  a gate — a step of the gate list would make every CI runner install a browser.
 - **Decide, then write.** `plan` decides status, selection, tier and output path
   and writes nothing; `extract` writes and decides nothing about which image
   deserves to be recovered. A scan and an extract for the same inputs therefore

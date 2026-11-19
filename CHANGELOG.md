@@ -75,6 +75,31 @@ minor saying so here before one is removed, renamed or given a different meaning
   ([#117](https://github.com/marcd35/lrsalvage/issues/117));
   [the module spec](https://github.com/marcd35/lrsalvage/blob/main/specs/modules/fs.md)
   records the decision and the operation set.
+- **The seam's `wasm32` half answers, instead of refusing**
+  ([#144](https://github.com/marcd35/lrsalvage/issues/144)). A page has no
+  filesystem, so the target is a **mount table**: an origin-private store SQLite
+  can open — the only storage there a catalog copy can be opened in — a picked
+  directory, and a picked read-only file. The store is answered in the process;
+  the other two go through one blocking bridge the host installs, which is where
+  the operation codes, the chunked reads and the paged listings live. `set_mtime`
+  stays refused, because the File System API cannot set one; `current_dir` answers
+  `/`, because a page has no working directory. The measured `#126` failure —
+  `previews_db::open` reporting a present, readable index as missing — is closed
+  by a test rather than a claim, and `--verify-source`'s two digests match the
+  native run's for the same vault. **No caller changed shape**: the eighteen
+  signatures of #142 and #64 are the ones the browser answers. Two lines in callers moved and neither is a
+  signature — `snapshot`'s checkpoint sets `PRAGMA locking_mode=EXCLUSIVE` before
+  it (the measured `-wal` recovery path, and the only one that needs no `-shm` a
+  browser cannot have), and `extract` names its write probe with a `cfg`-selected
+  tag instead of `std::process::id`, which panics on the target. Nothing a native
+  run decides or writes moved. `scripts/check.sh wasm` now lints that half as
+  well as compiling it; `scripts/browser-parity.sh` is the new measurement — the
+  same vault, the same modules, headless Chromium against the native run, counts,
+  statuses and JPEG bytes compared with `MAIN_SEPARATOR` normalised — and it is
+  **not** a gate, because a gate that needs a browser would fail every CI runner
+  that has none. One `check.sh` defect is fixed on the way: a worktree's
+  own `./.env` was unloadable by a POSIX shell, so the compiler variables this
+  slice needs (and the real-cache families) are now reachable from one file.
 
 ## [0.3.0]
 

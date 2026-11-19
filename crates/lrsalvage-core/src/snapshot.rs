@@ -175,6 +175,13 @@ fn checkpoint_copy(copy: &Path) {
 
     let checkpointed = Connection::open(copy)
         .and_then(|conn| {
+            // One owner, and said so before the first WAL access: the wal-index
+            // then lives in heap memory, so no `-shm` is needed and the
+            // checkpoint works where shared memory does not exist — a browser's
+            // storage has no `-shm` to offer (`docs/browser-spike.md` §2, the
+            // measured 61 ms / 128-of-128 path). It changes nothing else: this
+            // copy is ours, and no second connection may open it.
+            conn.execute_batch("PRAGMA locking_mode=EXCLUSIVE")?;
             conn.query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |row| {
                 row.get::<_, i64>(0)
             })

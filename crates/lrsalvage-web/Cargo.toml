@@ -1,0 +1,38 @@
+[package]
+name = "lrsalvage-web"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "The browser parity harness for lrsalvage-core's filesystem seam"
+publish = false
+
+# A `cdylib` is what a page loads; the `rlib` half is what the native side of the
+# harness links, so both targets run *this* code rather than two copies of it.
+# That is the whole parity claim: the same driver, the same modules, two
+# implementations of the seam underneath.
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[[bin]]
+name = "vault-parity"
+path = "src/bin/vault-parity.rs"
+
+[dependencies]
+lrsalvage-core = { path = "../lrsalvage-core" }
+serde_json.workspace = true
+sha2.workspace = true
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+# The one thing that turns a `cdylib` into something a page can call, and the
+# reason the harness needs no hand-written export glue. It is a target-only
+# dependency: the native build's tree does not move.
+wasm-bindgen = "0.2"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+# Native only: the vault composition and the filesystem the native half of the
+# comparison runs against. Neither compiles for `wasm32`, and nothing here is
+# published.
+lrsalvage-fixtures = { path = "../lrsalvage-fixtures" }
+walkdir.workspace = true

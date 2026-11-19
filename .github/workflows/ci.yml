@@ -69,6 +69,10 @@ jobs:
         with:
           toolchain: 1.100.0
           targets: wasm32-unknown-unknown
+          # The gate lints this target as well as compiling it: the browser half
+          # of the `fs` seam is compiled nowhere else, so a lint there was a lint
+          # nobody ran.
+          components: clippy
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2

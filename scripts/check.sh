@@ -62,12 +62,28 @@ printf 'tree %s
 #
 #   git config --global lrsalvage.realEnvFile ~/real-lrsalvage.env
 #   ~/.config/lrsalvage/real.env          (the default, when the setting is unset)
+#   ./.env                                (this worktree's, and it wins)
+#
+# **Every candidate is read**, the machine's first and the worktree's last, so a
+# variable set in two files takes the worktree's value and a variable set in one
+# is still found. Stopping at the first file that exists is what let a worktree
+# `.env` holding only the wasm C compiler hide the four real-catalog pairs on the
+# same machine — and the failure it produced named neither file, which is why
+# `require_pair` prints `env_files` below.
+#
+# A name left at `=""` is assigned, not unset, so an empty line in a later file
+# wins over a value in an earlier one. Leave the name out rather than copying
+# `.env.example`'s empty line into a file that also needs the machine's value.
+env_files=''
 load_env() {
+    env_files=''
     for candidate in \
-        .env \
+        "${XDG_CONFIG_HOME:-$HOME/.config}/lrsalvage/real.env" \
         "$(git config --get lrsalvage.realEnvFile 2>/dev/null || true)" \
-        "${XDG_CONFIG_HOME:-$HOME/.config}/lrsalvage/real.env"; do
+        ./.env; do
         [ -n "$candidate" ] || continue
+        # A relative operand needs its slash: a POSIX `.` searches `PATH` for a
+        # name like `.env` and fails on the file that is right here.
         [ -f "$candidate" ] || continue
         # `set -a` exports what the file assigns: a plain `NAME=value` line is
         # only a shell variable, and the tests are a child process.
@@ -75,7 +91,7 @@ load_env() {
         # shellcheck disable=SC1090,SC1091
         . "$candidate"
         set +a
-        return 0
+        env_files="${env_files:+$env_files, }$candidate"
     done
 }
 
@@ -119,23 +135,17 @@ gate_build() {
     cargo build --release --locked
 }
 
-# The second target. `lrsalvage-core` is the crate a browser app links, so
-# `wasm32-unknown-unknown` is a target the gate list keeps compiling — ADR 0012
-# D10's warning, and #117's runway.
+# The second target. `lrsalvage-core` builds for `wasm32-unknown-unknown` and must
+# keep doing so: ADR 0012 D10 makes the target a fourth one the gate list owes, and
+# the browser app (#117) links this crate unchanged. `lrsalvage-web` is here too —
+# it is the crate a page loads, so it is where the seam's browser half is compiled
+# and linted; it is `publish = false`, and no other gate builds it for the target.
 #
-# Compile-only on purpose: it proves the crate graph builds for the target —
-# including SQLite, which `sqlite-wasm-rs` compiles from its amalgamation with a
-# C compiler — and proves nothing about a run, which is the browser slices' own
-# tests. `--lib` is the surface the app links; the test targets need
-# `lrsalvage-fixtures`, which is native-only.
-#
-# Two tools have to be there and neither is skipped. The target is checked here
-# and fails with the command that installs it. The C compiler is not checked
-# here, because `cc` finds it for this target on PATH (`clang`, which CI's runner
-# has) or from `CC_wasm32_unknown_unknown`, which a machine may point anywhere —
-# a machine-local path this file must not guess. A machine without one fails the
-# build with `cc` naming the tool it could not run, which is loud; the variable
-# is documented in `.env.example`.
+# Linted as well as compiled: `--lib` is the surface an app links (the test targets
+# need the native-only `lrsalvage-fixtures`), and before #144 no gate built the
+# browser half at all. CI's `wasm` job supplies the target and `clippy`; the two
+# compiler variables a machine may point somewhere else are `.env.example`'s to
+# document and this gate's to read.
 gate_wasm() {
     printf '%s\n' '== wasm32-unknown-unknown'
     require rustup 'rustup.rs'
@@ -145,7 +155,8 @@ gate_wasm() {
         exit 1
     fi
     load_env
-    cargo check --lib --locked --target wasm32-unknown-unknown -p lrsalvage-core
+    cargo clippy --lib --locked --target wasm32-unknown-unknown \
+        -p lrsalvage-core -p lrsalvage-web -- -D warnings
 }
 
 # The artifact, not the tree. Every other gate reads this checkout, so a package
@@ -312,8 +323,9 @@ require_pair() {
     fi
     printf '%s\n' \
         "set $1 and $2" \
-        "to $3, in this worktree's .env or in" \
-        "${XDG_CONFIG_HOME:-$HOME/.config}/lrsalvage/real.env (see .env.example)." >&2
+        "to $3, in ./.env, the file named by \`git config lrsalvage.realEnvFile\`," \
+        "or ${XDG_CONFIG_HOME:-$HOME/.config}/lrsalvage/real.env (see .env.example)." \
+        "read: ${env_files:-no env file}" >&2
     return 1
 }
 
