@@ -99,6 +99,11 @@ const EXTENSION: &str = "CR2";
 /// carries: no archetype's image uses it, so the row is one nothing explains.
 const STALE_IMAGE_ID: i64 = 999;
 
+/// Where a catalog's `AgLibraryFolder` ids start. The `-wal` variant's second
+/// phase starts a second range, because the first phase's rows are already in the
+/// main file by then.
+const FOLDER_IDS: i64 = 10;
+
 // ---------------------------------------------------------------------------
 // Small value types
 // ---------------------------------------------------------------------------
@@ -468,6 +473,9 @@ pub struct Vault {
     /// `ImageCacheEntry` rows whose `imageId` names no `Adobe_images` row: what
     /// a deleted image leaves in the index.
     stale_entries: Vec<(String, String)>,
+    /// Leave the catalog in the state Lightroom leaves it between checkpoints:
+    /// half the image rows in the main file and half in the `-wal` beside it.
+    wal: bool,
     /// Files written verbatim at a container's address — the deliberately
     /// unreadable `.lrprev` `superseded` leaves behind.
     verbatim: Vec<(String, String, Vec<u8>)>,
@@ -533,6 +541,7 @@ impl Vault {
             layout,
             has_index: true,
             raw_index: None,
+            wal: false,
             db_version: db_version.to_string(),
             crs_version: crs_version.to_string(),
             root_folder: None,
@@ -700,6 +709,19 @@ impl Vault {
         self
     }
 
+    /// Leave the catalog between checkpoints, as Lightroom does: half the image
+    /// rows in the main file and the rest in the `-wal` beside it.
+    ///
+    /// A run that copies the main file alone reads half the catalog and reports
+    /// nothing wrong; a run that carries the sidecar and checkpoints the copy
+    /// reads all of it. That is `docs/browser-spike.md` §2's measured 78-of-128,
+    /// as a fixture.
+    #[must_use]
+    pub fn with_wal(mut self) -> Self {
+        self.wal = true;
+        self
+    }
+
     /// Write these bytes at `previews.db` instead of an index: a file SQLite
     /// cannot read, degrading exactly like a missing one (ADR 0006 ¶2).
     #[must_use]
@@ -835,60 +857,6 @@ impl Vault {
         )
         .expect("root folder");
 
-        // One folder row per distinct `pathFromRoot`, so an image's own folder
-        // tree reaches the catalog the way Lightroom stored it.
-        let mut folders: BTreeMap<&str, i64> = BTreeMap::new();
-        for image in self.images.iter().filter(|image| image.has_file_row) {
-            let next = 10 + folders.len() as i64;
-            folders.entry(image.path_from_root.as_str()).or_insert(next);
-        }
-        for (path_from_root, id) in &folders {
-            conn.execute(
-                "INSERT INTO AgLibraryFolder (id_local, pathFromRoot, rootFolder) \
-                 VALUES (?1, ?2, 1)",
-                params![id, path_from_root],
-            )
-            .expect("folder");
-        }
-
-        // One file row per distinct file id, first writer wins.
-        let mut files: BTreeMap<i64, &ImageRow> = BTreeMap::new();
-        for image in self.images.iter().filter(|image| image.has_file_row) {
-            files.entry(image.file_id()).or_insert(image);
-        }
-        for (id, image) in &files {
-            let folder = folders
-                .get(image.path_from_root.as_str())
-                .expect("a folder row for every file's pathFromRoot");
-            conn.execute(
-                "INSERT INTO AgLibraryFile (id_local, folder, baseName, extension) \
-                 VALUES (?1, ?2, ?3, ?4)",
-                params![id, folder, image.base_name, EXTENSION],
-            )
-            .expect("file row");
-        }
-
-        for image in &self.images {
-            let root_file = if image.has_file_row {
-                Some(image.file_id())
-            } else {
-                None
-            };
-            conn.execute(
-                "INSERT INTO Adobe_images \
-                 (id_local, copyName, orientation, fileFormat, rootFile) \
-                 VALUES (?1, ?2, ?3, ?4, ?5)",
-                params![
-                    image.id,
-                    image.copy_name,
-                    image.orientation,
-                    EXTENSION,
-                    root_file
-                ],
-            )
-            .expect("image row");
-        }
-
         for (id, (name, value)) in [
             ("Adobe_DBVersion", &self.db_version),
             ("Adobe_CrsVersion", &self.crs_version),
@@ -901,6 +869,96 @@ impl Vault {
                 params![id as i64 + 1, name, value],
             )
             .expect("version row");
+        }
+
+        if !self.wal {
+            self.write_image_rows(&conn, &self.images, FOLDER_IDS);
+            return;
+        }
+
+        // The state Lightroom leaves a catalog in: everything up to the last
+        // checkpoint in the main file, and the writes after it in the `-wal`
+        // beside it. Half the image rows go in each phase, and the sidecar holds
+        // the second half — so a run that copies the main file and ignores the
+        // sidecar reads half the catalog, which is `docs/browser-spike.md` §2's
+        // 78-of-128 measured with synthetic numbers instead of a real pair.
+        let split = (self.images.len() / 2).max(1).min(self.images.len());
+        conn.execute_batch("PRAGMA journal_mode=WAL;")
+            .expect("wal journal mode");
+        self.write_image_rows(&conn, &self.images[..split], FOLDER_IDS);
+        let busy: i64 = conn
+            .query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |row| row.get(0))
+            .expect("checkpoint the first phase");
+        assert_eq!(busy, 0, "a private fixture catalog checkpoints alone");
+        // A second id range, because the first phase's folder rows are already
+        // in the main file and a fixture is small enough for 1000 to be clear.
+        self.write_image_rows(&conn, &self.images[split..], FOLDER_IDS + 1000);
+
+        // Read the pair while the connection is open: closing it checkpoints the
+        // `-wal` into the main file and deletes the sidecars, which is exactly
+        // the state this variant exists to avoid.
+        let main = fs::read(self.catalog()).expect("read the catalog");
+        let wal = fs::read(sidecar(self.catalog(), "-wal")).expect("read the -wal");
+        drop(conn);
+        fs::write(self.catalog(), &main).expect("restore the catalog");
+        fs::write(sidecar(self.catalog(), "-wal"), &wal).expect("restore the -wal");
+        let _ = fs::remove_file(sidecar(self.catalog(), "-shm"));
+    }
+
+    /// The folder, file and image rows for `images`, with folder ids from
+    /// `folder_ids`.
+    ///
+    /// Split out of [`Self::write_catalog`] so the `-wal` variant can write one
+    /// phase, checkpoint it, and leave the next in the sidecar.
+    fn write_image_rows(&self, conn: &Connection, images: &[ImageRow], folder_ids: i64) {
+        // One folder row per distinct `pathFromRoot`, so an image's own folder
+        // tree reaches the catalog the way Lightroom stored it.
+        let mut folders: BTreeMap<&str, i64> = BTreeMap::new();
+        for image in images.iter().filter(|image| image.has_file_row) {
+            let next = folder_ids + folders.len() as i64;
+            folders.entry(image.path_from_root.as_str()).or_insert(next);
+        }
+        for (path_from_root, id) in &folders {
+            conn.execute(
+                "INSERT INTO AgLibraryFolder (id_local, pathFromRoot, rootFolder)                  VALUES (?1, ?2, 1)",
+                params![id, path_from_root],
+            )
+            .expect("folder");
+        }
+
+        // One file row per distinct file id, first writer wins.
+        let mut files: BTreeMap<i64, &ImageRow> = BTreeMap::new();
+        for image in images.iter().filter(|image| image.has_file_row) {
+            files.entry(image.file_id()).or_insert(image);
+        }
+        for (id, image) in &files {
+            let folder = folders
+                .get(image.path_from_root.as_str())
+                .expect("a folder row for every file's pathFromRoot");
+            conn.execute(
+                "INSERT INTO AgLibraryFile (id_local, folder, baseName, extension)                  VALUES (?1, ?2, ?3, ?4)",
+                params![id, folder, image.base_name, EXTENSION],
+            )
+            .expect("file row");
+        }
+
+        for image in images {
+            let root_file = if image.has_file_row {
+                Some(image.file_id())
+            } else {
+                None
+            };
+            conn.execute(
+                "INSERT INTO Adobe_images                  (id_local, copyName, orientation, fileFormat, rootFile)                  VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![
+                    image.id,
+                    image.copy_name,
+                    image.orientation,
+                    EXTENSION,
+                    root_file
+                ],
+            )
+            .expect("image row");
         }
     }
 
@@ -1203,6 +1261,13 @@ fn paths(dir: &Path, name: &str) -> (PathBuf, PathBuf, PathBuf) {
     )
 }
 
+/// `<path>-wal`, `<path>-shm`: SQLite's sidecar names beside a database.
+fn sidecar(path: &Path, suffix: &str) -> PathBuf {
+    let mut name = path.as_os_str().to_owned();
+    name.push(suffix);
+    PathBuf::from(name)
+}
+
 fn write_file(path: &Path, bytes: &[u8]) {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).expect("create a fixture directory");
@@ -1306,6 +1371,44 @@ mod tests {
             .preoccupied_destination("2015/IMG_0001.jpg", &bytes::jpeg(1616, 1077))
             .write();
         assert!(vault.out().join("2015").join("IMG_0001.jpg").is_file());
+    }
+
+    #[test]
+    fn a_wal_vault_keeps_half_its_images_in_the_sidecar() {
+        let vault = Vault::modern()
+            .with_wal()
+            .image(ImageRow::new(1, "one").path_from_root("2023/"))
+            .image(ImageRow::new(2, "two").path_from_root("2023/"))
+            .image(ImageRow::new(3, "three").path_from_root("2023/"))
+            .image(ImageRow::new(4, "four").path_from_root("2023/"))
+            .write();
+
+        let wal = sidecar(vault.catalog(), "-wal");
+        assert!(wal.is_file(), "the sidecar is what the variant exists for");
+        assert!(
+            !sidecar(vault.catalog(), "-shm").exists(),
+            "no shared memory is left behind"
+        );
+
+        // The main file alone: what a copy that ignores the sidecar reads.
+        let alone = vault.dir().join("alone.lrcat");
+        fs::copy(vault.catalog(), &alone).expect("a main file on its own");
+        let conn = Connection::open(&alone).expect("open the main file alone");
+        let hidden: i64 = conn
+            .query_row("SELECT count(*) FROM Adobe_images", [], |row| row.get(0))
+            .expect("count the main file's rows");
+        assert_eq!(hidden, 2, "half the rows are only in the sidecar");
+        drop(conn);
+        let _ = fs::remove_file(sidecar(&alone, "-wal"));
+
+        // The pair: what a copy that carries the sidecar and checkpoints reads.
+        let conn = Connection::open(vault.catalog()).expect("open the pair");
+        conn.execute_batch("PRAGMA locking_mode=EXCLUSIVE")
+            .expect("one owner needs no shared memory");
+        let all: i64 = conn
+            .query_row("SELECT count(*) FROM Adobe_images", [], |row| row.get(0))
+            .expect("count the pair's rows");
+        assert_eq!(all, 4, "the sidecar's rows are the other half");
     }
 
     #[test]

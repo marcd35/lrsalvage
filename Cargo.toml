@@ -1,6 +1,13 @@
 [workspace]
 resolver = "3"
-members = ["crates/lrsalvage-core", "crates/lrsalvage-cli", "crates/lrsalvage-fixtures"]
+members = [
+    "crates/lrsalvage-core",
+    "crates/lrsalvage-cli",
+    "crates/lrsalvage-fixtures",
+    # The browser parity harness: a `cdylib` a page loads, plus the native half of
+    # the comparison. `publish = false`; no gate runs it (`specs/modules/fs.md`).
+    "crates/lrsalvage-web",
+]
 
 [workspace.package]
 version = "0.3.0"

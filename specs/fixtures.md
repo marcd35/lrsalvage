@@ -112,6 +112,11 @@ Vault::preoccupied_destination(relative, bytes)  a file already in the output tr
 Vault::same_destination_as(&Vault)  recover into another vault's `out`: two catalogs,
                                     one destination (M15)
 Vault::raw_index(bytes)            bytes at `previews.db` instead of an index (a torn file)
+Vault::with_wal()                  leave the catalog between checkpoints: half its
+                                    image rows in the main file and half in the `-wal`
+                                    beside it, which is what Lightroom leaves and what
+                                    a copy that ignores the sidecar reads half of
+                                    (`docs/browser-spike.md` §2)
 Vault::write() -> Vault             catalog(), previews(), out(), plan(&Options),
                                     level_files(), containers()
 ```

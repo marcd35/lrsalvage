@@ -50,8 +50,11 @@ segments.
   bytes, listing a directory, walking a tree, creating a directory, writing,
   writing atomically, copying, removing, a scratch directory, a file's digest,
   path resolution and a modification time. A `cfg`-selected backend gives each
-  target its own implementation with one signature; on `wasm32` the operations
-  refuse rather than lie. No other shipped code in the crate names `std::fs`,
+  target its own implementation with one signature; on `wasm32` the backend is a
+  mount table over an origin-private store, a picked directory and a picked file,
+  with one blocking bridge for the two only a page can answer. Its browser half
+  is `src/fs/{wasm,bridge,mounts}.rs`, whose contract is
+  `specs/modules/fs.md`. No other shipped code in the crate names `std::fs`,
   `tempfile` or `filetime` — `masks` is the recorded exception and keeps its own
   walk — and `crates/lrsalvage-core/tests/fs_seam.rs` holds that.
 - `masks` — decodes `.lrcat-data` AI mask layers to PNG.
@@ -66,6 +69,13 @@ synthetic vaults `specs/fixtures.md` requires — the byte shapes, the catalog a
 `previews.db` — and is a dev-dependency of both crates. A test composes a
 `Vault`; it does not write a fixture of its own, and a fourth ad-hoc writer is
 not allowed.
+
+`crates/lrsalvage-web` is the browser parity harness and is not a module either:
+a `publish = false` crate holding one scan-and-extract driver that compiles for
+both targets, the page a browser loads, and the native binary the comparison
+needs. It is what `scripts/browser-parity.sh` runs, and it is **not a gate** —
+the reason is in `specs/modules/fs.md`, *Where the harness lives*. Nothing
+shipped depends on it.
 
 ## Verification
 

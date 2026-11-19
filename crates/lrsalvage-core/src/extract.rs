@@ -193,7 +193,7 @@ fn probe_writable(dir: &Path) -> Result<()> {
     for _ in 0..8 {
         let unique = format!(
             "{}-{}",
-            std::process::id(),
+            process_tag(),
             COUNTER.fetch_add(1, Ordering::Relaxed)
         );
         let probe = dir.join(format!(".lrsalvage-write-probe.{unique}"));
@@ -216,6 +216,24 @@ fn probe_writable(dir: &Path) -> Result<()> {
         path: dir.to_path_buf(),
         source: std::io::Error::other("could not create a unique write probe"),
     })
+}
+
+/// A tag that tells this process's probes from another's.
+///
+/// The probe's name has to survive a killed run: a stale `.lrsalvage-write-probe`
+/// left by a previous process must not make the next one think the destination is
+/// read-only, which is why the tag is there at all. A page has no process id —
+/// `std::process::id` panics on `wasm32-unknown-unknown` rather than answering —
+/// and it also has no second process to collide with, so the counter alone is the
+/// whole of the uniqueness there.
+#[cfg(not(target_arch = "wasm32"))]
+fn process_tag() -> u32 {
+    std::process::id()
+}
+
+#[cfg(target_arch = "wasm32")]
+fn process_tag() -> u32 {
+    0
 }
 
 fn canonical(path: &Path) -> PathBuf {

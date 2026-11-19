@@ -55,8 +55,12 @@ printf 'tree %s
 #   git config --global lrsalvage.realEnvFile ~/real-lrsalvage.env
 #   ~/.config/lrsalvage/real.env          (the default, when the setting is unset)
 load_env() {
+    # A relative operand needs its slash: a POSIX `.` searches `PATH` for a name
+    # like `.env` and fails on the file that is right here, which made the
+    # worktree's own `.env` — the route `.env.example` documents first — dead on
+    # every shell that follows the standard.
     for candidate in \
-        .env \
+        ./.env \
         "$(git config --get lrsalvage.realEnvFile 2>/dev/null || true)" \
         "${XDG_CONFIG_HOME:-$HOME/.config}/lrsalvage/real.env"; do
         [ -n "$candidate" ] || continue
@@ -111,15 +115,22 @@ gate_build() {
     cargo build --release --locked
 }
 
-# The second target. `lrsalvage-core` is the crate a browser app links, so
-# `wasm32-unknown-unknown` is a target the gate list keeps compiling — ADR 0012
-# D10's warning, and #117's runway.
+# The second target. `lrsalvage-core` builds for `wasm32-unknown-unknown` and
+# must keep doing so: ADR 0012 D10 makes the target a fourth one the gate list
+# owes, and the browser app (#117) links this crate unchanged. The gate is in
+# scripts/check.sh with every other one, so a local run and this job are the
+# same command; what this job adds is the two things that target needs — the
+# rust target, and the C compiler `sqlite-wasm-rs` uses for SQLite's
+# amalgamation, which is on the runner's PATH as `clang`.
 #
-# Compile-only on purpose: it proves the crate graph builds for the target —
-# including SQLite, which `sqlite-wasm-rs` compiles from its amalgamation with a
-# C compiler — and proves nothing about a run, which is the browser slices' own
-# tests. `--lib` is the surface the app links; the test targets need
-# `lrsalvage-fixtures`, which is native-only.
+# `lrsalvage-web` is here too: it is the crate a page loads, so it is where the
+# seam's browser half is compiled and linted for this target. It is not shipped
+# (`publish = false`), and nothing else in the list builds it for `wasm32`.
+#
+# It lints as well as compiles. `--lib` is the surface the app links — the test
+# targets need `lrsalvage-fixtures`, which is native-only — and until this slice
+# the browser half of the seam was not compiled by any gate at all, so a lint
+# there was a lint nobody ran.
 #
 # Two tools have to be there and neither is skipped. The target is checked here
 # and fails with the command that installs it. The C compiler is not checked
@@ -137,7 +148,8 @@ gate_wasm() {
         exit 1
     fi
     load_env
-    cargo check --lib --locked --target wasm32-unknown-unknown -p lrsalvage-core
+    cargo clippy --lib --locked --target wasm32-unknown-unknown \
+        -p lrsalvage-core -p lrsalvage-web -- -D warnings
 }
 
 # The artifact, not the tree. Every other gate reads this checkout, so a package

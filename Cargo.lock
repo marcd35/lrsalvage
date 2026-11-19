@@ -655,9 +655,12 @@ dependencies = [
  "lrsalvage-fixtures",
  "png",
  "proptest",
+ "rsqlite-vfs",
  "rusqlite",
  "serde_json",
  "sha2",
+ "sqlite-wasm-rs",
+ "sqlite-wasm-vfs",
  "tempfile",
  "thiserror",
  "walkdir",
@@ -670,6 +673,18 @@ dependencies = [
  "lrsalvage-core",
  "rusqlite",
  "tempfile",
+]
+
+[[package]]
+name = "lrsalvage-web"
+version = "0.3.0"
+dependencies = [
+ "lrsalvage-core",
+ "lrsalvage-fixtures",
+ "serde_json",
+ "sha2",
+ "walkdir",
+ "wasm-bindgen",
 ]
 
 [[package]]
@@ -1063,7 +1078,23 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a6cd504cecbfe7eef649988840f9a6cb768d11085efec138f8e99f160632d867"
 dependencies = [
  "cc",
+ "js-sys",
  "rsqlite-vfs",
+ "wasm-bindgen",
+]
+
+[[package]]
+name = "sqlite-wasm-vfs"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "11859fbd5ce417c37e9e8c1993b55b9dc21ea7dd6452ba9097115f06e54a7e4a"
+dependencies = [
+ "futures-util",
+ "js-sys",
+ "rsqlite-vfs",
+ "thiserror",
+ "wasm-bindgen",
+ "web-sys",
 ]
 
 [[package]]
@@ -1272,6 +1303,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3b1f9c3798725016c6ee5f2f57869ec0831e8bbc0ab0310a86e787e97f41389e"
 dependencies = [
  "unicode-ident",
+]
+
+[[package]]
+name = "web-sys"
+version = "0.3.107"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d7d179596ff5ec0f6de4db64d54011bde6289cc49603d3a6e4ce3f329207ab88"
+dependencies = [
+ "js-sys",
+ "wasm-bindgen",
 ]
 
 [[package]]
