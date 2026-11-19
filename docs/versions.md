@@ -19,13 +19,16 @@ someone reporting a problem, and someone changing the code.
 
 | | **Core line** | **App line** |
 |---|---|---|
-| What it ships | `lrsalvage-core` on crates.io, and `lrsalvage-cli` as a binary plus three platform archives | the Windows desktop front end |
-| Where it comes from | `cargo install lrsalvage-cli`, a release archive, or a package manager | a release download, or the browser if the app ships as a page |
+| What it ships | `lrsalvage-core` on crates.io, and `lrsalvage-cli` as a binary plus three platform archives | **the browser app**: a static page, deployed per tag; a native shell only if [ADR 0012](adr/0012-two-release-lines.md)'s D10 **audience** test comes back preferring an executable |
+| Where it comes from | `cargo install lrsalvage-cli`, a release archive, or a package manager | its URL, or the same files deployed to any static host |
 | What a number means | the artifacts, the checksums and the contract surfaces below | the app's own screens and files |
 | Who owns the promise | [ADR 0010](adr/0010-what-0-2-promises.md), both lines alike | the same record |
 
 The core line is the one that exists today: `lrsalvage 0.3.0` is current, and
-`0.4.0` is what is being built. The app line has not released anything yet.
+`0.4.0` is what is being built. The app line has not released anything yet; when it
+does, the artifact is the page — [ADR 0012](adr/0012-two-release-lines.md) resolved
+D10 that way on 2026-11-18, and its third test says why a page is a front end over a
+durable engine rather than the other way round.
 
 **The numbers never imply each other.** `core 0.4.x` does not mean the app is
 0.4, and an app patch does not produce a core patch. A release on one line never
@@ -36,9 +39,10 @@ holds in both directions.
 
 - **The core line**: `lrsalvage --version` prints `lrsalvage <version>`. The same
   version appears as `version` in `manifest.json` and in the verification report.
-- **The app line**: the app's About panel shows both numbers, in the form
+- **The app line**: the app shows both numbers, in the form
   `lrsalvage app <app> · core <core>`, and the same pair is on the receipt's
-  diagnostics line.
+  diagnostics line. On the page it is the About panel in the footer; a shell, if one
+  ever ships, carries the same pair.
 - **A file this tool wrote**: every recovered JPEG carries an EXIF `Software`
   marker reading `lrsalvage <core version>`, which any EXIF reader shows. That
   version is the **core** line's, whichever front end wrote the file, because the
@@ -81,7 +85,8 @@ flag, the cell names it and links there rather than restating what it does.
 
 *Verified at core `0.3.0`, 2026-11-18. The app column is the intended shape of
 `0.1.0` — [#117](https://github.com/marcd35/lrsalvage/issues/117) owns the
-acceptance list — and not a claim about a released artifact.*
+acceptance list, and [ADR 0012](adr/0012-two-release-lines.md) D10's resolution says
+the artifact is the page — and not a claim about a released artifact.*
 
 | Capability | Core line (CLI) | App line |
 |---|---|---|
@@ -106,7 +111,7 @@ acceptance list — and not a claim about a released artifact.*
 | Keyboard-only operation | yes — it is a terminal | target, and it is verified |
 | Screen-reader usable | whatever the terminal provides | target: [WCAG 2.2 AA](adr/0012-two-release-lines.md) |
 | Scriptable, usable in CI | yes | no |
-| Runs with no network at all | yes | only as a cached page, if the app ships as one |
+| Runs with no network at all | yes | not on the first visit, and only from a cached page afterwards — an offline copy opened from `file://` cannot run the recovery path at all ([browser-spike](browser-spike.md) §5) |
 | macOS and Linux | yes, two archives and `cargo install` | not tested or claimed for `0.1.0` — a browser page may run there; nothing here will say it does until somebody measures it |
 
 ## What this page will not become

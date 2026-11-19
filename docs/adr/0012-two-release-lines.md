@@ -4,11 +4,7 @@ type: architecture-design
 title: "ADR 0012: Two release lines, and what 0.4 is for"
 status: active
 parent: architecture
-references:
-  - adr-0010-what-0-2-promises
-  - adr-0011-0-3-is-the-trust-minor
-  - app-distribution
-  - glossary
+references: [adr-0010-what-0-2-promises, adr-0011-0-3-is-the-trust-minor, app-distribution, glossary, browser-spike]
 ---
 
 # Two release lines, and what 0.4 is for
@@ -208,6 +204,11 @@ The costs and conditions of each route, with a source and a date on every row,
 are in `app-distribution` §1–§3. This record states the decision and does not
 restate a price.
 
+**Deferred with the executable, 2026-11-18.** D10's resolution puts `0.1.0` in the
+browser, where none of the above applies: no installer, no signature, no warning
+screen to earn, no Apple account. Signing waits for the binary it signs, and the
+routes below are what that binary inherits, not a decision anyone has to make now.
+
 ### D10 — The browser-or-desktop question is decided by a rubric, not by the spike
 
 A spike answers *feasible*; it never answers *better*, and a green spike pulls
@@ -235,6 +236,20 @@ the browser means the browser ships as the 0.1.0 experience and an executable is
 same HTML over the same core is a later slice, not a rewrite. A wash, or a
 preference for the executable, means the executable ships and the web app becomes
 the trial page #117's prototype already is.
+
+**Amended 2026-11-18, when the feasibility gate was scored.** The write row came
+back **red as written**: the pre-registered threshold was per-file latency (median
+≤4 ms, p95 ≤20 ms, red above a 20 ms median), and a write pool trades per-file
+latency for throughput — 1 000 files in 34.1 s at a 542 ms median, with no gap
+between completed files over 570 ms. The threshold was measuring the thing the
+first spike saw (a run that reads as hung) with an instrument the second
+configuration no longer fits. It is therefore replaced, in writing and with that
+reason: **the write row is green when 5 000 committed files land in ≤120 s, no
+gap between completions exceeds 1 s, every output is byte-identical to the CLI's,
+and cancel and resume are exercised.** That replacement is **not met yet** — 2.8
+minutes by projection, and no cancellation or resume run — so the gate stands at
+one red row, four green, and one replacement uncertified. See
+[browser-spike](../browser-spike.md) §3 for the numbers and the scoring table.
 
 The ledger this rests on, and the reason it is not obvious: the browser removes a
 *second* platform matrix — three operating systems × installer, signing and, on
@@ -266,6 +281,71 @@ never by widening what the map already promised.
 
 The spike therefore does not decide whether there is an app. It decides what the
 app is.
+
+**Amended 2026-11-18, the day the spike ran, because one mechanism named above
+does not exist as written.** D10's first test said the SQLite dependency must
+compile "to `wasm32` against a demand-paged VFS over a File handle". Half of that
+is buildable and half is not. *Reading* a picked file synchronously is: the File
+API exposes `FileReaderSync` to workers, which is all a read-only VFS needs, and
+Emscripten's `WORKERFS` and SQLite Explorer's blob VFS are that shape already.
+*Writing* through a picked file is not: `FileSystemFileHandle.createSyncAccessHandle()`
+is usable only inside the origin private file system, so a VFS that must journal,
+recover or checkpoint cannot live on a picked file. The test was run against the
+mechanism that does exist — a copy into OPFS read through the `sahpool` VFS — and
+the first reading was **No-go** on two other rows: writing JPEGs into a picked
+folder ran at 1.8–3.5 files/s with a worst single file of 26 s, and the import
+that carries a catalog into OPFS dropped a committed `-wal` and read 78 images
+where 128 exist. Both were then measured again, and **neither stands as first reported**: the
+`-wal` recovers to exact parity once the import is byte-preserving and the first
+statement is `PRAGMA locking_mode=EXCLUSIVE` (128 of 128 rows, every digest equal
+to a native run; SQLite needs no `-shm` for a single owner), and eight to sixteen
+streams in flight reach 27–29 files/s, which is the `sync_all`-and-rename speed of
+the writer this project ships. What the browser costs is 2–4× a *bare* native
+write, and it buys no installer, no signing, and a macOS route that needs no Mac.
+So the mechanism that exists is **green on both read rows and not green on the write
+row**: reads are fine, the `-wal` recovers to exact parity, and writes reach the
+durable-write speed of the shipped writer — but the write row is **red against the
+latency threshold agreed before measuring**, and the threshold that replaced it is
+uncertified. D10's first test is therefore *met in substance and not in letter*, and
+that distinction is the footing everything below rests on. The numbers, the
+platform's remaining costs and what was not exercised are in
+[browser-spike](../browser-spike.md); the decision and its follow-ups are on #126.
+
+**Resolved by the project owner on 2026-11-18, on a gate that is four rows green and
+one row red as written.** The browser is the `0.1.0` artifact and the executable is
+deferred. The latency threshold is replaced, in writing and with its reason, by the
+tie-break amendment above; the replacement's own criterion — 5 000 files in ≤120 s
+with cancel and resume exercised — is **not yet met**. That is the resolution's
+actual footing: an owner's judgement taken with the red row in front of them, not a
+gate that came back clean.
+
+D10's third test is a judgement, and here it is: **this tool's durable artifact is
+the engine, not the front end.**
+The core line ships a crate, a binary and three archives that any machine can
+install in 2030 without this project's cooperation; the page is a front end over
+that engine, so if the page dies the recovery path does not. The page's own risk is
+narrower than it first looks: a hosted page in 2030 needs (a) the project still
+hosting it and (b) Chromium's File System Access API to survive, and one vendor has
+filed a negative standards position on standardising it. Four commitments buy that
+down, and each is cheap now and expensive later:
+
+- **A static export** — HTML, wasm and nothing else: no server, no database, no
+  telemetry, deployable from any static host. Not from a local directory: a copy
+  opened over `file://` is refused OPFS and cannot fetch the wasm, so the page needs
+  to be *served*, which is exactly the hosting commitment this bullet is about.
+- **A tagged deploy per release**, so a version can be redeployed from git rather
+  than reconstructed.
+- **The core line stays the offline artifact**, and the page states which core it
+  was built against.
+- **The UI is stack-agnostic**: a shell wrapping the same HTML over the same core is
+  a later slice, and it is what happens if the API or the hosting lapses.
+
+The second test — the audience test — has not run. It does not gate this
+resolution's *engineering*, because the seam work and the UI are shared by both
+artifacts; it gates the *release claim*. If it comes back favouring an executable,
+the page ships as the trial page #117's prototype already is, and the shell moves
+from "deferred" to "next". D10's rule against shipping two front ends at once is
+unchanged.
 
 ### D11 — Accessibility is a level, not a sentiment
 

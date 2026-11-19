@@ -7,6 +7,8 @@ parent: architecture
 tags:
   - reference
   - distribution
+references:
+  - browser-spike
 ---
 
 # App distribution and platforms: engineering notes
@@ -20,6 +22,9 @@ does not have to carry a price list that goes stale.
 
 - **Every row carries a label and a date it was read.** `verified` means the
   vendor's or the project's own page said it; `reported` means a third party did;
+  `measured` means a run on this machine, recorded in
+  [browser-spike](browser-spike.md); `judgement` means a decision-shaped opinion
+  with no source to re-read, stated so a later reader can argue with it;
   `unverified` means nobody could confirm it and nobody should build on it.
 - **These are not Lightroom claims**, so `format-notes.md`'s evidence standard is
   the *shape* followed here rather than its subject.
@@ -31,7 +36,11 @@ does not have to carry a price list that goes stale.
 
 ## 1. What signing costs
 
-Read 2026-11-18.
+Read 2026-11-18. **This is now a later-binaries question.**
+[ADR 0012](adr/0012-two-release-lines.md) resolved D10 to the browser for `0.1.0`,
+so none of these rows apply to the first release: a page has no installer, no
+signature, no SmartScreen reputation and no Apple account. They apply to the
+deferred shell, and they are kept here because it will be bought back with them.
 
 | Route | Cost | Constraints | Label |
 |---|---|---|---|
@@ -86,10 +95,18 @@ Read 2026-11-18.
 - **MSIX must be signed before it installs at all**, including outside the Store,
   where App Installer handles updates — so "MSIX" is not a way to avoid signing
   unless it goes through the Store. — verified
+- **A page trades a signing route for a hosting one**, and a lapsed host is as dead
+  as an expired certificate. There is no purchase to make and no queue to join, so
+  the mitigation is structural rather than financial: a static export, a tagged
+  deploy per release, and the core line as the artifact that outlives the page.
+  — judgement; ADR 0012's D10 resolution is where the risk is accepted
 
 ## 4. The browser route's hard constraints
 
-Read 2026-11-18. These are the facts #126's spike measures against.
+Read 2026-11-18. These are the facts #126's spike measures against, and — since
+[ADR 0012](adr/0012-two-release-lines.md) resolved D10 to the browser for `0.1.0` —
+the constraints the first release is designed inside rather than weighed against.
+[browser-spike](browser-spike.md) has the numbers.
 
 - **`showDirectoryPicker` is Chromium-only**: Chrome and Edge 86+, **not Firefox**
   (through 163 at the time of reading) and **not Safari**. MDN marks it "Limited
@@ -101,14 +118,35 @@ Read 2026-11-18. These are the facts #126's spike measures against.
   session rather than persisted the way a desktop app's file access is. — verified
 - **SQLite in a page**: the common builds (`sql.js`, the official WASM build with
   an in-memory database) read the whole file into memory, which fails on a large
-  catalog; the working pattern is a **demand-paged custom VFS** over the file
-  handle. The maintainer of `wa-sqlite` puts it plainly: accessing a user's picked
-  file directly means writing a custom VFS. — verified
-- **OPFS** is the alternative to a custom VFS: copy the database in, then query it
-  from the origin's private storage. The cost is the copy time for a file that may
-  be a gigabyte, and the origin's quota. `navigator.storage.persist()` asks the
-  browser not to evict it. Exact quota figures vary by browser, profile and free
-  disk. — reported
+  catalog. **Amended 2026-11-18:** this row used to name a *demand-paged custom VFS
+  over the picked file handle* as the working pattern, and half of that is wrong.
+  A **read-only** VFS can page a picked file synchronously — the File API exposes
+  `FileReaderSync` to workers, and Emscripten's `WORKERFS` and SQLite Explorer's
+  blob VFS are shipping examples. A **writable** one cannot:
+  `FileSystemFileHandle.createSyncAccessHandle()` is usable "only … for files
+  within the origin private file system", so no synchronous VFS can journal,
+  recover or checkpoint on a picked file, and an asynchronous build (JSPI/Asyncify)
+  with the data layer in JavaScript is the only shape that can write there.
+  [browser-spike](browser-spike.md) §1 has the specification sentences and §6 the
+  route not taken. — verified
+- **OPFS** is the alternative, and it is the only persistent one: copy the database
+  in, then query it from the origin's private storage through the `sahpool` VFS.
+  The cost is the copy time and the origin's quota. `navigator.storage.persist()`
+  asks the browser not to evict it. Exact quota figures vary by browser, profile
+  and free disk. — reported
+- **Measured 2026-11-18** ([browser-spike](browser-spike.md)): the copy, the
+  quota, `persist()`, a folder grant across a restart, and the `-wal` — including
+  that the crate's *checked* import copies the main file only and resets the header
+  to rollback mode, which loses a live `-wal`'s committed rows silently, while a
+  byte-preserving import opened with exclusive locking recovers all of them. The
+  desktop `snapshot` copies `-wal`/`-shm` and checkpoints, which is why the same
+  file reads 128 rows there and 78 through the checked import. The figures are the
+  page's; this row states the mechanism. — measured
+- **Writing is no longer the constraint throughput-wise**, and the one row still
+  red against the pre-registered gate is *latency*, because a stream pool trades
+  per-file latency for rate. [browser-spike](browser-spike.md) §3 has the
+  concurrency curve, the native comparison and the scoring table for all five
+  thresholds; this page does not repeat those figures. — measured
 - **What a page cannot do**: open Explorer at the destination, integrate with the
   shell, keep running after the tab closes, or survive an OOM kill mid-write.
 
