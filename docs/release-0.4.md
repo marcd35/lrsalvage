@@ -106,7 +106,7 @@ moves, plus the two rows that have already moved:
 | 1 | This file, and the two Dependabot majors merged into the tree | — |
 | 2 | **landed** `dc5a8ad`: the cap — flag, `above_cap`, the report's `options` echo, `docs/adr/0013`, and the two README non-goals #88 landed | #88, #67 |
 | 3 | **landed** #129 and #131: the five fixture-dependent `#[cfg(test)]` modules moved out of `src/`, and `scripts/check.sh package` testing core's tarball rather than only building it | #123 |
-| 4 | #64: the free-space refusal reusing exit `4`, the `--dry-run` verdict, the README's exit-code row, and one seam the suite can drive | #64 |
+| 4 | **landed** `4b70929`: the free-space refusal reusing exit `4`, the `--dry-run` verdict, the README's exit-code row, and one seam the suite can drive | #64 |
 | 5 | #62: four completion scripts and one man page, generated, the `completions` gate, the release's upload list, one README line | #62 |
 | 6 | The bump: `0.4.0` in the workspace manifest and both `lrsalvage-core` pins, `CHANGELOG.md`'s `[0.4.0]`, `docs/versions.md`'s two cells | — |
 
@@ -158,7 +158,7 @@ reader closing the tracker can check coverage without re-deriving it:
       do for the cli only. The three boxes this release must still **tick** are
       under [Artifact](#artifact--what-a-stranger-can-download): landing the fix
       is not the same act as proving the tarball named `0.4.0`.
-- [ ] **4 — #64, the free-space refusal.** ADR 0012 D4 puts it in this release
+- [x] **4 — #64, landed.** ADR 0012 D4 puts it in this release
       because the app's save screen depends on it, so its acceptance criteria are
       fixed before it is built. **The mechanism, once:** the run compares the
       plan's byte total against free space on its destination and refuses with
@@ -212,6 +212,13 @@ reader closing the tracker can check coverage without re-deriving it:
       - **The ticket's own horizon is corrected in the pull request that
         implements it**, from the drafts in
         [*Text held for approval*](#text-held-for-approval).
+      - *Verified 2026-11-19:* `4b70929` is on `main` — the slice's whole gate
+        list green on the commit it merged from (`c33a8f4 plus 0 changed`), all
+        four evidence families green on that same tree, `spec_validate` clean,
+        and the horizon correction posted. The box's two dated corrections are in
+        the same slice: the number is what is left to write, and the refusal
+        reuses `error::Error::Destination` rather than a new variant. The slice's
+        own pull request is #145.
 - [ ] **5 — #62, the completions and the man page.**
       - **Four completion scripts and one man page, generated from the clap
         definition** — `bash`, `zsh`, `fish` and `powershell` — and no hidden
