@@ -12,6 +12,19 @@ minor saying so here before one is removed, renamed or given a different meaning
 
 ### Added
 
+- **The destination's free space is checked before the first file is written.**
+  A run compares what it has left to write — the plan's own total at the options
+  given, less every output the destination already holds, so `--min-long-edge`,
+  `--max-long-edge` and `--all-levels` move it and a resume is measured by the
+  bytes it has left — against the destination's free space, and refuses with exit
+  `4` when the destination cannot hold it. The message states the shortfall twice, in bytes
+  and in MiB; a destination with exactly enough room proceeds, because the
+  comparison has no margin; and one that would be left nearly full says so
+  instead of passing silently. `--dry-run` makes the same check and prints the
+  same verdict, since it is where a careful user looks first. This is
+  [#64](https://github.com/marcd35/lrsalvage/issues/64) and a new trigger for
+  exit `4`, not a sixth code; it is the first caller of the filesystem seam's
+  free-space operation.
 - **`--max-long-edge`, a cap on the level written.** `scan` and `extract` both
   take it, default `0` (no cap). A cache that built 1:1 previews holds a doubling
   ladder ending at each original's own long edge (`docs/format-notes.md` §5.7), so

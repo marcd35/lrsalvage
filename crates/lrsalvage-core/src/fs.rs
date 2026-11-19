@@ -201,6 +201,27 @@ pub fn set_mtime(path: &Path, unix_seconds: i64) -> io::Result<()> {
     backend::set_mtime(path, unix_seconds)
 }
 
+/// How many bytes the filesystem holding `path` can still take, for a
+/// non-privileged writer.
+///
+/// It answers for the filesystem `path` is on, not for the directory itself, and
+/// the two targets differ on a path that is not there: Windows answers for the
+/// volume the path would be on, unix refuses one (`statvfs` needs a path that
+/// exists). A caller that must have an answer on every target asks about an
+/// existing ancestor, which is what `extract` does — it refuses before its first
+/// write, so it may not create the destination to ask.
+///
+/// On `wasm32` this refuses like every other operation here, which is the honest
+/// answer: a page cannot know the destination's free space (`#117`).
+///
+/// A debug build answers `LRSALVAGE_FREE_SPACE_BYTES` instead of asking the
+/// platform — on the native backend only; the `wasm32` one refuses every
+/// operation here by design. That is the seam's one test aid, and a release
+/// build never reads the name.
+pub fn available_space(path: &Path) -> io::Result<u64> {
+    backend::available_space(path)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -471,6 +492,21 @@ mod tests {
         assert!(
             set_mtime(&dir.path().join("absent"), 0).is_err(),
             "a file that is not there cannot be stamped"
+        );
+    }
+
+    #[test]
+    fn available_space_answers_a_number_for_a_real_directory() {
+        let dir = scratch();
+        // The number is this machine's, so the claim here is about the answer's
+        // shape rather than a size (`CODING_STANDARDS.md`, *Claims*). What a
+        // path that is not there answers differs by platform — unix refuses one,
+        // Windows answers for the volume — which is why a caller asks about an
+        // ancestor that exists.
+        let free = available_space(dir.path()).expect("a real directory answers");
+        assert!(
+            free > 0,
+            "a filesystem this test writes to has room, got {free}"
         );
     }
 }

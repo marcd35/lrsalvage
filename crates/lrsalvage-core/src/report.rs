@@ -132,7 +132,11 @@ pub fn summary(plan: &Plan, options: &Options) -> String {
 }
 
 /// `3,416` — thousand separators make four-digit counts readable at a glance.
-fn with_thousands(value: u64) -> String {
+///
+/// Public because it is where the exact form of a count lives: the terminal
+/// summary prints its counts through it, and so does the free-space refusal
+/// (`extract::ensure_room`), so one quantity is not spelled two ways.
+pub fn with_thousands(value: u64) -> String {
     let digits = value.to_string();
     let mut out = String::with_capacity(digits.len() + digits.len() / 3);
     for (index, ch) in digits.chars().enumerate() {
@@ -147,7 +151,12 @@ fn with_thousands(value: u64) -> String {
 /// Tenths of a mebibyte, rounded half up, printed with one decimal and the
 /// unit it actually is: `1 MiB = 1,048,576 bytes`. `stats.bytes` stays exact in
 /// the JSON manifest.
-fn mebibytes(bytes: u64) -> String {
+///
+/// Public because it is where the human form of a byte count lives: both
+/// summaries and the free-space refusal (`extract::ensure_room`) state the same
+/// quantity this way, and [`with_thousands`] is the exact form beside it, so a
+/// number is never spelled two ways.
+pub fn mebibytes(bytes: u64) -> String {
     let tenths = (u128::from(bytes) * 10 + (1 << 19)) / (1 << 20);
     format!(
         "{}.{} MiB",
@@ -942,6 +951,7 @@ mod tests {
             tier: Some(Tier::Standard),
             declared: None,
             smallest_level: None,
+            bytes: 0,
             selected: true,
             note: None,
         }
@@ -1186,6 +1196,7 @@ recovered"
             tier: None,
             declared: None,
             smallest_level: None,
+            bytes: 0,
             selected: false,
             note: None,
         };
@@ -1275,6 +1286,7 @@ recovered"
             tier: None,
             declared: None,
             smallest_level: None,
+            bytes: 0,
             selected: false,
             note: None,
         };
@@ -1494,6 +1506,7 @@ recovered"
             tier: None,
             declared: None,
             smallest_level: None,
+            bytes: 0,
             selected: false,
             note: None,
         };

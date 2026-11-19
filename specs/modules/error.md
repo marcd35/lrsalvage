@@ -38,5 +38,9 @@ about a caller it cannot see.
   explain a failed preview.
 - **Unsafe and unusable destinations are distinct variants** because they are the
   only two that mean exit 4: `--out` inside the catalog or the cache, or a
-  destination that cannot be created or written. Everything else that stops a run
-  early is a usage or input error.
+  destination that cannot be created or written. `Destination` also answers for a
+  destination that cannot *hold* what the run would write — the free-space
+  refusal (#64) — so the variant gained a trigger rather than the type gaining a
+  presentation-only sibling: the numbers are formatted where the human form
+  lives (`report`), and this enum stays a reason with no prose of its own.
+  Everything else that stops a run early is a usage or input error.

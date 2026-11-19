@@ -177,6 +177,14 @@ reader closing the tracker can check coverage without re-deriving it:
         would write at these options. A run that would write nothing is the empty
         window that already exits `3`, so it meets this check with nothing to
         compare.
+      - **Corrected 2026-11-19, in the slice's own pull request:** the number is
+        the plan's total **less the outputs the destination already holds**,
+        because an existing destination is skipped when it verifies as ours and
+        failed when it does not, and neither rewrites the file. A resume is
+        therefore measured by the bytes it has left; without that, a first pass
+        that filled the destination would refuse every later resume for the bytes
+        it had already written. `--force` subtracts nothing, since a forced run may
+        replace what is there. *Found by the two-axis review of the slice.*
       - **The message carries the shortfall twice**: in bytes and in a human form.
         Exit `4`, no sixth code (ADR 0010 closed the table at six).
       - **A destination with exactly enough space proceeds.** The comparison has
