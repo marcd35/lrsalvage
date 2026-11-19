@@ -280,7 +280,7 @@ impl Room {
         self.available.saturating_sub(self.needed)
     }
 
-    /// Whether the run fits, and leaves under [`NEARLY_FULL_HEADROOM`] behind it.
+    /// Whether the run fits, and leaves under `NEARLY_FULL_HEADROOM` behind it.
     pub fn is_nearly_full(&self) -> bool {
         self.left() < NEARLY_FULL_HEADROOM
     }

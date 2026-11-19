@@ -34,7 +34,7 @@ it needs to know about an image comes from a `Plan`.
 
 - **One exit-code vocabulary**, and it is the CLI's alone: `0` success (including
   `--help` and `--version`), `1` usage or input error, `2` extract finished with
-  some failures, `3` nothing selected to do, `4` unsafe or unwritable
+  some failures, `3` nothing selected to do, `4` unsafe, unwritable or too small a
   destination, `5` the catalog changed while it was being copied. `scan` and
   `extract` share the "nothing selected" rule, so they agree on `3` for the same
   inputs — every original present, no usable index, or every level outside the
@@ -122,6 +122,17 @@ it needs to know about an image comes from a `Plan`.
   no field is added for convenience. It stays the surface with paths, which is
   why the path-free object is `--report` and not a flag on this one. The
   numbers are the plan's: this module formats them and computes none of them.
+- **The free-space verdict prints on stderr, in both modes (#64).** `extract`
+  hands the plan's total to `extract::ensure_room` once the plan exists and before
+  the first file is written, so no JPEG, no `extract.csv`, no `manifest.json` and
+  no report exists when a refusal fires. Three verdicts, three lines: silence
+  when the run fits with room behind it; the shortfall, in bytes and in MiB,
+  through the ordinary error path when it does not; and one note when the
+  destination fits but would be left nearly full — or when it cannot be measured
+  at all, in which case the run proceeds rather than making a share
+  unextractable. The note is stderr and nothing else: no stdout byte, no report
+  file, no `--json` field. `--dry-run` prints the same lines and writes nothing,
+  which is what makes it the place a careful user looks first.
 - **Report files are claimed, never assumed.** `report.csv`, `manifest.json` and
   `extract.csv` each take the next free numbered name (`report (2).csv`) and say
   so, because a name on disk may belong to somebody else. A dry run writes none
