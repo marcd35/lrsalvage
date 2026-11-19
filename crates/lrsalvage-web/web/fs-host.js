@@ -6,28 +6,36 @@
 // in the origin-private file system, which is the same API — and answers the
 // worker's requests into the shared answer buffer.
 //
-// The operation codes and the answer envelope are
-// `crates/lrsalvage-core/src/fs/bridge.rs`; this file is the other half of it.
+// The operation codes, the answer envelope and the namespace arithmetic are
+// `protocol.js`, shared with the worker's half; their authority is
+// `crates/lrsalvage-core/src/fs/bridge.rs` and `src/fs/mounts.rs`.
 
-const OP_READ = 0;
-const OP_STAT = 1;
-const OP_LIST = 2;
-const OP_WALK = 3;
-const OP_MKDIR = 4;
-const OP_WRITE = 5;
-const OP_CREATE_NEW = 6;
-const OP_WRITE_ATOMIC = 7;
-const OP_REMOVE = 8;
-const OP_CANONICALIZE = 9;
-
-const KIND_OK = 0;
-const KIND_NOT_FOUND = 1;
-const KIND_PERMISSION = 2;
-const KIND_EXISTS = 3;
-const KIND_UNSUPPORTED = 4;
-const KIND_INVALID = 5;
-const KIND_FULL = 6;
-const KIND_OTHER = 7;
+import {
+  CTRL_WORDS,
+  KIND_EXISTS,
+  KIND_FULL,
+  KIND_INVALID,
+  KIND_NOT_FOUND,
+  KIND_OK,
+  KIND_OTHER,
+  KIND_PERMISSION,
+  KIND_UNSUPPORTED,
+  OP_CANONICALIZE,
+  OP_CREATE_NEW,
+  OP_LIST,
+  OP_MKDIR,
+  OP_READ,
+  OP_REMOVE,
+  OP_STAT,
+  OP_WALK,
+  OP_WRITE,
+  OP_WRITE_ATOMIC,
+  PAYLOAD_OFFSET,
+  deepestFirst,
+  mountFor,
+  normalise,
+  segmentsOf,
+} from './protocol.js';
 
 /** A DOMException's name, in the seam's vocabulary. */
 function kindOf(error) {
@@ -53,36 +61,15 @@ function kindOf(error) {
   }
 }
 
-function segmentsOf(path) {
-  return path.split('/').filter((part) => part !== '' && part !== '.');
-}
-
-function normalise(path) {
-  const parts = [];
-  for (const part of path.split('/')) {
-    if (part === '' || part === '.') continue;
-    if (part === '..') parts.pop();
-    else parts.push(part);
-  }
-  return '/' + parts.join('/');
-}
-
-function under(path, root) {
-  if (root === '/') return path.startsWith('/');
-  return path === root || path.startsWith(root + '/');
-}
-
 export class FsHost {
   /**
    * @param {SharedArrayBuffer} sab the answer buffer shared with the worker
    * @param {Array<{path: string, handle: FileSystemDirectoryHandle}>} mounts
    */
   constructor(sab, mounts) {
-    this.ctrl = new Int32Array(sab, 0, 2);
-    this.payload = new Uint8Array(sab, 8);
-    this.mounts = mounts
-      .map((mount) => ({ ...mount, path: normalise(mount.path) }))
-      .sort((left, right) => right.path.split('/').length - left.path.split('/').length);
+    this.ctrl = new Int32Array(sab, 0, CTRL_WORDS);
+    this.payload = new Uint8Array(sab, PAYLOAD_OFFSET);
+    this.mounts = deepestFirst(mounts);
     // A listing is walked once and paged out of this: a cache tree is tens of
     // thousands of files and re-walking it per page would be quadratic.
     this.listings = new Map();
@@ -95,8 +82,8 @@ export class FsHost {
 
   resolve(path) {
     const wanted = normalise(path);
-    const mount = this.mounts.find((candidate) => under(wanted, candidate.path));
-    if (mount === undefined) return null;
+    const mount = mountFor(this.mounts, path);
+    if (mount === null) return null;
     const rest = wanted.slice(mount.path === '/' ? 0 : mount.path.length);
     return { mount, rest, segments: segmentsOf(rest), path: wanted };
   }

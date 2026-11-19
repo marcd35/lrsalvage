@@ -84,9 +84,9 @@ minor saying so here before one is removed, renamed or given a different meaning
   same vault, the same modules, headless Chromium against the native run, counts,
   statuses and JPEG bytes compared with `MAIN_SEPARATOR` normalised — and it is
   **not** a gate, because a gate that needs a browser would fail every CI runner
-  that has none. Two failed `check.sh` behaviours are fixed on the way: a
-  worktree's own `./.env` is now loaded by a POSIX shell, and the `wasm` gate
-  covers the harness crate.
+  that has none. One `check.sh` defect is fixed on the way: a worktree's
+  own `./.env` was unloadable by a POSIX shell, so the compiler variables this
+  slice needs (and the real-cache families) are now reachable from one file.
 
 ## [0.3.0]
 

@@ -194,11 +194,18 @@ function compare(native, browser) {
     }
   }
 
-  // The one declared divergence has to actually diverge: a browser that "set" a
-  // modification time would be claiming an operation this target does not have.
-  const mtime = browser.probe.find((check) => check.name === 'set_mtime_sets_the_time_or_refuses');
-  if (mtime !== undefined && !mtime.outcome.startsWith('refused')) {
-    differences.push(`set_mtime: the browser answered ${mtime.outcome}`);
+  // A declared divergence has to actually diverge: a browser that "set" a
+  // modification time would be claiming an operation this target does not have,
+  // and one that copied onto a `-wal` name would be publishing an image the WAL
+  // still describes. Both are refusals the spec promises, so they are asserted
+  // rather than merely reported.
+  for (const name of ['set_mtime_sets_the_time_or_refuses', 'store_copy_refuses_a_sidecar_name']) {
+    const check = browser.probe.find((candidate) => candidate.name === name);
+    if (check === undefined) {
+      differences.push(`${name}: the browser run has no such check`);
+    } else if (!check.outcome.startsWith('refused')) {
+      differences.push(`${name}: the browser answered ${check.outcome}`);
+    }
   }
 
   const numbers = { probe: {}, vaults: {} };

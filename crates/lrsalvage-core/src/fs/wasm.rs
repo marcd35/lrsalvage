@@ -215,6 +215,10 @@ fn store_error(error: sahpool::OpfsSAHError) -> io::Error {
         | OpfsSAHError::InvalidDirectory
         | OpfsSAHError::InvalidDirectoryEntry => io::ErrorKind::InvalidInput,
         OpfsSAHError::NoCapacity | OpfsSAHError::OutOfMemory => io::ErrorKind::StorageFull,
+        // "A pending WAL describes this image, or this namespace needs
+        // reconciling": no `ErrorKind` says that, so it is `Other` with the
+        // pool's own message and `specs/modules/fs.md` records it.
+        OpfsSAHError::RecoveryRequired(_) | OpfsSAHError::NeedsRecovery => io::ErrorKind::Other,
         _ => io::ErrorKind::Other,
     };
     io::Error::new(kind, error.to_string())
@@ -293,26 +297,71 @@ fn read_chunk(path: &Path, offset: u64, len: usize) -> io::Result<Vec<u8>> {
     }
 }
 
-/// Every byte of a path, by chunks: the one call that needs the whole file.
-fn read_all(path: &Path, chunk: usize) -> io::Result<Vec<u8>> {
-    let total = size_of(path)?;
-    let mut bytes = Vec::with_capacity(total as usize);
+/// Walk the first `total` bytes of `path` in chunks, handing each to `each`.
+///
+/// The one read loop: `read`, `read_prefix`, `sha256_file` and `copy` want the
+/// same walk with a different sink. A short answer that is not the end is a host
+/// that lost bytes, and returning what arrived would report a truncated file as
+/// whole — so it is one error, built here rather than four times.
+fn for_each_chunk(
+    path: &Path,
+    total: u64,
+    chunk: usize,
+    mut each: impl FnMut(&[u8]) -> io::Result<()>,
+) -> io::Result<()> {
     let mut offset = 0u64;
     while offset < total {
         let want = ((total - offset) as usize).min(chunk);
         let piece = read_chunk(path, offset, want)?;
         if piece.is_empty() {
-            // A short answer that is not the end is a host that lost bytes;
-            // returning what arrived would report a truncated file as whole.
             return Err(io::Error::new(
                 io::ErrorKind::UnexpectedEof,
                 format!("{} ended before {total} bytes", path.display()),
             ));
         }
         offset += piece.len() as u64;
-        bytes.extend_from_slice(&piece);
+        each(&piece)?;
     }
+    Ok(())
+}
+
+/// Every byte of a path, by chunks: the one call that needs the whole file.
+fn read_all(path: &Path, chunk: usize) -> io::Result<Vec<u8>> {
+    let total = size_of(path)?;
+    let mut bytes = Vec::with_capacity(total as usize);
+    for_each_chunk(path, total, chunk, |piece| {
+        bytes.extend_from_slice(piece);
+        Ok(())
+    })?;
     Ok(bytes)
+}
+
+/// The store's names under `path`, one level deep or recursive.
+///
+/// Both listing operations are this scan with a different filter, and both keep
+/// the same tail: a path nothing is under is a directory that is not there.
+fn store_children(path: &Path, recursive: bool) -> io::Result<Vec<PathBuf>> {
+    let pool = store()?;
+    let name = store_name(path);
+    let prefix = mounts::dir_prefix(&name);
+    let mut found = Vec::new();
+    for candidate in pool.names().map_err(store_error)? {
+        let Some(rest) = candidate.strip_prefix(&prefix) else {
+            continue;
+        };
+        let wanted = if recursive {
+            !rest.is_empty()
+        } else {
+            !rest.is_empty() && !rest.contains('/')
+        };
+        if wanted {
+            found.push(path.join(rest));
+        }
+    }
+    if found.is_empty() && !exists(path)? {
+        return Err(io::Error::new(io::ErrorKind::NotFound, name));
+    }
+    Ok(found)
 }
 
 // ---------------------------------------------------------------------------
@@ -363,17 +412,10 @@ pub(super) fn read_prefix(path: &Path, len: usize) -> io::Result<Vec<u8>> {
     // a file smaller than that has answered in full.
     let want = (size_of(path)? as usize).min(len);
     let mut bytes = Vec::with_capacity(want);
-    while bytes.len() < want {
-        let ask = (want - bytes.len()).min(CHUNK);
-        let piece = read_chunk(path, bytes.len() as u64, ask)?;
-        if piece.is_empty() {
-            return Err(io::Error::new(
-                io::ErrorKind::UnexpectedEof,
-                format!("{} ended before {want} bytes", path.display()),
-            ));
-        }
-        bytes.extend_from_slice(&piece);
-    }
+    for_each_chunk(path, want as u64, CHUNK, |piece| {
+        bytes.extend_from_slice(piece);
+        Ok(())
+    })?;
     Ok(bytes)
 }
 
@@ -413,24 +455,7 @@ pub(super) fn is_file(path: &Path) -> io::Result<bool> {
 
 pub(super) fn list_files(dir: &Path) -> io::Result<Vec<PathBuf>> {
     match mount_of(dir)?.kind {
-        Kind::Store => {
-            let pool = store()?;
-            let name = store_name(dir);
-            let prefix = mounts::dir_prefix(&name);
-            let mut files = Vec::new();
-            for candidate in pool.names().map_err(store_error)? {
-                if let Some(rest) = candidate.strip_prefix(&prefix)
-                    && !rest.is_empty()
-                    && !rest.contains('/')
-                {
-                    files.push(dir.join(rest));
-                }
-            }
-            if files.is_empty() && !exists(dir)? {
-                return Err(io::Error::new(io::ErrorKind::NotFound, name));
-            }
-            Ok(files)
-        }
+        Kind::Store => store_children(dir, false),
         Kind::Bridge => {
             let mut files = Vec::new();
             let mut from = 0usize;
@@ -450,23 +475,7 @@ pub(super) fn list_files(dir: &Path) -> io::Result<Vec<PathBuf>> {
 
 pub(super) fn walk_files(root: &Path) -> io::Result<Vec<PathBuf>> {
     match mount_of(root)?.kind {
-        Kind::Store => {
-            let pool = store()?;
-            let name = store_name(root);
-            let prefix = mounts::dir_prefix(&name);
-            let mut files = Vec::new();
-            for candidate in pool.names().map_err(store_error)? {
-                if let Some(rest) = candidate.strip_prefix(&prefix)
-                    && !rest.is_empty()
-                {
-                    files.push(root.join(rest));
-                }
-            }
-            if files.is_empty() && !exists(root)? {
-                return Err(io::Error::new(io::ErrorKind::NotFound, name));
-            }
-            Ok(files)
-        }
+        Kind::Store => store_children(root, true),
         Kind::Bridge => {
             let mut files = Vec::new();
             let mut from = 0usize;
@@ -559,19 +568,9 @@ pub(super) fn copy(from: &Path, to: &Path) -> io::Result<()> {
             let mut import = pool
                 .begin_import_unchecked(&name, total)
                 .map_err(store_error)?;
-            let mut offset = 0u64;
-            while offset < total {
-                let want = ((total - offset) as usize).min(CHUNK);
-                let piece = read_chunk(from, offset, want)?;
-                if piece.is_empty() {
-                    return Err(io::Error::new(
-                        io::ErrorKind::UnexpectedEof,
-                        format!("{} ended before {total} bytes", from.display()),
-                    ));
-                }
-                import.write(&piece).map_err(store_error)?;
-                offset += piece.len() as u64;
-            }
+            for_each_chunk(from, total, CHUNK, |piece| {
+                import.write(piece).map_err(store_error)
+            })?;
             import.finish().map_err(store_error)
         }
         // A destination the host owns is the picked folder the JPEGs go to, and
@@ -598,19 +597,10 @@ pub(super) fn sha256_file(path: &Path) -> io::Result<String> {
     // and not the file.
     let total = size_of(path)?;
     let mut hasher = Sha256::new();
-    let mut offset = 0u64;
-    while offset < total {
-        let want = ((total - offset) as usize).min(64 * 1024);
-        let piece = read_chunk(path, offset, want)?;
-        if piece.is_empty() {
-            return Err(io::Error::new(
-                io::ErrorKind::UnexpectedEof,
-                format!("{} ended before {total} bytes", path.display()),
-            ));
-        }
-        offset += piece.len() as u64;
-        hasher.update(&piece);
-    }
+    for_each_chunk(path, total, 64 * 1024, |piece| {
+        hasher.update(piece);
+        Ok(())
+    })?;
     Ok(hasher
         .finalize()
         .iter()

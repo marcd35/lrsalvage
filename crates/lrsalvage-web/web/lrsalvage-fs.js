@@ -9,57 +9,33 @@
 // the run happens off the page in the first place).
 //
 // The protocol itself — operation codes, the JSON request, the `[kind][bytes]`
-// answer — is `crates/lrsalvage-core/src/fs/bridge.rs`, and the two lists of codes
-// are one contract. This half adds only what the browser can answer *without* the
-// page: a picked `File`'s bytes, read synchronously in this worker.
+// answer — is `crates/lrsalvage-core/src/fs/bridge.rs`, and `protocol.js` is its
+// JavaScript half, shared with the page's `fs-host.js`. This file adds only what
+// the browser can answer *without* the page: a picked `File`'s bytes, read
+// synchronously in this worker.
 //
 // Written as a module so `worker.js` can import it; the exported `installBridge`
 // puts the one function on `globalThis`, which is the name the generated
 // `wasm-bindgen` glue calls (`js_namespace = "lrsalvage"`).
 
-const OP_READ = 0;
-const OP_STAT = 1;
-const OP_LIST = 2;
-const OP_WALK = 3;
-const OP_MKDIR = 4;
-const OP_WRITE = 5;
-const OP_CREATE_NEW = 6;
-const OP_WRITE_ATOMIC = 7;
-const OP_REMOVE = 8;
-const OP_CANONICALIZE = 9;
+import {
+  CTRL_WORDS,
+  KIND_NOT_FOUND,
+  KIND_OK,
+  KIND_OTHER,
+  KIND_PERMISSION,
+  OP_CANONICALIZE,
+  OP_READ,
+  OP_STAT,
+  PAYLOAD_OFFSET,
+  deepestFirst,
+  mountFor,
+  normalise,
+} from './protocol.js';
 
-const KIND_OK = 0;
-const KIND_NOT_FOUND = 1;
-const KIND_PERMISSION = 2;
-const KIND_EXISTS = 3;
-const KIND_UNSUPPORTED = 4;
-const KIND_INVALID = 5;
-const KIND_FULL = 6;
-const KIND_OTHER = 7;
-
-/// How long the worker will wait for the page before giving up. A wedged page
-/// must be a reported failure, not a tab that never finishes.
+/** How long the worker will wait for the page before giving up. A wedged page
+/// must be a reported failure, not a tab that never finishes. */
 const WAIT_MS = 120_000;
-
-/** Where the answer's control words sit in the shared buffer. */
-const CTRL_WORDS = 2;
-const PAYLOAD_OFFSET = CTRL_WORDS * 4;
-
-/** `/a/b/../../c` → `/c`, on whole components. */
-function normalise(path) {
-  const parts = [];
-  for (const part of path.split('/')) {
-    if (part === '' || part === '.') continue;
-    if (part === '..') parts.pop();
-    else parts.push(part);
-  }
-  return '/' + parts.join('/');
-}
-
-function under(path, root) {
-  if (root === '/') return path.startsWith('/');
-  return path === root || path.startsWith(root + '/');
-}
 
 export class Bridge {
   /**
@@ -71,16 +47,13 @@ export class Bridge {
     this.memory = memory;
     this.ctrl = new Int32Array(sab, 0, CTRL_WORDS);
     this.payload = new Uint8Array(sab, PAYLOAD_OFFSET);
-    this.mounts = mounts
-      .map((mount) => ({ ...mount, path: normalise(mount.path) }))
-      .sort((left, right) => right.path.split('/').length - left.path.split('/').length);
+    this.mounts = deepestFirst(mounts);
     this.nextId = 1;
     this.reader = null;
   }
 
   mountFor(path) {
-    const wanted = normalise(path);
-    return this.mounts.find((mount) => under(wanted, mount.path)) ?? null;
+    return mountFor(this.mounts, path);
   }
 
   /** The one function the seam calls. */
@@ -191,5 +164,3 @@ export function installBridge({ memory, sab, mounts }) {
   };
   return bridge;
 }
-
-export { CTRL_WORDS, PAYLOAD_OFFSET };

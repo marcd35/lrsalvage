@@ -555,6 +555,29 @@ mod tests {
     }
 
     #[test]
+    fn a_host_that_is_out_of_space_is_a_storage_full_error() {
+        // The one answer code with no operation of its own: a quota refusal
+        // arrives as `KIND_FULL` from whichever write the browser ran out on, and
+        // the seam has to report it as `StorageFull` for a caller to tell it from
+        // a permission problem.
+        unsafe extern "C" fn full(
+            _op: u32,
+            _request: *const u8,
+            _len: usize,
+            out: *mut u8,
+            cap: usize,
+        ) -> i32 {
+            answer(out, cap, KIND_FULL, b"quota exceeded".to_vec())
+        }
+        install(full);
+        assert_eq!(
+            stat(Path::new("/source/x")).unwrap_err().kind(),
+            io::ErrorKind::StorageFull
+        );
+        BRIDGE.with(|slot| *slot.borrow_mut() = None);
+    }
+
+    #[test]
     fn an_unknown_operation_is_refused_rather_than_guessed() {
         host(&[], &[]);
         assert_eq!(

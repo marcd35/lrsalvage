@@ -167,27 +167,37 @@ page's contract, not a preference:
   `SharedArrayBuffer` cannot be constructed otherwise. `#117`'s hosting decision
   inherits this.
 
-The registration point, in order: `install_bridge` (the host's one call),
-`install_store` (awaited, or `start_install` then `poll_install` from a macrotask
-for a host that cannot await), `mount` per root, `seal`. `reset` forgets all of
-it. `crates/lrsalvage-web` wraps that for a page and is the worked example.
+The registration point, in order: `install_bridge` (the host's one call), `mount`
+per root, `install_store` (awaited, or `start_install` then `poll_install` from a
+macrotask for a host that cannot await), `seal`. Mounting is before the install
+because a `scratch_dir` needs a store mount to allocate under, and `seal` is after
+it because a run may only start once SQLite has a VFS. `reset` forgets all of it.
+`crates/lrsalvage-web` wraps that for a page and is the worked example — that
+order, in `crates/lrsalvage-web/src/wasm.rs`.
 
 ### What the browser does differently, and why
 
-- **`write_atomic` is the platform's atomic close, not a staged sibling.** "The
-  file will either contain its old contents or the new contents" is what
-  `createWritable` promises, so the seam's promise is kept by a different
-  mechanism rather than weakened (`docs/browser-spike.md` §3).
+- **`write_atomic` on a bridged destination is the platform's atomic close, not a
+  staged sibling.** "The file will either contain its old contents or the new
+  contents" is what `createWritable` promises, so the promise is kept by a
+  different mechanism rather than weakened (`docs/browser-spike.md` §3). A
+  **store** destination is weaker: the pool publishes a whole image or none, but
+  the name is removed before the new one is imported, so a failed import leaves
+  neither. That is honest about a store and unreachable in a run — `extract` and
+  `report` write to a picked folder, and the store's own writers are `snapshot`'s
+  copies, which are `copy` and not `write_atomic`.
 - **One `write_atomic` call is one stream, awaited.** The 8–16-streams-in-flight
   writer `#117` measured is that slice's work: the seam has one whole-file write
   and no batching operation, and inventing one here would be a signature the
   native side does not need.
-- **`copy` onto a store name whose `-wal` companion exists is refused.** The pool
-  refuses to publish an image a pending WAL describes; natively a copy would
-  overwrite the main file and leave the stale sidecar behind. No caller in this
-  tree copies onto such a name — `snapshot` copies *into* a fresh scratch
-  directory — so the refusal is a safety property rather than a difference a run
-  can meet.
+- **`copy` onto a store name whose `-wal` companion exists is refused**, with
+  `io::ErrorKind::Other` and the pool's own message, because no `ErrorKind` says
+  "a pending WAL describes this image". Natively a copy would overwrite the main
+  file and leave the stale sidecar behind. No caller in this tree copies onto
+  such a name — `snapshot` copies *into* a fresh scratch directory — so the
+  refusal is a safety property rather than a difference a run can meet, and the
+  parity probe asserts it as a declared divergence
+  (`store_copy_refuses_a_sidecar_name`).
 - **A `copy` to a bridged destination holds the file's bytes**, because the
   seam's copy is whole-file. The one large copy in a run is the catalog, and a
   catalog copy always lands in the store, where the import streams it.
@@ -228,6 +238,15 @@ all.
 The harness lives in the tree rather than beside it (#126's lived outside, and
 `#142`'s brief was that nothing from outside goes in): a harness nobody can run
 from a checkout is a claim nobody can reproduce.
+
+What a machine needs to run it — named here because the script fails rather than
+skipping, and because only one of these is installed by default: `cargo` and
+`node`; the `wasm32-unknown-unknown` target; a C compiler for that target, in
+`CC_wasm32_unknown_unknown`/`AR_wasm32_unknown_unknown` (the same two names
+`scripts/check.sh wasm` reads, documented in `.env.example`); **`wasm-bindgen-cli`
+at the version `Cargo.lock` pins** for the `wasm-bindgen` crate — the CLI and the
+crate refuse each other across a version, so a stale one fails at the first build
+with a schema error; and Chromium or Chrome (or `CHROME` pointing at one).
 
 ## Decisions
 
@@ -299,14 +318,21 @@ from a checkout is a claim nobody can reproduce.
   about what each costs. `wasm-bindgen`'s typed bindings buy ergonomics for a
   *large* API surface — DOM, fetch, console — and this seam's surface is one
   synchronous function whose body is six calls into `FileSystemDirectoryHandle`.
-  The crate already links `wasm-bindgen` transitively through `sqlite-wasm-vfs`,
-  so `deny.toml`, the MSRV and the package gate are unaffected either way; what
-  the shims avoid is a second *direct* dependency and, with it, the CLI-version
-  pin `wasm-bindgen` requires of whoever builds the page. The cost is that the
-  protocol has two implementations that are kept in step by reading them, which
-  is why the operation codes are one list in `src/fs/bridge.rs` and one in
-  `web/lrsalvage-fs.js`, why the Rust half is unit-tested against a fake host, and
-  why the parity run exists at all.
+  `sqlite-wasm-vfs` already links `wasm-bindgen` transitively, so `deny.toml`, the
+  MSRV and the package gate are unaffected either way, and so the seam's own
+  crate takes **no** direct dependency for this: `lrsalvage-core`'s wasm block is
+  `sqlite-wasm-rs`, `sqlite-wasm-vfs` and `rsqlite-vfs`, and nothing else. The
+  crate that builds the *page* does take one — `wasm-bindgen` in
+  `crates/lrsalvage-web`, because that is what turns a `cdylib` into something a
+  page can call, and `wasm-bindgen-cli` is then a prerequisite of running the
+  harness at all (*Where the harness lives*). What the shims buy is that a page
+  needs neither of those to answer the seam: `web/protocol.js` is the JS half,
+  plain modules with no build step.
+  The cost is that the protocol has two implementations — Rust and JavaScript —
+  kept in step by reading them, which is why the operation codes are one list in
+  `src/fs/bridge.rs` and one in `web/protocol.js` (imported by **both** JS halves,
+  so the page and the worker cannot disagree), why the Rust half is unit-tested
+  against a fake host, and why the parity run exists at all.
 - **Native first, and unchanged.** The native backend is the code those modules
   already had, moved: the same `std::fs` calls, the same `tempfile` builder and
   prefix, the same 64 KiB hashing buffer, the same `.stem.pid-n.partial` staging

@@ -115,30 +115,17 @@ gate_build() {
     cargo build --release --locked
 }
 
-# The second target. `lrsalvage-core` builds for `wasm32-unknown-unknown` and
-# must keep doing so: ADR 0012 D10 makes the target a fourth one the gate list
-# owes, and the browser app (#117) links this crate unchanged. The gate is in
-# scripts/check.sh with every other one, so a local run and this job are the
-# same command; what this job adds is the two things that target needs — the
-# rust target, and the C compiler `sqlite-wasm-rs` uses for SQLite's
-# amalgamation, which is on the runner's PATH as `clang`.
+# The second target. `lrsalvage-core` builds for `wasm32-unknown-unknown` and must
+# keep doing so: ADR 0012 D10 makes the target a fourth one the gate list owes, and
+# the browser app (#117) links this crate unchanged. `lrsalvage-web` is here too —
+# it is the crate a page loads, so it is where the seam's browser half is compiled
+# and linted; it is `publish = false`, and no other gate builds it for the target.
 #
-# `lrsalvage-web` is here too: it is the crate a page loads, so it is where the
-# seam's browser half is compiled and linted for this target. It is not shipped
-# (`publish = false`), and nothing else in the list builds it for `wasm32`.
-#
-# It lints as well as compiles. `--lib` is the surface the app links — the test
-# targets need `lrsalvage-fixtures`, which is native-only — and until this slice
-# the browser half of the seam was not compiled by any gate at all, so a lint
-# there was a lint nobody ran.
-#
-# Two tools have to be there and neither is skipped. The target is checked here
-# and fails with the command that installs it. The C compiler is not checked
-# here, because `cc` finds it for this target on PATH (`clang`, which CI's runner
-# has) or from `CC_wasm32_unknown_unknown`, which a machine may point anywhere —
-# a machine-local path this file must not guess. A machine without one fails the
-# build with `cc` naming the tool it could not run, which is loud; the variable
-# is documented in `.env.example`.
+# Linted as well as compiled: `--lib` is the surface an app links (the test targets
+# need the native-only `lrsalvage-fixtures`), and before #144 no gate built the
+# browser half at all. CI's `wasm` job supplies the target and `clippy`; the two
+# compiler variables a machine may point somewhere else are `.env.example`'s to
+# document and this gate's to read.
 gate_wasm() {
     printf '%s\n' '== wasm32-unknown-unknown'
     require rustup 'rustup.rs'

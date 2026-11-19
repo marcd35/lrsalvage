@@ -920,7 +920,8 @@ impl Vault {
         }
         for (path_from_root, id) in &folders {
             conn.execute(
-                "INSERT INTO AgLibraryFolder (id_local, pathFromRoot, rootFolder)                  VALUES (?1, ?2, 1)",
+                "INSERT INTO AgLibraryFolder (id_local, pathFromRoot, rootFolder) \
+                 VALUES (?1, ?2, 1)",
                 params![id, path_from_root],
             )
             .expect("folder");
@@ -936,7 +937,8 @@ impl Vault {
                 .get(image.path_from_root.as_str())
                 .expect("a folder row for every file's pathFromRoot");
             conn.execute(
-                "INSERT INTO AgLibraryFile (id_local, folder, baseName, extension)                  VALUES (?1, ?2, ?3, ?4)",
+                "INSERT INTO AgLibraryFile (id_local, folder, baseName, extension) \
+                 VALUES (?1, ?2, ?3, ?4)",
                 params![id, folder, image.base_name, EXTENSION],
             )
             .expect("file row");
@@ -949,7 +951,9 @@ impl Vault {
                 None
             };
             conn.execute(
-                "INSERT INTO Adobe_images                  (id_local, copyName, orientation, fileFormat, rootFile)                  VALUES (?1, ?2, ?3, ?4, ?5)",
+                "INSERT INTO Adobe_images \
+                 (id_local, copyName, orientation, fileFormat, rootFile) \
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
                 params![
                     image.id,
                     image.copy_name,

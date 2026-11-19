@@ -3,12 +3,10 @@
 #
 #   sh scripts/browser-parity.sh [--chrome <path>]
 #
-# **This is not a gate, and deliberately so.** `scripts/check.sh` is the gate list
-# and a missing tool there is a failure rather than a skip, so a gate here would
-# make every CI runner install a browser to prove a claim about one. It is instead
-# the same shape as `scripts/probe-cache.sh`: a real measurement, run by a person
-# or a release check, that says what it measured and in which tree
-# (`specs/modules/fs.md`, *Where the harness lives*).
+# **This is not a gate.** `specs/modules/fs.md` (*Where the harness lives*) records
+# why, and this script's prerequisites with it; `scripts/check.sh` is the gate list
+# and this is the `scripts/probe-cache.sh` shape — a real measurement a person or a
+# release check runs.
 #
 # What it does:
 #

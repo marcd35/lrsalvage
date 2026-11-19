@@ -15,10 +15,9 @@
 //! browser backend is held to the specification #142 wrote rather than to a new
 //! one.
 //!
-//! Nothing here is a gate. `scripts/browser-parity.sh` drives it through headless
-//! Chromium and says why in `specs/modules/fs.md`: a run needs a browser this
-//! repository's CI does not install, and `scripts/check.sh` fails rather than
-//! skipping when a tool is missing.
+//! Nothing here is a gate: `scripts/browser-parity.sh` drives it through headless
+//! Chromium, and `specs/modules/fs.md` (*Where the harness lives*) records why that
+//! is a measurement rather than a gate — and what a machine needs to run it.
 
 use std::path::{Path, PathBuf};
 
@@ -86,7 +85,7 @@ pub fn run(catalog: &Path, cache: &Path, output: &Path) -> Result<Value, String>
                 .replace('\\', "/");
             written.push(json!({
                 "path": relative,
-                "status": status_name(outcome.status),
+                "status": outcome.status.as_str(),
                 "bytes": outcome.bytes,
                 "sha256": outcome.sha256,
             }));
@@ -143,10 +142,6 @@ pub fn run(catalog: &Path, cache: &Path, output: &Path) -> Result<Value, String>
             ),
         }))
     })()
-}
-
-fn status_name(status: extract::OutcomeStatus) -> &'static str {
-    status.as_str()
 }
 
 /// A digest over the newline-joined lines, in the order given.
@@ -383,6 +378,34 @@ pub fn probe(dir: &Path, store: &Path) -> Vec<Check> {
             Err(error) => format!("error:{:?}", error.kind()),
         },
         diverges: false,
+    });
+
+    // A copy onto a store name whose `-wal` companion exists is refused on the
+    // target and carried out on the desktop: the pool will not publish an image a
+    // pending WAL describes, while `std::fs::copy` would overwrite the main file
+    // and leave the stale sidecar beside it. Declared, because the two targets
+    // answer differently on purpose (`specs/modules/fs.md`).
+    checks.push(Check {
+        name: "store_copy_refuses_a_sidecar_name",
+        outcome: (|| {
+            let main = store.join("sidecar-refusal.bin");
+            let sidecar = store.join("sidecar-refusal.bin-wal");
+            let source = dir.join("sidecar-refusal-source.bin");
+            fs::write(&main, b"an image a WAL describes")?;
+            fs::write(&sidecar, b"frames")?;
+            fs::write(&source, b"new bytes")?;
+            let outcome = match fs::copy(&source, &main) {
+                Ok(()) => "copied".to_string(),
+                Err(error) => format!("refused:{:?}", error.kind()),
+            };
+            // Leave nothing behind either way: a later check reads this store.
+            let _ = fs::remove_file(&main);
+            let _ = fs::remove_file(&sidecar);
+            let _ = fs::remove_file(&source);
+            Ok::<_, std::io::Error>(outcome)
+        })()
+        .unwrap_or_else(|error| format!("error:{:?}", error.kind())),
+        diverges: true,
     });
 
     // What this target's `Path` makes of an absolute path, recorded rather than
