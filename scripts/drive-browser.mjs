@@ -12,6 +12,14 @@
 // not cross-origin isolated cannot construct one.
 //
 //   node scripts/drive-browser.mjs <out-dir> [--chrome <path>] [--timeout <s>]
+//                                    [--attach <port>] [--verbose]
+//
+// `--attach` reuses a Chrome already listening on that debugging port instead of
+// launching one: the page reloads against whatever is served now, so a debugging
+// loop pays the wasm rebuild and not the browser's start-up. `--verbose` loads
+// the page with `?verbose`, which makes the page's host log every filesystem
+// operation rather than only the refused ones — the difference between "one
+// check is wrong" and "here is the operation that produced it".
 //
 // `<out-dir>` is what `vault-parity` wrote: `native.json`, and one directory per
 // vault. The exit status is 0 only when every comparison passed.
@@ -48,7 +56,9 @@ const CHROME_CANDIDATES = [
 
 function usage(message) {
   if (message) console.error(message);
-  console.error('usage: node scripts/drive-browser.mjs <out-dir> [--chrome <path>] [--timeout <s>]');
+  console.error(
+    'usage: node scripts/drive-browser.mjs <out-dir> [--chrome <path>] [--timeout <s>] [--attach <port>] [--verbose]',
+  );
   process.exit(2);
 }
 
@@ -56,10 +66,14 @@ const args = process.argv.slice(2);
 let out = null;
 let chromePath = null;
 let timeoutSeconds = 240;
+let attachPort = 0;
+let verbose = false;
 for (let index = 0; index < args.length; index += 1) {
   const arg = args[index];
   if (arg === '--chrome') chromePath = args[++index];
   else if (arg === '--timeout') timeoutSeconds = Number(args[++index]);
+  else if (arg === '--attach') attachPort = Number(args[++index]);
+  else if (arg === '--verbose') verbose = true;
   else if (out === null) out = resolve(arg);
   else usage(`unexpected argument: ${arg}`);
 }
@@ -74,8 +88,16 @@ const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
 async function main() {
   const server = await serve(out);
   const port = server.address().port;
-  const page = `http://127.0.0.1:${port}/`;
+  const page = `http://127.0.0.1:${port}/${verbose ? '?verbose' : ''}`;
   console.log(`serving ${WEB_ROOT} and ${out} on ${page}`);
+
+  if (attachPort) {
+    // A Chrome somebody else started: open a tab on this run's page and drive it.
+    // The launch-and-wait path below is skipped entirely, which is the point.
+    console.log(`attaching to Chrome on ${attachPort}`);
+    const target = await openTab(attachPort, page);
+    process.exit(await run(target, timeoutSeconds));
+  }
 
   const profile = await mkdtemp(join(tmpdir(), 'lrsalvage-chrome-'));
   const debugging = 9222 + Math.floor(Math.random() * 500);
@@ -151,6 +173,31 @@ function serve(root) {
   return new Promise((ready) => {
     server.listen(0, '127.0.0.1', () => ready(server));
   });
+}
+
+/** A tab on `url` in an already-running Chrome, opening one if it has none. */
+async function openTab(port, url) {
+  const deadline = Date.now() + 15_000;
+  while (Date.now() < deadline) {
+    // `PUT /json/new` is what a recent Chrome wants; a browser without it lists
+    // its targets and we navigate the first page instead.
+    const opened = await fetch(`http://127.0.0.1:${port}/json/new?${encodeURIComponent(url)}`, {
+      method: 'PUT',
+    }).catch(() => null);
+    if (opened && opened.ok) {
+      const target = await opened.json();
+      if (target.webSocketDebuggerUrl) return { ...target, url };
+    }
+    try {
+      const targets = await (await fetch(`http://127.0.0.1:${port}/json`)).json();
+      const page = targets.find((target) => target.type === 'page' && target.webSocketDebuggerUrl);
+      if (page) return page;
+    } catch {
+      // Chrome is not listening yet.
+    }
+    await sleep(250);
+  }
+  throw new Error(`no page target on the Chrome at ${port}; is it listening?`);
 }
 
 async function waitForTarget(port) {

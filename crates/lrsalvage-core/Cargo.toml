@@ -68,6 +68,16 @@ jiff = "0.2"
 filetime = "0.2"
 png = { version = "0.18", optional = true }
 
+# The destination's free space is the one seam operation whose answer is a
+# platform API rather than a file read: `fs4` reports it with `statvfs`'s
+# `f_bavail` on unix and `GetDiskFreeSpaceExW` on Windows, and it does not build
+# anywhere else — `available_space` is `cfg(any(unix, windows))` and its `sys`
+# module is selected by the same two cfgs. So it is a target dependency, not a
+# plain one: `wasm32-unknown-unknown` never compiles it and
+# `scripts/check.sh wasm` keeps proving that (`specs/modules/fs.md`).
+[target.'cfg(any(unix, windows))'.dependencies]
+fs4 = "1.1"
+
 [features]
 default = ["masks"]
 masks = ["dep:png"]

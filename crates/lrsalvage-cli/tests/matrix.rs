@@ -37,6 +37,7 @@ use std::path::{Path, PathBuf};
 
 use assert_cmd::Command;
 use lrsalvage_core::jpeg;
+use lrsalvage_core::plan::Options;
 use lrsalvage_fixtures::bytes;
 use lrsalvage_fixtures::vault::{ImageRow, Level, PyramidRow, UnrecognisedFile, Vault};
 use predicates::prelude::*;
@@ -756,6 +757,46 @@ fn m18_all_levels_reports_the_levels_the_cap_left_behind() {
         vec!["IMG_0031 - 960x640.jpg", "IMG_0031.jpg"],
         "the cap's choice keeps the plain name; the smaller survivor is suffixed"
     );
+}
+
+#[test]
+fn m19_a_destination_without_room_is_refused_before_the_first_write() {
+    // The substitution this row needs is compiled into debug builds only
+    // (`specs/modules/fs.md`), so a release-profile test run cannot produce the
+    // refusal it asserts.
+    if !cfg!(debug_assertions) {
+        eprintln!("skipped: LRSALVAGE_FREE_SPACE_BYTES is compiled into debug builds only");
+        return;
+    }
+    let pyramid = uuid(39);
+    let vault = Vault::modern()
+        .image(ImageRow::new(39, "IMG_0039").cache(&pyramid))
+        .pyramid(PyramidRow::new(&pyramid).level(1616, 1077))
+        .level_file(Level::sized(&pyramid, 1616, 1077))
+        .write();
+    let needed = vault.plan(&Options::default()).stats.bytes;
+
+    // One byte under the plan's own total: the number the seam would have got
+    // from the platform is the only thing substituted (`specs/modules/fs.md`).
+    extract(&vault)
+        .env("LRSALVAGE_FREE_SPACE_BYTES", (needed - 1).to_string())
+        .assert()
+        .code(4)
+        .stderr(predicate::str::contains("short"));
+
+    assert!(
+        jpeg_names(vault.out()).is_empty(),
+        "a refused run writes no preview: {:?}",
+        jpeg_names(vault.out())
+    );
+    for report in ["report.csv", "manifest.json", "extract.csv"] {
+        let path = vault.out().join(report);
+        assert!(
+            !path.exists(),
+            "a refused run claims no report file: {}",
+            path.display()
+        );
+    }
 }
 
 #[test]

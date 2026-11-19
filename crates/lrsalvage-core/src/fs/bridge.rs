@@ -55,6 +55,7 @@ const KIND_EXISTS: u8 = 3;
 const KIND_UNSUPPORTED: u8 = 4;
 const KIND_INVALID: u8 = 5;
 const KIND_FULL: u8 = 6;
+const KIND_OTHER: u8 = 7;
 
 /// The largest answer the host may write in one call.
 const OUT_CAP: usize = 512 * 1024;
@@ -96,6 +97,7 @@ fn kind_of(code: u8) -> io::ErrorKind {
         KIND_UNSUPPORTED => io::ErrorKind::Unsupported,
         KIND_INVALID => io::ErrorKind::InvalidInput,
         KIND_FULL => io::ErrorKind::StorageFull,
+        KIND_OTHER => io::ErrorKind::Other,
         _ => io::ErrorKind::Other,
     }
 }

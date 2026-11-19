@@ -380,6 +380,19 @@ pub fn probe(dir: &Path, store: &Path) -> Vec<Check> {
         diverges: false,
     });
 
+    // Free space: a number on the desktop, a refusal in a page, and the refusal is
+    // the design (#117). `extract::ensure_room` turns either into "measured" or
+    // "proceed unmeasured", so this is a declared divergence rather than a gap.
+    checks.push(Check {
+        name: "available_space_answers_or_refuses",
+        outcome: match fs::available_space(dir) {
+            Ok(bytes) if bytes > 0 => "answered".to_string(),
+            Ok(bytes) => format!("answered:{bytes}"),
+            Err(error) => format!("refused:{:?}", error.kind()),
+        },
+        diverges: true,
+    });
+
     // A copy onto a store name whose `-wal` companion exists is refused on the
     // target and carried out on the desktop: the pool will not publish an image a
     // pending WAL describes, while `std::fs::copy` would overwrite the main file

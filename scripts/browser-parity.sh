@@ -64,6 +64,9 @@ for candidate in \
 done
 
 chrome=''
+# Everything the node driver understands, forwarded as given: `--attach <port>`
+# reuses a Chrome that is already running, `--verbose` logs every operation.
+driver_args=''
 while [ "$#" -gt 0 ]; do
     case "$1" in
         --chrome)
@@ -73,6 +76,17 @@ while [ "$#" -gt 0 ]; do
                 printf '%s\n' '--chrome needs a path' >&2
                 exit 2
             }
+            ;;
+        --attach)
+            shift
+            driver_args="$driver_args --attach ${1:-}"
+            [ -n "${1:-}" ] || {
+                printf '%s\n' '--attach needs a debugging port' >&2
+                exit 2
+            }
+            ;;
+        --verbose)
+            driver_args="$driver_args --verbose"
             ;;
         *)
             printf 'unknown argument: %s\n' "$1" >&2
@@ -110,7 +124,9 @@ wasm-bindgen \
 
 printf '%s\n' '== headless Chromium'
 if [ -n "$chrome" ]; then
-    node scripts/drive-browser.mjs "$work" --chrome "$chrome"
+    # shellcheck disable=SC2086
+    node scripts/drive-browser.mjs "$work" --chrome "$chrome" $driver_args
 else
-    node scripts/drive-browser.mjs "$work"
+    # shellcheck disable=SC2086
+    node scripts/drive-browser.mjs "$work" $driver_args
 fi

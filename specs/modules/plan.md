@@ -246,6 +246,14 @@ one. The layout word and the version strings are observations, never gates
   dimensions, its segment inventory and its declared orientation — never the
   bytes. `extract` reads the same file again to write it, which is the only read
   whose bytes leave the machine.
+- **The item carries its own payload size, so a caller can add up what is left.**
+  `PlanItem::bytes` is a level file's own length or the certified container
+  chunk's, `0` for an item that writes nothing, and `Stats::bytes` is that same
+  number summed over the selected items — one measurement, published at two
+  granularities rather than counted twice. What the *destination* already holds is
+  not this module's question (it stats nothing there), so `extract` takes the
+  already-written items off the plan's total itself (`extract::pending_bytes`)
+  and this module stays a description of the cache and the catalog.
 - **The payload's own segment inventory travels with the item.** `exif`, `xmp`,
   `icc` — which of those the chosen payload already carries, empty when it is
   bare — recorded by the certification walk, so the field costs no second read:

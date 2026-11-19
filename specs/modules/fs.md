@@ -14,7 +14,7 @@ Be the crate's only answer to a filesystem question: read a file, read its first
 bytes, ask whether a path exists or is a file, list a directory, walk a tree,
 create a directory, write a file, write one atomically, remove one, copy one,
 make a scratch directory, hash a file's stream, resolve a path, name the working
-directory, stamp a modification time.
+directory, stamp a modification time, and ask how much room a filesystem has.
 
 On `wasm32-unknown-unknown` it is also the crate's only answer to **where a path
 resolves**. That target has no filesystem, so the module holds a table of mounted
@@ -88,11 +88,13 @@ next slice reads.
 | `canonicalize` | the absolute, symlink-free spelling of a path | `extract` | answered by normalising the components: this namespace has no symlinks |
 | `current_dir` | the working directory | `extract` | `/` — a page has no working directory |
 | `set_mtime` | a file's modification time, in Unix seconds | `extract` | **refused**, `Unsupported`: the File System API cannot set one |
+| `available_space` | how many bytes a filesystem can still take, for a non-privileged writer | `extract` | **refused**, `Unsupported`: a page cannot know the destination's free space (`#117`) |
 
-Free space is not in the table because it has no caller; `#117` records that a
-page cannot know the destination's free space, so on this target that refusal is
-the design rather than a gap (`docs/versions.md` gives `0.4.0` the run-refusing
-check).
+Two refusals are the design rather than a gap: a modification time, and the
+destination's free space. `#117` records the second as a page's limit, and
+`extract` already treats an unmeasured destination as one it proceeds with
+(`extract::ensure_room`'s `Preflight::Unmeasured`), so a browser run degrades the
+way a desktop run on an unmeasurable filesystem does.
 
 ## The browser half
 
@@ -259,7 +261,7 @@ with a schema error; and Chromium or Chrome (or `CHROME` pointing at one).
   by the compiler instead of by a test: a function present in one and missing in
   the other does not build, so the wasm gate is what holds that.
 - **The seam's signatures did not change, and no caller module moved.** The
-  browser backend was written against the seventeen existing signatures, which is
+  browser backend was written against the eighteen existing signatures, which is
   the test #142's choice existed for. Two *lines* in callers moved and neither is
   a signature: `snapshot::checkpoint_copy` sets `PRAGMA locking_mode=EXCLUSIVE`
   before the checkpoint (the measured path in both targets, and the only way a
@@ -272,16 +274,36 @@ with a schema error; and Chromium or Chrome (or `CHROME` pointing at one).
   implementation. `write_atomic` is the shape this buys: staging, `fsync` and
   `rename` are one call because they are one promise
   (`adr-0003-preserve-preview-bytes`), and no caller can perform half of it.
-- **Two questions the design expected and the code never asks.** The slice's
-  ticket listed "file length" and "the free space `plan`/`extract` ask". There is
-  no call site for either: `grep -rn 'available_space\|statvfs\|fs2'` over
-  `crates/` finds nothing, and the only `fs::metadata` calls in the tree are in
-  tests. The free-space refusal is a *planned* capability — `docs/versions.md`
-  gives `0.4.0` the run-refusing check, not this tree — and `#117` records that a
-  page cannot know the destination's free space, so on `wasm32` that answer is
-  the design. An operation with no caller is a guess the browser implementation
-  would then have to satisfy; both land with their first caller, which is a
-  change to this list and this table.
+- **The free-space question arrived with its first caller (#64).** This slice's
+  own ticket listed "file length" and "the free space `plan`/`extract` ask", and
+  carried neither: an operation with no caller is a guess the browser
+  implementation would then have to satisfy. `available_space` has a caller now —
+  `extract` refuses a destination the plan would not fit — so it is here, and the
+  table above gained its row in the same commit. File length still has none: the
+  only `fs::metadata` calls in the tree are in tests, so it stays absent.
+- **The platform answer is `fs4`, target-gated in the manifest.**
+  `available_space` asks `statvfs` on unix (`f_bavail * f_frsize`: the bytes a
+  non-privileged writer may use, not the blocks a superuser could) and
+  `GetDiskFreeSpaceExW` on Windows, through `fs4` 1.1.0 under
+  `[target.'cfg(any(unix, windows))'.dependencies]`. The gate is not tidiness:
+  `fs4` does not build for `wasm32-unknown-unknown` at all, so the browser half
+  answers this operation itself and refuses it.
+- **The answer belongs to the filesystem, not the directory, and the targets
+  differ on a path that is not there.** Windows answers for the volume the path
+  would be on; unix refuses one, because `statvfs` needs a path that exists. So a
+  caller that must have an answer on every target asks about an existing
+  ancestor, and `extract` does exactly that: a dry run asks about the ancestor of
+  the directory it does not create, a real run about the directory its own probe
+  just made. On `wasm32` there is no answer at all, so the refusal is what the
+  same caller reads.
+- **One test aid, and only in a debug build.** No portable unprivileged machine
+  can be made nearly full on demand, so the native backend answers
+  `LRSALVAGE_FREE_SPACE_BYTES` when the crate is built with `debug_assertions` —
+  which is what `cargo test` compiles — and never reads the name otherwise, so a
+  release binary always asks the platform. That is how the real binary is held to
+  the real refusal, including its exit code (`lrsalvage-cli`'s matrix row M19).
+  It is the seam's only substitution, and a second one would need a reason this
+  one does not have.
 - **`exists` answers with a reason, `is_file` with a reason too, and a caller
   that wants a `bool` says `unwrap_or(false)`.** This is the measured point of
   the slice: on `wasm32` the `Path::exists` gate in `previews_db::open` reported a

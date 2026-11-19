@@ -39,7 +39,8 @@
 //! # The second target answers, from a mount table
 //!
 //! `wasm32-unknown-unknown` has no filesystem, and #142's stub said so with one
-//! [`io::ErrorKind::Unsupported`] for all seventeen operations. That was the
+//! [`io::ErrorKind::Unsupported`] for all seventeen operations it then had. That
+//! was the
 //! honest answer while nothing could answer better; it was never the browser's
 //! implementation, and `previews_db::open` reporting a present database as
 //! `Missing` was the measurement that produced the seam. The browser backend
@@ -51,12 +52,14 @@
 //! their module docs, and `specs/modules/fs.md` records it as the seam's browser
 //! half.
 //!
-//! One operation stays refused there: `set_mtime`, because the File System API
-//! cannot set a modification time. `current_dir` answers `/` instead — a page has
-//! no working directory, so a relative path resolves to no mount and is
-//! `NotFound` rather than being anchored somewhere a user cannot see — and free
-//! space was never an operation here: `#117` records that a page cannot know the
-//! destination's free space, so there is nothing to refuse.
+//! Two operations stay refused there. `set_mtime`, because the File System API
+//! cannot set a modification time; and `available_space`, because a page cannot
+//! know the destination's free space — `navigator.storage.estimate()` describes
+//! the origin's quota, not the disk the folder is on (`#117`). `extract` already
+//! treats that refusal as an unmeasured destination and proceeds. `current_dir`
+//! answers `/` instead of refusing: a page has no working directory, so a
+//! relative path resolves to no mount and is `NotFound` rather than being
+//! anchored somewhere a user cannot see.
 //!
 //! A caller that only needs a `bool` and has no use for a reason still writes
 //! `unwrap_or(false)`, and on the browser those are the sites that read a refusal
@@ -223,6 +226,27 @@ pub fn current_dir() -> io::Result<PathBuf> {
 /// stays behind this seam so a target without file times has one place to say so.
 pub fn set_mtime(path: &Path, unix_seconds: i64) -> io::Result<()> {
     backend::set_mtime(path, unix_seconds)
+}
+
+/// How many bytes the filesystem holding `path` can still take, for a
+/// non-privileged writer.
+///
+/// It answers for the filesystem `path` is on, not for the directory itself, and
+/// the two targets differ on a path that is not there: Windows answers for the
+/// volume the path would be on, unix refuses one (`statvfs` needs a path that
+/// exists). A caller that must have an answer on every target asks about an
+/// existing ancestor, which is what `extract` does — it refuses before its first
+/// write, so it may not create the destination to ask.
+///
+/// On `wasm32` this refuses, which is the honest answer: a page cannot know the
+/// destination's free space (`#117`), and `navigator.storage.estimate()`
+/// describes the origin's quota rather than the disk a picked folder is on.
+///
+/// A debug build answers `LRSALVAGE_FREE_SPACE_BYTES` instead of asking the
+/// platform — on the native backend only, because the `wasm32` one refuses this
+/// operation and never reads the name. That is the seam's one test aid.
+pub fn available_space(path: &Path) -> io::Result<u64> {
+    backend::available_space(path)
 }
 
 #[cfg(test)]
@@ -495,6 +519,21 @@ mod tests {
         assert!(
             set_mtime(&dir.path().join("absent"), 0).is_err(),
             "a file that is not there cannot be stamped"
+        );
+    }
+
+    #[test]
+    fn available_space_answers_a_number_for_a_real_directory() {
+        let dir = scratch();
+        // The number is this machine's, so the claim here is about the answer's
+        // shape rather than a size (`CODING_STANDARDS.md`, *Claims*). What a
+        // path that is not there answers differs by platform — unix refuses one,
+        // Windows answers for the volume — which is why a caller asks about an
+        // ancestor that exists.
+        let free = available_space(dir.path()).expect("a real directory answers");
+        assert!(
+            free > 0,
+            "a filesystem this test writes to has room, got {free}"
         );
     }
 }

@@ -199,7 +199,12 @@ function compare(native, browser) {
   // and one that copied onto a `-wal` name would be publishing an image the WAL
   // still describes. Both are refusals the spec promises, so they are asserted
   // rather than merely reported.
-  for (const name of ['set_mtime_sets_the_time_or_refuses', 'store_copy_refuses_a_sidecar_name']) {
+  const refusals = [
+    'set_mtime_sets_the_time_or_refuses',
+    'store_copy_refuses_a_sidecar_name',
+    'available_space_answers_or_refuses',
+  ];
+  for (const name of refusals) {
     const check = browser.probe.find((candidate) => candidate.name === name);
     if (check === undefined) {
       differences.push(`${name}: the browser run has no such check`);

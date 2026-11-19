@@ -37,6 +37,9 @@ import {
   segmentsOf,
 } from './protocol.js';
 
+/** Every operation logs, not only the refused ones: set by the page's `?verbose`. */
+const VERBOSE = new URLSearchParams(location.search).has('verbose');
+
 /** A DOMException's name, in the seam's vocabulary. */
 function kindOf(error) {
   switch (error && error.name) {
@@ -107,8 +110,9 @@ export class FsHost {
     // A refused operation is the interesting one: it is what a caller reads as
     // absence, and what the seam's `exists` exists to stop it doing. Logged so a
     // failed parity run says which operation and which path, not just that one
-    // check came out wrong.
-    if (kind !== KIND_OK) {
+    // check came out wrong. `?verbose` logs every operation, which is what a
+    // debugging run wants and a passing one does not.
+    if (VERBOSE || kind !== KIND_OK) {
       const text = new TextDecoder().decode(body.subarray(0, 200));
       console.log(`[fs-host] op=${message.op} path=${request?.path} kind=${kind} ${text}`);
     }

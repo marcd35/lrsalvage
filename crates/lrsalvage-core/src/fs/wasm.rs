@@ -43,19 +43,20 @@
 //!
 //! A mount is a *path prefix*, longest first, and the reason for a table rather
 //! than a per-operation argument is that the callers build their paths from these
-//! roots: adding a browser-only parameter to seventeen signatures would be the
+//! roots: adding a browser-only parameter to eighteen signatures would be the
 //! caller change #142's choice exists to avoid.
 //!
 //! # What stays refused, and why
 //!
 //! [`set_mtime`] is `Unsupported`: the File System API cannot set a file's
 //! modification time, and `--set-timestamps` is a CLI flag the app does not
-//! offer. [`current_dir`] answers `/`: a page has no working directory, `/` is
-//! this namespace's root, and a relative path therefore resolves to no mount and
-//! is `NotFound` rather than being anchored somewhere a user cannot see. Free
-//! space is not an operation here at all — the seam has no caller for it, and
-//! `#117` records that a page cannot know the destination's free space, so there
-//! is nothing to refuse.
+//! offer. [`available_space`] is `Unsupported` too, and for a measured reason:
+//! `navigator.storage.estimate()` describes the origin's quota rather than the
+//! disk a picked folder is on, so a page cannot know the destination's free
+//! space (`#117`). [`current_dir`] answers `/` instead: a page has no working
+//! directory, `/` is this namespace's root, and a relative path therefore
+//! resolves to no mount and is `NotFound` rather than being anchored somewhere a
+//! user cannot see.
 
 use std::cell::RefCell;
 use std::future::Future;
@@ -80,6 +81,7 @@ const MIN_CAPACITY: usize = 8;
 const NO_STORE: &str = "no origin-private store is installed on this target";
 const NO_SCRATCH: &str = "no store mount is registered, so a scratch directory has nowhere to live";
 const NO_MTIME: &str = "the File System API cannot set a file's modification time";
+const NO_ROOM: &str = "a page cannot know the destination's free space";
 
 /// The install, while a host is driving it.
 type Install = Pin<Box<dyn Future<Output = Result<(), String>>>>;
@@ -640,4 +642,15 @@ fn store_write(path: &Path, bytes: &[u8]) -> io::Result<()> {
         pool.remove(&name).map_err(store_error)?;
     }
     pool.import_db_unchecked(&name, bytes).map_err(store_error)
+}
+
+/// Refused, not guessed: a page cannot know the destination's free space.
+///
+/// `navigator.storage.estimate()` describes the *origin's* quota, not the disk a
+/// picked folder is on, so any number here would be about something else — the
+/// one thing this seam exists to stop. `extract::ensure_room` already treats a
+/// refusal as `Unmeasured` and proceeds, so a browser run behaves the way a
+/// desktop run on an unmeasurable filesystem does (`#117`, `#64`).
+pub(super) fn available_space(_path: &Path) -> io::Result<u64> {
+    Err(unsupported(NO_ROOM))
 }

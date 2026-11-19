@@ -455,6 +455,28 @@ fn extract(args: ExtractArgs) -> Result<u8> {
         force: args.force,
     };
 
+    // #64: the destination's own answer, before the first file is written. A
+    // dry run asks the same question and reports the same verdict — it is where
+    // a careful user looks first, and it writes nothing either way.
+    //
+    // The number is what this run would still write, not the plan's whole total:
+    // a destination that already holds an output is skipped or failed, never
+    // written, so a resume is measured by the bytes it has left. The bounds the
+    // run applied (`--min-long-edge`, `--max-long-edge`, `--all-levels`) move the
+    // plan's total, and so move this.
+    let needed = extract::pending_bytes(&plan, &extract_options);
+    match extract::ensure_room(&args.out, needed)? {
+        extract::Preflight::Fits(room) => {
+            if let Some(note) = room.nearly_full_note(&args.out) {
+                eprintln!("{note}");
+            }
+        }
+        extract::Preflight::Unmeasured(reason) => eprintln!(
+            "the destination's free space could not be measured, so the pre-flight was \
+             skipped: {reason}"
+        ),
+    }
+
     let bar = progress_bar(selected as u64, args.dry_run);
     let mut outcomes = Vec::with_capacity(selected);
     let result = extract::extract(&plan, &extract_options, &mut |outcome| {
