@@ -56,9 +56,10 @@ printf 'tree %s
 # that holds them. It is never committed: real catalog paths are not a repo
 # artefact.
 #
-# A worktree's own `.env` wins, and the machine's one file is the fallback — the
-# only gate that verifies a byte-level claim must not be unreachable from a fresh
-# worktree, which is what per-worktree configuration made it.
+# The four pairs are read from up to three files, and the last one wins: the
+# machine's file, the file `lrsalvage.realEnvFile` names, then this worktree's
+# `.env`. The only gate that verifies a byte-level claim must not be unreachable
+# from a fresh worktree, which is what per-worktree configuration made it.
 #
 #   git config --global lrsalvage.realEnvFile ~/real-lrsalvage.env
 #   ~/.config/lrsalvage/real.env          (the default, when the setting is unset)
@@ -104,11 +105,34 @@ gate_fmt() {
 # reads it: `cargo` never parses `scripts/*.sh`, and a broken quote or heredoc in
 # a gate script fails the day someone runs it. `sh -n` parses without executing,
 # needs no dependency, and runs on all three CI systems.
+#
+# The same files hold the gate list itself, and CI is where most of it runs — so
+# this gate reads the second thing as well: every name in `all_gates` has a
+# `ci.yml` step that runs it, or it runs nowhere but the machine of whoever
+# remembers. `typos` and `deny` are the two whose CI is a vendor action, named
+# here so the exemption is written down rather than discovered.
 gate_shell() {
     printf '%s\n' '== shell'
     for script in scripts/*.sh .githooks/pre-commit; do
         [ -f "$script" ] || continue
         sh -n "$script"
+    done
+    ci_gates=$(sed -n 's/^[[:space:]]*run:[[:space:]]*sh scripts\/check\.sh //p' \
+        .github/workflows/ci.yml | tr '\n' ' ')
+    for gate in $all_gates; do
+        case "$gate" in
+            typos | deny) continue ;;
+        esac
+        case " $ci_gates " in
+            *" $gate "*) ;;
+            *)
+                printf '%s\n' \
+                    "$gate is in all_gates and no ci.yml step runs it," \
+                    'so it only runs where somebody remembers it:' \
+                    "  sh scripts/check.sh $gate" >&2
+                exit 1
+                ;;
+        esac
     done
 }
 
