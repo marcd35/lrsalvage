@@ -177,9 +177,10 @@ skipping when its own pair is unset; `real` is the route to the evidence
 
 **A measurement is restated in more than one file.** The notes measure it;
 `README.md`'s status and compatibility rows, `CONTEXT.md`, the fixture labels and
-a module spec may each restate it. Grep the fact before changing it — a
-correction that stops at the notes leaves a copy a reader will trust, which is
-exactly how §6.4 kept a false ICC claim after the render disproved it.
+a module spec may each restate it. Grep the fact before changing it, **and before
+adding a file that carries it** — a new file is a new copy, and a correction that
+stops at the notes leaves a copy a reader will trust, which is exactly how §6.4
+kept a false ICC claim after the render disproved it.
 
 - `CODING_STANDARDS.md` — the judgement calls a check cannot hold. Read it before
   reviewing a diff, and before writing a claim a stranger will act on.
