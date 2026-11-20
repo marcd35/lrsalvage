@@ -24,8 +24,8 @@ someone reporting a problem, and someone changing the code.
 | What a number means | the artifacts, the checksums and the contract surfaces below | the app's own screens and files |
 | Who owns the promise | [ADR 0010](adr/0010-what-0-2-promises.md), both lines alike | the same record |
 
-The core line is the one that exists today: `lrsalvage 0.3.0` is current, and
-`0.4.0` is what is being built. The app line has not released anything yet; when it
+The core line is the one that exists today: `lrsalvage 0.4.0` is current. The app
+line has not released anything yet; when it
 does, the artifact is the page — [ADR 0012](adr/0012-two-release-lines.md) resolved
 D10 that way on 2026-11-18, and its third test says why a page is a front end over a
 durable engine rather than the other way round.
@@ -69,8 +69,8 @@ an older one**, and the core it ships with is named in its changelog entry.
 ## Service and support
 
 - **The latest release of a line is the one that receives fixes.** There is no
-  backport branch and no supported older version: a defect in `0.3.0` is fixed in
-  whatever the core line releases next, and the published tarball of `0.3.0` stays
+  backport branch and no supported older version: a defect in `0.4.0` is fixed in
+  whatever the core line releases next, and the published tarball of `0.4.0` stays
   as it is.
 - **A defect is fixed in a patch only when it changes nothing in the contract.**
   That route is available and has been passed over deliberately — ADR 0012 D5
@@ -83,7 +83,7 @@ Capabilities, not flags: the flag list belongs to `lrsalvage --help` and the REA
 section that `tests/readme.rs` holds to the binary. Where a capability *is* one
 flag, the cell names it and links there rather than restating what it does.
 
-*Verified at core `0.3.0`, 2026-11-18. The app column is the intended shape of
+*Verified at core `0.4.0`, 2026-11-20. The app column is the intended shape of
 `0.1.0` — [#117](https://github.com/marcd35/lrsalvage/issues/117) owns the
 acceptance list, and [ADR 0012](adr/0012-two-release-lines.md) D10's resolution says
 the artifact is the page — and not a claim about a released artifact.*
