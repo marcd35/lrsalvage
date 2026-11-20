@@ -114,6 +114,18 @@ reverse — so the seam is registered one way for both pages.
   cross-origin isolated because the bridge's `SharedArrayBuffer` needs it. A
   browser without `showDirectoryPicker` is told so, and pointed at the CLI, before
   it is offered anything.
+- **This slice's page is its own design; porting #117's prototype is a later
+  decision, not an oversight.** #117 carries a prototype — one self-contained HTML
+  file, recorded by ADR 0012 — and it was written for the **Windows executable**
+  that the browser route replaced. Its shell (a titlebar, a three-step nav, a
+  footer action bar), its two-row entry form ("Lightroom catalog" / "Preview
+  folder · found beside catalog") and its copy for these screens were deliberately
+  **not** carried into this page: the page was written from the user stories and
+  from the counts the report carries, and the prototype is not in this tree, so no
+  checkout could hold a port to it. Porting the shell and the copy is a design
+  decision waiting for someone to make it — not a rewrite, because every string a
+  person reads lives in `web/view.js` and nothing else in the slice depends on it:
+  the browser run asserts the report, so its evidence stays valid either way.
 - **The page has no test hook in it.** The harness's page (`web/test.html`,
   `web/test.js`) is a second page that imports the same *functions*, and that is
   exactly the limit of what it proves: the product page's own markup, its
