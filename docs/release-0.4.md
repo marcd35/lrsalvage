@@ -131,12 +131,18 @@ reader closing the tracker can check coverage without re-deriving it:
 
 ### Slices
 
-- [ ] **1 — this file, and the two majors.** This file is merged; #4 and #5 are
+- [x] **1 — this file, and the two majors.** This file is merged; #4 and #5 are
       rebased, re-run and merged, one at a time, in the order
       [*The two Dependabot majors*](#the-two-dependabot-majors) gives. Nothing
       else enters this slice: the checklist's own merge is the release's first
       act, and a major that merged after the bump would be a dependency the
-      tagged tree's evidence never met.
+      tagged tree's evidence never met. *Verified 2026-11-20:* #5 merged as
+      `1249c24` from a re-run whose merge base was `main` at `e1e065f`, and #4
+      as `21abb46` from one based on `1249c24`; eight CI checks were green on
+      each, `msrv` was green on the published `rust-version = 1.89`, and
+      `deny` and `package` were green. `deny.toml` did not change: `base64
+      0.23.1`'s default `simd-unsafe` is an empty feature gate inside the
+      crate, so no dependency and no licence entered the tree.
 - [x] **2 — #88, landed.** The flag `--max-long-edge` on `scan` and `extract`,
       `above_cap` on the summary, `scan --json` and the report's `stats`,
       `options.max_long_edge` in the echo, and `docs/adr/0013` renumbered with its
