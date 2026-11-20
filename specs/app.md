@@ -115,9 +115,13 @@ reverse — so the seam is registered one way for both pages.
   browser without `showDirectoryPicker` is told so, and pointed at the CLI, before
   it is offered anything.
 - **The page has no test hook in it.** The harness's page (`web/test.html`,
-  `web/test.js`) is a second page that imports the same functions, and the product
-  page's own `addEventListener` lines are the only part it does not exercise —
-  which is recorded here rather than implied.
+  `web/test.js`) is a second page that imports the same *functions*, and that is
+  exactly the limit of what it proves: the product page's own markup, its
+  `addEventListener` wiring and `view.js`'s rendering of a report are **not**
+  exercised by it. `index.html` as a document is verified by eye, not by a test —
+  a first-impression surface checked by loading it in a browser and looking.
+  Extracting the renderers so the harness can call them would close it, and is
+  worth doing when the grid slice makes the page's DOM worth asserting on.
 
 ## Testing
 
@@ -133,3 +137,9 @@ reverse — so the seam is registered one way for both pages.
 - What the browser run cannot prove, and does not claim: that a human's accepted
   pick returns a handle. The mechanism is the browser's, one `await` deep, and the
   value it returns is the value the test supplies.
+- What is verified by eye and nothing else: the page as a document. It loads,
+  `mount` runs, the capability gate stays hidden, and a real click on the picker
+  produces the cancellation branch — checked once in headless Chromium and
+  recorded here as a check a person repeats, not one a suite holds. The scanning
+  and result views were rendered by nobody before this page shipped its first
+  version, because reaching them needs an accepted pick.
