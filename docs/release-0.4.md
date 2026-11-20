@@ -72,10 +72,10 @@ one says it once, in advance, instead.
    [*Text held for approval*](#text-held-for-approval) and posted only on
    approval.
 
-5. **The two open Dependabot majors are this slice's, and both are merged into
+5. **The two Dependabot majors are this slice's, and both are merged into
    0.4.0's tree.** The tracker hands their disposition to slice 1: decide them, or
    close them with a reason written on the PR. Both merge, before the bump, on
-   evidence re-run against today's tree — the green on each PR now was produced
+   evidence re-run against today's tree — the green on each PR was produced
    against a base that predates this release. See
    [*The two Dependabot majors*](#the-two-dependabot-majors).
 
@@ -99,11 +99,11 @@ one says it once, in advance, instead.
 ## What is left, and in what order
 
 The order is #125's table and is not repeated here. This one lists only what still
-moves, plus the two rows that have already moved:
+moves, plus the rows that have already moved:
 
 | Slice | What it changes | Closes |
 |---|---|---|
-| 1 | This file, and the two Dependabot majors merged into the tree | — |
+| 1 | **landed** `1249c24`, `21abb46`: this file, and the two Dependabot majors merged into the tree | — |
 | 2 | **landed** `dc5a8ad`: the cap — flag, `above_cap`, the report's `options` echo, `docs/adr/0013`, and the two README non-goals #88 landed | #88, #67 |
 | 3 | **landed** #129 and #131: the five fixture-dependent `#[cfg(test)]` modules moved out of `src/`, and `scripts/check.sh package` testing core's tarball rather than only building it | #123 |
 | 4 | **landed** `4b70929`: the free-space refusal reusing exit `4`, the `--dry-run` verdict, the README's exit-code row, and one seam the suite can drive | #64 |
@@ -131,12 +131,25 @@ reader closing the tracker can check coverage without re-deriving it:
 
 ### Slices
 
-- [ ] **1 — this file, and the two majors.** This file is merged; #4 and #5 are
+- [x] **1 — this file, and the two majors.** This file is merged; #4 and #5 are
       rebased, re-run and merged, one at a time, in the order
       [*The two Dependabot majors*](#the-two-dependabot-majors) gives. Nothing
       else enters this slice: the checklist's own merge is the release's first
       act, and a major that merged after the bump would be a dependency the
-      tagged tree's evidence never met.
+      tagged tree's evidence never met. *Verified 2026-11-20:* #5 merged as
+      `1249c24` from head `2bcc0d2`, cut from `main` at `e1e065f`; #4 merged as
+      `21abb46` from head `51789a0`, cut from `1249c24`. Each head carried the
+      whole gate list green — its last line naming the tree it measured, `(tree
+      2bcc0d2 plus 0 changed)` and `(tree 51789a0 plus 0 changed)` — and a green
+      CI run on that same head. `msrv` was green on `rust-version = 1.89`, which
+      covers both floors [*The two Dependabot majors*](#the-two-dependabot-majors)
+      records, and `package` was green on both. `deny.toml` did not change:
+      `deny` ended `advisories ok, bans ok, licenses ok, sources ok` with the
+      crates `sha2 0.11.1` brings in the tree, and `base64 0.23.1`'s
+      `simd-unsafe` feature is empty in that version. The licences that question
+      turns on are recorded in
+      [#154](https://github.com/marcd35/lrsalvage/pull/154), the slice's record
+      pull request, rather than reprinted here.
 - [x] **2 — #88, landed.** The flag `--max-long-edge` on `scan` and `extract`,
       `above_cap` on the summary, `scan --json` and the report's `stats`,
       `options.max_long_edge` in the echo, and `docs/adr/0013` renumbered with its
@@ -386,8 +399,12 @@ holds.
       dependency that trips `deny.toml`'s allow-list is a decision rather than a
       config edit. `base64 0.23` turns on a default SIMD feature it did not have
       before — `cargo deny` is the check that says whether that changed the
-      licence or advisory picture, and its answer is recorded in the pull request
-      that merges it.
+      licence or advisory picture. **Corrected 2026-11-20:** this said the answer
+      is recorded in the pull request that merges the bump, and a Dependabot PR
+      carries the bot's body and nothing of a review's — so the answer is
+      recorded in the slice's record pull request,
+      [#154](https://github.com/marcd35/lrsalvage/pull/154), which is where
+      slice 1's box points.
 
 ### Frozen surface — what 0.3 promised, still promised
 
@@ -581,8 +598,13 @@ on a tree where a failure is unambiguous. `base64` follows, and it is the one to
 re-read `deny.toml` against, because a default-on SIMD feature is a build-level
 change the licence and advisory policy has not seen.
 
-**What each merge must show, in the pull request that merges it** — this is the
-replacement for a green on a stale base:
+**What each merge must show, and where it is recorded** — the merging pull
+requests are Dependabot's, so the evidence sits in the slice's record pull
+request, [#154](https://github.com/marcd35/lrsalvage/pull/154), and the merge
+comment on each PR states the three gates without the run's line. *Corrected
+2026-11-20:* this said "in the pull request that merges it", which for a bot's PR
+is a place no evidence can be written. This is the replacement for a green on a
+stale base:
 
 - CI green on a run whose merge base is the current `main`.
 - `sh scripts/check.sh msrv` green, with the floor the bump publishes compared to
@@ -595,11 +617,11 @@ replacement for a green on a stale base:
 ### Text held for approval
 
 Each item below is posted only on the maintainer's explicit approval of that
-exact action. The two marked **Posted** are on the tracker and keep the text that
-was approved, so a reader can compare the two.
+exact action. The items marked **Posted** are on the tracker and keep the text
+that was approved, so a reader can compare the two.
 
 **On #5 and #4, if the re-run is green — the merge comment.** One comment, on each
-PR, at the moment it is merged:
+PR, at the moment it is merged. **Posted 2026-11-20**, verbatim, on both:
 
 > Merged into 0.4.0's tree as part of
 > [#125](https://github.com/marcd35/lrsalvage/issues/125)'s first slice, on a
