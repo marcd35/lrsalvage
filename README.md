@@ -8,13 +8,15 @@ photos they point at are not there any more. Lightroom still has a rendered copy
 of each one in its preview cache, and this tool writes those copies out as
 ordinary JPEG files, with the catalog's metadata attached.
 
-Version 0.3.0: both crates are on crates.io at that version, the archives are on
-the [`v0.3.0` release](https://github.com/marcd35/lrsalvage/releases/tag/v0.3.0),
-and [the 0.3 release checklist](docs/release-0.3.md) is what the number covers.
+Version 0.4.0: both crates are on crates.io at that version, the archives are on
+the [`v0.4.0` release](https://github.com/marcd35/lrsalvage/releases/tag/v0.4.0),
+and [the 0.4 release checklist](docs/release-0.4.md) is what the number covers.
 [Install](#install) names all four routes, and
 [ADR 0010](docs/adr/0010-what-0-2-promises.md) is the surface list a script can
 lean on. 0.2 was the first release with something to download rather than a tree
-to build, and 0.3.0 adds one flag while keeping every promise that release made.
+to build; 0.3.0 added a source check, and 0.4.0 adds a cap on the level written
+and refuses to start a run its destination cannot hold — keeping every promise
+those releases made.
 Still early, and deliberately conservative: it would rather tell you it found
 nothing than hand you a folder of wrong images.
 
@@ -86,13 +88,15 @@ One archive per platform, attached to the release for the tag alongside
 
 | Platform | Asset |
 |---|---|
-| Linux x64 (glibc 2.35 or newer) | `lrsalvage-x86_64-unknown-linux-gnu-v0.3.0.tgz` |
-| Windows x64 | `lrsalvage-x86_64-pc-windows-msvc-v0.3.0.zip` |
-| macOS, Apple Silicon only | `lrsalvage-aarch64-apple-darwin-v0.3.0.tgz` |
+| Linux x64 (glibc 2.35 or newer) | `lrsalvage-x86_64-unknown-linux-gnu-v0.4.0.tgz` |
+| Windows x64 | `lrsalvage-x86_64-pc-windows-msvc-v0.4.0.zip` |
+| macOS, Apple Silicon only | `lrsalvage-aarch64-apple-darwin-v0.4.0.tgz` |
 | checksums for all three | `SHA256SUMS` |
 
 Those four assets are on the
-[`v0.3.0` release](https://github.com/marcd35/lrsalvage/releases/tag/v0.3.0).
+[`v0.4.0` release](https://github.com/marcd35/lrsalvage/releases/tag/v0.4.0), and
+five generated ones are attached beside them — the four shell completions and
+the man page — which no route here installs.
 The [`v0.2.0-rc.1` pre-release](https://github.com/marcd35/lrsalvage/releases/tag/v0.2.0-rc.1)
 proved the workflow first, under that tag's spelling (`…-v0.2.0-rc.1.tgz`) — the
 tag is the version in every asset name, which is how one workflow builds both a
@@ -113,16 +117,16 @@ the file you downloaded rather than checking the whole file.
 Linux — verify, unpack, run:
 
 ```console
-grep lrsalvage-x86_64-unknown-linux-gnu-v0.3.0.tgz SHA256SUMS | sha256sum -c
-tar -xzf lrsalvage-x86_64-unknown-linux-gnu-v0.3.0.tgz
+grep lrsalvage-x86_64-unknown-linux-gnu-v0.4.0.tgz SHA256SUMS | sha256sum -c
+tar -xzf lrsalvage-x86_64-unknown-linux-gnu-v0.4.0.tgz
 ./lrsalvage --version
 ```
 
 macOS — the same, with the tool macOS ships in place of `sha256sum`'s name:
 
 ```console
-grep lrsalvage-aarch64-apple-darwin-v0.3.0.tgz SHA256SUMS | shasum -a 256 -c
-tar -xzf lrsalvage-aarch64-apple-darwin-v0.3.0.tgz
+grep lrsalvage-aarch64-apple-darwin-v0.4.0.tgz SHA256SUMS | shasum -a 256 -c
+tar -xzf lrsalvage-aarch64-apple-darwin-v0.4.0.tgz
 ./lrsalvage --version
 ```
 
@@ -130,9 +134,9 @@ Windows, in PowerShell — compare the two hashes, which must be equal, then
 unpack with `Expand-Archive` (or right-click → Extract All):
 
 ```powershell
-Select-String lrsalvage-x86_64-pc-windows-msvc-v0.3.0.zip SHA256SUMS
-(Get-FileHash lrsalvage-x86_64-pc-windows-msvc-v0.3.0.zip -Algorithm SHA256).Hash.ToLower()
-Expand-Archive lrsalvage-x86_64-pc-windows-msvc-v0.3.0.zip -DestinationPath .
+Select-String lrsalvage-x86_64-pc-windows-msvc-v0.4.0.zip SHA256SUMS
+(Get-FileHash lrsalvage-x86_64-pc-windows-msvc-v0.4.0.zip -Algorithm SHA256).Hash.ToLower()
+Expand-Archive lrsalvage-x86_64-pc-windows-msvc-v0.4.0.zip -DestinationPath .
 .\lrsalvage.exe --version
 ```
 
@@ -153,9 +157,9 @@ no route was re-run end to end at the final tag. The macOS pair — `shasum -a 2
 the release. They are what this page would run first on one;
 `docs/release-0.2.md` is where the gap is written down, nothing here is upgraded
 to proved, and [#93](https://github.com/marcd35/lrsalvage/issues/93) stays open
-until a Mac has run them. At `v0.3.0` all four assets were checked against
-`SHA256SUMS` again — the checksums, not the routes — and
-[the 0.3 checklist](docs/release-0.3.md) holds that measurement.
+until a Mac has run them. At `v0.4.0` all three archives were checked against
+`SHA256SUMS` — the checksums, not the routes — and
+[the 0.4 checklist](docs/release-0.4.md) holds that measurement.
 
 **macOS is Apple Silicon only.** There is one macOS archive and its target is
 `aarch64-apple-darwin`; on an Intel Mac, build from source (a few lines below) or
@@ -164,15 +168,15 @@ use `cargo install`, which compiles for the machine it runs on.
 ### cargo install
 
 ```console
-cargo install lrsalvage-cli --version 0.3.0
+cargo install lrsalvage-cli --version 0.4.0
 ```
 
 The package is `lrsalvage-cli`; the binary it installs is `lrsalvage`, so the
 command you run afterwards is still `lrsalvage`. Both names are on crates.io as
-0.3.0, and the route was proved by running that command where no checkout of this
+0.4.0, and the route was proved by running that command where no checkout of this
 repository was in scope: cargo built both crates from the registry and the
-installed binary answered `lrsalvage 0.3.0`
-([the 0.3 checklist](docs/release-0.3.md) records the run).
+installed binary answered `lrsalvage 0.4.0`
+([the 0.4 checklist](docs/release-0.4.md) records the run).
 
 ### cargo binstall
 
@@ -187,9 +191,11 @@ cargo binstall --git https://github.com/marcd35/lrsalvage lrsalvage-cli
 ```
 
 The bare form resolves through the crates.io index; the `--git` form clones this
-tree and needs no registry entry. The bare form was run against `0.3.0` and fetched
-the prebuilt archive for the tag rather than falling back to `cargo install`, in
-seconds; the `--git` form was proved the same way against `v0.2.0`. Neither form
+tree and needs no registry entry. The bare form was run against `0.4.0` — whose
+asset list had grown to nine files, the shape that could disturb the template —
+and fetched the prebuilt archive for the tag rather than falling back to `cargo
+install`, in under three seconds; the `--git` form was proved the same way
+against `v0.2.0`. Neither form
 changes the archives: they are already named to `cargo-binstall`'s own default
 template.
 

@@ -370,7 +370,7 @@ holds.
       this with a `--config patch`, and the reason is the script's own: a version
       that is not yet on the index would otherwise be verified as the previous
       one.
-- [ ] The tag produces the release's assets: the three platform archives and
+- [x] The tag produces the release's assets: the three platform archives and
       `SHA256SUMS` that `release.yml` already builds, plus the five files #62
       attaches — `lrsalvage.bash`, `_lrsalvage`, `lrsalvage.fish`,
       `_lrsalvage.ps1` and `lrsalvage.1`, generated from the binary's own `clap`
@@ -594,10 +594,10 @@ upload.
 - [x] `CHANGELOG.md`'s `## [0.4.0]` section is the release body, verbatim: the
       published body's first and last lines are that section's, and the heading
       after it did not travel into the release.
-- [ ] The tag is `v0.4.0`, annotated, on the merge commit of the close-out pull
+- [x] The tag is `v0.4.0`, annotated, on the merge commit of the close-out pull
       request — the tree published from, which carries the bump, the changelog and
       the upload list by construction rather than by a later check.
-- [ ] The release publishes exactly the assets the Artifact box enumerates, and
+- [x] The release publishes exactly the assets the Artifact box enumerates, and
       **nothing generated from `scan`** — a report describes a cache, not a
       release.
 
@@ -607,9 +607,18 @@ lrsalvage-core` reaching `warning: aborting upload due to dry run`, and the body
 taken from the extractor `release.yml` itself runs — 118 non-blank lines opening
 `## [0.4.0]` and stopping before `## [0.3.0]`, with **four** headings rather than
 the three this page predicted: `Added`, `Changed`, `Packaging` and `Build`, the
-last being the `wasm32` seam work that landed this release. The two boxes still
-open here — the tag and its asset list — are a maintainer's acts, each on its own
-go-ahead.
+last being the `wasm32` seam work that landed this release.
+
+*Then, 2026-11-20:* the tag went on **`b5164c7` itself** — the measured commit,
+not a later one — after a rehearsal tag proved the chain and skipped the publish
+job (0.3.0 was still the index's latest afterwards). The real run attached nine
+assets: the three archives, `SHA256SUMS`, and the five generated files, with
+nothing generated from `scan`, and all three archives verify against `SHA256SUMS`.
+
+The tag is the commit the measurements name rather than the one that records
+them, which is why this page's ticks are not in the tagged tree: 0.3 tagged its
+close-out squash the same way, and a page that names its commit is worth more
+than a commit that contains its own evidence.
 
 ## After the tag (irreversible)
 
@@ -619,7 +628,7 @@ trusted publisher existed, then both uploads through the workflow. Nothing about
 this release changes that machinery, so the stop rules below are 0.3's, adapted to
 what is now known.
 
-- [ ] `lrsalvage-core` then `lrsalvage-cli` 0.4.0, from a clean checkout of
+- [x] `lrsalvage-core` then `lrsalvage-cli` 0.4.0, from a clean checkout of
       `v0.4.0` rather than a working tree, published by the trusted-publisher job
       in `release.yml`, with no token in the repository. The order is not a
       preference: the cli resolves `lrsalvage-core 0.4.0` through the index.
@@ -636,28 +645,28 @@ what is now known.
       artifact box above is the one that would have caught it, and `0.4.0` cannot
       be re-uploaded: yank it, fix it, and release `0.4.1` with its own tag and
       body.
-- [ ] `cargo install lrsalvage-cli --version 0.4.0` works with no checkout in
+- [x] `cargo install lrsalvage-cli --version 0.4.0` works with no checkout in
       scope: the build comes from the registry, `lrsalvage --version` prints
       `lrsalvage 0.4.0`, and the install root's `.crates.toml` records the
       registry source. Use `--root` so nothing is installed over the user's own
       binary.
-- [ ] `cargo binstall lrsalvage-cli` is tried once against the tag, and its stop
+- [x] `cargo binstall lrsalvage-cli` is tried once against the tag, and its stop
       rule is the README's: if it does not fetch the prebuilt, the paragraph says
       so rather than keeping an expectation. It is re-run this release because the
       asset list grew — by the five files the Artifact box names — which is exactly
       the shape that could disturb the template match, and because 0.3.0's run
       proved the bare form, not this asset set.
-- [ ] The post-publish docs pull request: the README's install, archive and
+- [x] The post-publish docs pull request: the README's install, archive and
       version sentences name 0.4.0 and only what was proved of each route, its
       version paragraph points at this checklist rather than the 0.3 one — the
       sentence 0.3.0 needed a post-publish pull request for — and
       `docs/versions.md`'s *verified at* line, current-release sentence and
       support example follow the publish. Nothing here says a route exists that
       was not run, and the macOS pair stays unproved with #93 still open.
-- [ ] `rust-version` and `rust-toolchain.toml` re-checked against the dependency
+- [x] `rust-version` and `rust-toolchain.toml` re-checked against the dependency
       tree the two majors leave behind, so the next release does not inherit a
       stale claim.
-- [ ] The tracker's closing bookkeeping: #64 and #62 closed with the release link,
+- [x] The tracker's closing bookkeeping: #64 and #62 closed with the release link,
       and #125 closed with it — **not** before. #88, #123 and #67 closed when they
       landed, and #4 and #5 close on their own merges. Everything this release
       does not carry stays open **and is named when the tracker closes**, rather
@@ -667,6 +676,23 @@ what is now known.
       closed as completed on 2026-11-20, and
       [#141](https://github.com/marcd35/lrsalvage/issues/141) — the audience test
       — took over as the app line's deciding ticket.
+      *Closed 2026-11-20, after the release:* #64 and #62 carried the release link
+      and closed as completed, #125 closed with it once the tag was out, and the
+      five that stay open were named on the tracker rather than left to its
+      absence — #93, #65, #68, #117 and #141.
+
+*Then, 2026-11-20, after the tag:* `publish` completed green — `lrsalvage-core`
+then `lrsalvage-cli`, each skipped if the index already carried it — and both are
+`0.4.0` on crates.io. The install was proved where no checkout was in scope: the
+binary built from the registry, answered `lrsalvage 0.4.0`, and `.crates.toml`
+recorded `registry+https://github.com/rust-lang/crates.io-index`. `cargo binstall
+lrsalvage-cli@0.4.0` downloaded the prebuilt archive from the release in under
+three seconds rather than falling back to `cargo install`, so the nine-asset list
+still matches `binstalk`'s template and the stop rule has nothing to report. The
+`msrv` gate was green on this tree, so `rust-version` needed no second number.
+
+The closing bookkeeping below stays open until the tracker closes: it is the one
+box whose evidence is the three issues closed *after* this page is written.
 
 ## The two Dependabot majors
 
