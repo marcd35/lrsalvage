@@ -269,7 +269,7 @@ reader closing the tracker can check coverage without re-deriving it:
         slice's retrospective turned two of its findings into assertions on the
         same gate and one into [#152](https://github.com/marcd35/lrsalvage/pull/152)'s
         `shell` check.
-- [ ] **6 — the bump.** `0.4.0` in the workspace manifest and in both
+- [x] **6 — the bump.** `0.4.0` in the workspace manifest and in both
       `lrsalvage-core` pins (`lrsalvage-cli`, `lrsalvage-fixtures`, whose
       requirement must match or the workspace will not resolve), `Cargo.lock`
       re-read; `CHANGELOG.md`'s `[Unreleased]` becomes `## [0.4.0]` with a fresh
@@ -296,30 +296,45 @@ reader closing the tracker can check coverage without re-deriving it:
       until that commit is on `main`**, because that is the evidence slice 4's and
       slice 5's `Verified` lines name.
 
+*Measured 2026-11-20 on `b5164c7`:* slice 6 landed as #155 — `0.4.0` in the
+workspace manifest and in both `lrsalvage-core` pins, `Cargo.lock` re-read,
+`## [0.4.0]` above a fresh `## [Unreleased]`, and the five generated artifacts
+regenerated, so the man page carries `0.4.0` in its `.TH` line and in its
+`VERSION` section. The one `0.3.0` left under `crates/` is the 2026-11-17
+measurement comment in core's manifest, which is history and keeps its number.
+
 ### Evidence — what the release may claim
 
-- [ ] All four families are green on the commit the tag will land on: `sh
+- [x] All four families are green on the commit the tag will land on: `sh
       scripts/check.sh real`, `real-render`, `real-1to1` and `real-discard`. Each
       fails rather than skipping when its own pair is unset, and none is borrowed
       from another. The gates are named in `scripts/check.sh`'s header, which is
       the one inventory of them.
-- [ ] **`real-1to1` is green on that commit, not merely on the tree #132
+- [x] **`real-1to1` is green on that commit, not merely on the tree #132
       measured.** §5.12 is a *verified* section whose numbers are asserted by that
       gate — `crates/lrsalvage-cli/tests/one_to_one.rs`,
       `a_cap_chooses_the_largest_level_at_or_below_it` — so the box re-runs the
       gate rather than re-reading the section. This release adds no byte-level
       claim of its own: §5.12 is the section 0.4.0's work added, and it changed on
       2026-11-18 with the evidence that produced it.
-- [ ] No byte-level claim is restated in the release body. The body is the
+- [x] No byte-level claim is restated in the release body. The body is the
       changelog section, and the sections it could quote stay in
       [format-notes](format-notes.md) — the rule 0.3's page states and this
       release keeps, because a number in two places drifts and the drift is
       invisible until someone trusts the stale copy.
-- [ ] Nothing the tag publishes carries a catalog path or `scan --json` output: the
+- [x] Nothing the tag publishes carries a catalog path or `scan --json` output: the
       body is the changelog section, the assets are archives, `SHA256SUMS`, four
       completion scripts and one man page, and no report file is attached. The
       verification report's path-freedom is why a run's shape can be quoted at
       all; a real path cannot.
+
+*Measured 2026-11-20 on `b5164c7`, a clean tree — every run printed
+`plus 0 changed`:* the four families are green on their own pairs (`real` 1
+passed, `real-render` 1, `real-1to1` 2, `real-discard` 1), with `real-1to1`
+re-run rather than borrowed from the tree #132 measured. The extracted body
+carries no path-like string and quotes none of §5.12's steps: its cap entry
+points at `format-notes` §5.7 and leaves `1,920` / `1,024` / `4,096` where they
+already live — the README's flag row and the notes.
 
 ### Artifact — what a stranger can download
 
@@ -327,30 +342,30 @@ The three boxes of #123's *Done when*, in the order an auditor meets them. They
 are three because 0.3.0 measured them failing differently, and one of them no gate
 holds.
 
-- [ ] **The gate.** `sh scripts/check.sh package` packs both crates, unpacks each
+- [x] **The gate.** `sh scripts/check.sh package` packs both crates, unpacks each
       tarball outside the checkout, builds it with `--all-targets` and runs its
       suite there. It is the property's gate, and it is green on the tag commit.
       This box is provable on any tree and proves the tree's own version; it is
       not the same claim as the artifact box below.
-- [ ] **The named artifact.** `lrsalvage-core-0.4.0.crate`, unpacked into a
+- [x] **The named artifact.** `lrsalvage-core-0.4.0.crate`, unpacked into a
       temporary directory with no checkout of this repository in reach, answers
       `cargo build --all-targets` and `cargo test` green — both recorded with the
       commit they ran on, in the appendix
       [*Checking the 0.4.0 tarball by hand*](#checking-the-040-tarball-by-hand).
       This is the act 0.3.0 could not perform and the one the tracker's done-item
       5 names.
-- [ ] **The surface.** No crate page and no manifest says any longer that a
+- [x] **The surface.** No crate page and no manifest says any longer that a
       published tarball cannot test itself. *Measured 2026-11-18:* the sentence
       that used to stand — the *Known limitation* entry ADR 0012 D5 leaned on —
       is gone from `CHANGELOG.md`, and
       `crates/lrsalvage-core/Cargo.toml`'s packaging comment now records the
       measurement and points at the gate that holds it. The box re-reads both at
       the tag, because this is the clause a green gate cannot hold.
-- [ ] `cargo package --list -p lrsalvage-core` and `-p lrsalvage-cli` list each
+- [x] `cargo package --list -p lrsalvage-core` and `-p lrsalvage-cli` list each
       crate's `README.md` and no test file that imports the fixtures crate — the
       `package` gate asserts both of those, so this box's evidence is that gate's
       run rather than a list reprinted here.
-- [ ] The cli's tarball is verified against the **core tarball the same run
+- [x] The cli's tarball is verified against the **core tarball the same run
       built**, not against whatever the index carries. The `package` gate does
       this with a `--config patch`, and the reason is the script's own: a version
       that is not yet on the index would otherwise be verified as the previous
@@ -371,38 +386,47 @@ holds.
       file whose shape changed with a new kind of asset is a different promise, so
       the five are attached beside it, not inside it.
 
+*Measured 2026-11-20, packed from `b5164c7`:* the tarball was copied to a
+directory outside every checkout and unpacked there, where `cargo build
+--all-targets` finished and `cargo test` ran four suites — 203 + 2 + 5 passed, 1
+ignored, none failed. `cargo package --list` lists each crate's `README.md`, and
+core's two packed test files import no fixture crate, because the
+fixture-dependent tests sit in the manifest's `exclude`. `Known limitation` is
+gone from `CHANGELOG.md`, and core's manifest comment records the 2026-11-17
+measurement and points at the gate that holds it.
+
 ### Gates — the ones a script can run
 
-- [ ] `sh scripts/check.sh` green on the tag commit: every gate the file names, in
+- [x] `sh scripts/check.sh` green on the tag commit: every gate the file names, in
       the order it names them, with a missing tool failing rather than skipping.
       The run's last line is the evidence, and it prints the tree it measured —
       that is what makes two runs over two trees distinguishable afterwards.
-- [ ] `sh scripts/check.sh msrv` green on the `rust-version` the manifest
+- [x] `sh scripts/check.sh msrv` green on the `rust-version` the manifest
       publishes, after the two majors land: `sha2 0.11` raises its own floor and
       `base64 0.23` moves its own, and a dependency that raises the published
       floor is a decision rather than a pin. The gate reads the number out of
       `cargo metadata` and builds on it, so the contribution is re-proving it, not
       restating it.
-- [ ] `sh scripts/check.sh package` green — it is the gate #123 changed and the
+- [x] `sh scripts/check.sh package` green — it is the gate #123 changed and the
       gate two of the artifact boxes lean on, and its two builds are why it is
       named while iterating and carried at hand-off.
-- [ ] The `completions` gate green, and its red arm proved once (slice 5). It is
+- [x] The `completions` gate green, and its red arm proved once (slice 5). It is
       the one gate this release adds, against #125's sentence that none would; the
       reconciliation is recorded in the first list on this page and in the tracker
       comment drafted below, so the contradiction is stated rather than quietly
       resolved.
-- [ ] `spec_validate` reports no issues across `specs/` — no dangling link,
+- [x] `spec_validate` reports no issues across `specs/` — no dangling link,
       duplicate id or parent cycle, including the rows and module specs this
       release edits. **It is the gate no script can run**: it is an in-app tool,
       so neither `scripts/check.sh` nor CI calls it, and the slice that re-links a
       spec ends by asking it rather than assuming `tests/spec_graph.rs` answered.
-- [ ] `cargo test -p lrsalvage-core --test spec_graph` and `cargo test -p
+- [x] `cargo test -p lrsalvage-core --test spec_graph` and `cargo test -p
       lrsalvage-cli --test readme` green after the documentation edits: a module's
       `depends-on` matches what it reaches, and the README's flag and `--json`
       tables match the binary. These are the two tests that hold a docs pull
       request to the code, and `readme.rs` is the reason the README's tables are
       not hand-kept twice.
-- [ ] `typos` and `cargo deny` green with their policy files unchanged: a new
+- [x] `typos` and `cargo deny` green with their policy files unchanged: a new
       domain word goes into `typos.toml` and never into a blanket exclusion, and a
       dependency that trips `deny.toml`'s allow-list is a decision rather than a
       config edit. `base64 0.23` turns on a default SIMD feature it did not have
@@ -414,31 +438,45 @@ holds.
       [#154](https://github.com/marcd35/lrsalvage/pull/154), which is where
       slice 1's box points.
 
+*Measured 2026-11-20 on `b5164c7`:* `all gates green: fmt shell clippy test doc
+wasm build completions package typos deny msrv (tree b5164c7 plus 0 changed)`.
+`spec_validate` reports no issues across `specs/` — the gate neither a script nor
+a CI job can call — and the three named tests are green on the same tree:
+`spec_graph` 7 passed, `readme` 3 passed, `links` 1 passed.
+
 ### Frozen surface — what 0.3 promised, still promised
 
-- [ ] ADR 0010's eight surfaces reviewed against the release's whole diff: nothing
+- [x] ADR 0010's eight surfaces reviewed against the release's whole diff: nothing
       removed, renamed or given a different meaning, and the additions are exactly
       the four the introduction names, each of them in ADR 0010's dated *added by
       0.4.0* block. The review names what it searched — the `#[arg]` sites for
       flags, the exit-code constants and their mapping, and the frozen `stats`
       list in `specs/modules/report.md` — because "nothing else moved" is a claim
       about a search.
-- [ ] The frozen `stats` list's growth is the decision ADR 0013 records, not a
+- [x] The frozen `stats` list's growth is the decision ADR 0013 records, not a
       field that appeared, and ADR 0012 D6 is the one home for how many names it
       holds before and after: this page points at it rather than counting.
       *Corrected 2026-11-20:* this named ADR 0013 as the home for the count. 0013
       records the decision and carries no number — the number is in D6, which is
       where ADR 0010's block points.
-- [ ] A destination a 0.3.0 run wrote is still recognised and skipped byte for
+- [x] A destination a 0.3.0 run wrote is still recognised and skipped byte for
       byte, because the marker comparison stops at the prefix. Held by
       `extract`'s `a_preexisting_verified_file_is_skipped_and_its_bytes_untouched`,
       green on the tag commit, and the release's own marker moves only the version
       inside it.
-- [ ] The README's exit-code row for `4` and its flag rows are accurate, and
+- [x] The README's exit-code row for `4` and its flag rows are accurate, and
       `readme.rs` holds the parts a test can hold. The row's prose is review-held
       — that gap is stated in the README's compatibility contract and is not
       newly created here.
 
+
+*Reviewed 2026-11-20 over `v0.3.0..b5164c7`, 112 files:* by named search rather
+than by reading the diff. The six exit constants are identical at both tags, and
+`crates/lrsalvage-cli/src/exit.rs` is a moved path rather than a new surface. No
+status word, `--json` row, report key, CSV header or naming rule moved except
+the two additions, and exactly one flag row was added with none removed — the
+row `readme.rs` holds to the binary. `stats` holds the eighteen names ADR 0013
+says it holds, the eighteenth being `above_cap`.
 
 ### Docs — the record
 
@@ -525,11 +563,21 @@ true then. This is a sweep of what a reader takes as the present, not a rename.
       the sweep found the reader that paragraph describes: D5's first paragraph
       pointed at the heading in the present tense, so it carries its dated
       amendment.
-- [ ] Each slice corrects its own ticket's stale sentence in the pull request that
+- [x] Each slice corrects its own ticket's stale sentence in the pull request that
       implements it, from the drafts in
       [*Text held for approval*](#text-held-for-approval) — #64's and #62's
       horizon lines, and #125's no-new-gate sentence where the `completions` gate
       lands.
+
+*Measured 2026-11-20:* the three horizon corrections are posted — #64's, #62's,
+and #125's no-new-gate sentence. Of the six sentences that name the 0.3
+checklist, the three that were present tense now name this release (the README's
+frozen-surface sentence, its tag-commit sentence, and `release.yml`'s comment),
+and the three that describe 0.3.0's own runs stay. `docs/versions.md`'s two
+capability rows became proved rows in the bump slice, ADR 0010 carries its dated
+*Added by 0.4.0* block, and the three module specs record their surfaces. Its
+*verified at* line and its current-release sentence move after the publish, not
+before it.
 
 ## Making the tag
 
@@ -538,12 +586,12 @@ the agent prepares the command, runs every gate it can run first, and verifies t
 outcome afterwards. One approval for "the release" is not one for an irreversible
 upload.
 
-- [ ] The tree the tag lands on is measured, not inherited: `sh scripts/check.sh`
+- [x] The tree the tag lands on is measured, not inherited: `sh scripts/check.sh`
       green on that commit after it is merged and before a tag exists, all four
       evidence families green on it, `cargo publish --dry-run -p lrsalvage-core`
       packaging and stopping at its dry-run line, and the release body read from
       the extractor `release.yml` itself runs rather than by eye.
-- [ ] `CHANGELOG.md`'s `## [0.4.0]` section is the release body, verbatim: the
+- [x] `CHANGELOG.md`'s `## [0.4.0]` section is the release body, verbatim: the
       published body's first and last lines are that section's, and the heading
       after it did not travel into the release.
 - [ ] The tag is `v0.4.0`, annotated, on the merge commit of the close-out pull
@@ -552,6 +600,16 @@ upload.
 - [ ] The release publishes exactly the assets the Artifact box enumerates, and
       **nothing generated from `scan`** — a report describes a cache, not a
       release.
+
+*Measured 2026-11-20 on `b5164c7`, for the two boxes above that are ticked:*
+every gate green, the four families green, `cargo publish --dry-run -p
+lrsalvage-core` reaching `warning: aborting upload due to dry run`, and the body
+taken from the extractor `release.yml` itself runs — 118 non-blank lines opening
+`## [0.4.0]` and stopping before `## [0.3.0]`, with **four** headings rather than
+the three this page predicted: `Added`, `Changed`, `Packaging` and `Build`, the
+last being the `wasm32` seam work that landed this release. The two boxes still
+open here — the tag and its asset list — are a maintainer's acts, each on its own
+go-ahead.
 
 ## After the tag (irreversible)
 
