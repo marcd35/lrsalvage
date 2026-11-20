@@ -219,7 +219,7 @@ reader closing the tracker can check coverage without re-deriving it:
         the same slice: the number is what is left to write, and the refusal
         reuses `error::Error::Destination` rather than a new variant. The slice's
         own pull request is #145.
-- [ ] **5 — #62, the completions and the man page.**
+- [x] **5 — #62, landed.**
       - **Four completion scripts and one man page, generated from the clap
         definition** — `bash`, `zsh`, `fish` and `powershell` — and no hidden
         subcommand, so ADR 0010's flag-and-command surface does not grow. The
@@ -246,15 +246,16 @@ reader closing the tracker can check coverage without re-deriving it:
       - **The README's Checks section names the new artifacts in one line**, which
         is #62's own done-when, and the ticket's horizon is corrected in the same
         pull request.
-      - *Measured 2026-11-19, in the slice's pull request:* the five bullets above
-        that a tree can carry are in
-        [#148](https://github.com/marcd35/lrsalvage/pull/148)'s tree, and the red
-        arm is proved twice there — a renamed flag, and a file dropped into the
-        committed directory, each failing `completions` in a scratch clone. The box
-        stays unticked: the `Verified` lines on slices 2–4 record a commit on
-        `main`, and this slice has none until it merges. The horizon correction is
-        drafted in [*Text held for approval*](#text-held-for-approval) and is
-        posted on approval, not before.
+      - *Verified 2026-11-19:* `294414b` is on `main` — the squash of [#148](https://github.com/marcd35/lrsalvage/pull/148),
+        whose head `e870d46` carried the whole gate list green and all four
+        evidence families green on that same tree. `spec_validate` is clean. The
+        `completions` gate's red arm was proved four times: a renamed flag, a file
+        dropped into the committed directory, a renamed `release.yml` path, and a
+        removed `-text` rule. The horizon correction was posted on #62 on
+        2026-11-19, from [*Text held for approval*](#text-held-for-approval). The
+        slice's retrospective turned two of its findings into assertions on the
+        same gate and one into [#152](https://github.com/marcd35/lrsalvage/pull/152)'s
+        `shell` check.
 - [ ] **6 — the bump.** `0.4.0` in the workspace manifest and in both
       `lrsalvage-core` pins (`lrsalvage-cli`, `lrsalvage-fixtures`, whose
       requirement must match or the workspace will not resolve), `Cargo.lock`
@@ -593,8 +594,9 @@ replacement for a green on a stale base:
 
 ### Text held for approval
 
-Nothing in this section has been posted, and nothing is posted without the
-maintainer's explicit approval of that exact action.
+Each item below is posted only on the maintainer's explicit approval of that
+exact action. The two marked **Posted** are on the tracker and keep the text that
+was approved, so a reader can compare the two.
 
 **On #5 and #4, if the re-run is green — the merge comment.** One comment, on each
 PR, at the moment it is merged:
@@ -619,17 +621,19 @@ a rebase can reveal what a stale base hid:
 > `docs/release-0.4.md`.
 
 **On #64 and #62 — the horizon correction.** One comment each, posted when the
-slice's own pull request lands, so the ticket and the tree agree:
+slice's own pull request lands, so the ticket and the tree agree. #64's is on the
+tracker. #62's is **Posted 2026-11-19**, verbatim:
 
-> **Corrected 2026-11-18:** this says "Horizon: 0.3" and the milestone reads
+> **Corrected 2026-11-19:** this says "Horizon: 0.3" and the milestone reads
 > `0.4.0`. ADR 0011's Consequences pre-committed it to this release and
 > [ADR 0012](https://github.com/marcd35/lrsalvage/blob/main/docs/adr/0012-two-release-lines.md)
 > D4 kept it there; `docs/release-0.4.md` carries its acceptance criteria. Nothing
 > in its recorded decisions changes.
 
-**On #125 — the gate sentence.** One comment, posted when #62's gate lands:
+**On #125 — the gate sentence.** One comment, posted when #62's gate lands.
+**Posted 2026-11-19**, verbatim:
 
-> **Corrected 2026-11-18:** this issue says "no new gate enters, except #123's
+> **Corrected 2026-11-19:** this issue says "no new gate enters, except #123's
 > change to `package`". #62's recorded decision 2 requires the generated artifacts
 > to be compared against the committed ones, which is a gate; `completions`
 > therefore enters `scripts/check.sh` with that slice.
