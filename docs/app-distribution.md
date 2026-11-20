@@ -103,8 +103,9 @@ Read 2026-11-18.
 
 ## 4. The browser route's hard constraints
 
-Read 2026-11-18. These are the facts #126's spike measures against, and — since
-[ADR 0012](adr/0012-two-release-lines.md) resolved D10 to the browser for `0.1.0` —
+Read 2026-11-18. These are the facts #126's spike measured against — it closed as
+completed on 2026-11-20 — and, since
+[ADR 0012](adr/0012-two-release-lines.md) resolved D10 to the browser for `0.1.0`,
 the constraints the first release is designed inside rather than weighed against.
 [browser-spike](browser-spike.md) has the numbers.
 

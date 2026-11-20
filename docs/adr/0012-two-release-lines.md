@@ -316,6 +316,16 @@ that distinction is the footing everything below rests on. The numbers, the
 platform's remaining costs and what was not exercised are in
 [browser-spike](../browser-spike.md); the decision and its follow-ups are on #126.
 
+**Corrected 2026-11-20:** that pointer lands on a closed issue — #126 closed as
+completed that day, its done-when met and the verdict Go on the footing above.
+The follow-up that decides the artifact is [#141](https://github.com/marcd35/lrsalvage/issues/141),
+the audience test, which pre-registers its 4-of-5 threshold before its first
+session; the write row's replacement criterion is still **owed**, and
+[browser-spike](../browser-spike.md) §6 is where what was not exercised is
+listed. The sentence above is left as written: this record states what was
+decided when, and a pointer that has moved is corrected beside it rather than
+deleted out of it.
+
 **Resolved by the project owner on 2026-11-18, on a gate that is four rows green and
 one row red as written.** The browser is the `0.1.0` artifact and the executable is
 deferred. The latency threshold is replaced, in writing and with its reason, by the
