@@ -72,10 +72,10 @@ one says it once, in advance, instead.
    [*Text held for approval*](#text-held-for-approval) and posted only on
    approval.
 
-5. **The two open Dependabot majors are this slice's, and both are merged into
+5. **The two Dependabot majors are this slice's, and both are merged into
    0.4.0's tree.** The tracker hands their disposition to slice 1: decide them, or
    close them with a reason written on the PR. Both merge, before the bump, on
-   evidence re-run against today's tree — the green on each PR now was produced
+   evidence re-run against today's tree — the green on each PR was produced
    against a base that predates this release. See
    [*The two Dependabot majors*](#the-two-dependabot-majors).
 
@@ -137,17 +137,19 @@ reader closing the tracker can check coverage without re-deriving it:
       else enters this slice: the checklist's own merge is the release's first
       act, and a major that merged after the bump would be a dependency the
       tagged tree's evidence never met. *Verified 2026-11-20:* #5 merged as
-      `1249c24` and #4 as `21abb46`, each from a re-run cut from current `main`
-      — `e1e065f` and then `1249c24` — whose heads, `2bcc0d2` and `51789a0`, each
-      carried the whole gate list green, the run's last line naming the tree it
-      measured, and a green CI run on that same head. `msrv` was green on
-      `rust-version = 1.89`, above the floors the two publish — `sha2 0.11.1`'s
-      1.88 and `base64 0.23.1`'s 1.71.0 — and `package` was green on both.
-      `deny.toml` did not change: `deny` was green with the crates `sha2 0.11.1`
-      brings (`hybrid-array 0.4.15` and `const-oid 0.10.3`, both `MIT OR
-      Apache-2.0`) in the tree, and `base64 0.23.1`'s default `simd-unsafe`
-      gates that crate's own SIMD kernels and pulls no dependency, so its
-      licence and advisory picture is 0.22.1's.
+      `1249c24` from head `2bcc0d2`, cut from `main` at `e1e065f`; #4 merged as
+      `21abb46` from head `51789a0`, cut from `1249c24`. Each head carried the
+      whole gate list green — its last line naming the tree it measured, `(tree
+      2bcc0d2 plus 0 changed)` and `(tree 51789a0 plus 0 changed)` — and a green
+      CI run on that same head. `msrv` was green on `rust-version = 1.89`, which
+      covers both floors [*The two Dependabot majors*](#the-two-dependabot-majors)
+      records, and `package` was green on both. `deny.toml` did not change:
+      `deny` ended `advisories ok, bans ok, licenses ok, sources ok` with the
+      crates `sha2 0.11.1` brings in the tree, and `base64 0.23.1`'s
+      `simd-unsafe` feature is empty in that version. The licences that question
+      turns on are recorded in
+      [#154](https://github.com/marcd35/lrsalvage/pull/154), the slice's record
+      pull request, rather than reprinted here.
 - [x] **2 — #88, landed.** The flag `--max-long-edge` on `scan` and `extract`,
       `above_cap` on the summary, `scan --json` and the report's `stats`,
       `options.max_long_edge` in the echo, and `docs/adr/0013` renumbered with its
