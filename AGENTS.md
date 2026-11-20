@@ -96,6 +96,10 @@ is not a gate for the same reason.
   the Rust gates through the same file, so a gate cannot be documented weaker
   here than it is enforced. A missing tool fails rather than skipping: green must
   mean CI's green.
+- **A full run's log is the gate list, not the compiler's.** `sh scripts/check.sh >
+  target/gates.log 2>&1; echo "exit $?"; grep -E '^(==|gate failed|all gates
+  green)' target/gates.log` — a raw tail is thousands of `Compiling` lines, and
+  the file is still there to grep when a gate fails.
 - **`scripts/probe-cache.sh <cache.lrdata>` measures a cache, and is not a gate.**
   It walks every level file by its declared segment lengths and lines the walk up
   against `previews.db` — the series, the segments each file carries, and where a
@@ -118,11 +122,13 @@ is not a gate for the same reason.
   bump, and never pin the dependency back to keep a lower number.
 - **Name the branch before the first commit** — `<type>/<issue>-<slug>`, renaming
   the harness's `workspace-<n>` with `git branch -m`; a linked worktree you name
-  yourself takes the branch with `/` replaced by `-`. The shape itself, and the
-  seven lanes this repo's own branches and commit subjects already used, are
-  `.github/branch-policy.json`, read by a guard outside this repo that an agent
-  only meets at PR time — where `Closes #<issue>` closes the ticket the name
-  carries, and `Refs #<issue>` answers a tracker's slice without closing it.
+  yourself takes the branch with `/` replaced by `-`. `<type>` is one of `feat`,
+  `fix`, `test`, `docs`, `chore`, `spike`, `grill` — a Dependabot bump is
+  `chore/125-…`, never `deps/…` — and `<issue>` is the ticket the branch closes or
+  the tracker whose slice it answers. `.github/branch-policy.json` holds that
+  pattern and the guard outside this repo enforces it at PR time — where
+  `Closes #<issue>` closes the ticket the name carries, and `Refs #<issue>`
+  answers a tracker's slice without closing it.
 - **`.githooks/pre-commit` runs the cheap gates on every commit** — `fmt`,
   `shell` and `typos` through `scripts/check.sh`, which is the only place they
   are written. A fresh clone installs it with
@@ -206,3 +212,9 @@ kept a false ICC claim after the render disproved it.
   owns and where its boundary runs.
 - `CONTEXT.md` — glossary. Keep it free of implementation detail.
 - `README.md` — the user-facing truth about what a preview is worth.
+
+A prior spike harness lives beside the repo, not in it: `~/lrsalvage-spike-<issue>/`
+holds `harness/src` (the modules against the target), `web/` (a worker and a page
+that already run them), `tools/cdp.mjs` (a DevTools-Protocol driver, no
+dependencies) and `results/` (its measurements). Read one before re-deriving what
+it measured.

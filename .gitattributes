@@ -8,3 +8,12 @@
 # that has nothing to do with the binary. `-text` keeps the bytes exactly as
 # `crates/lrsalvage-cli/examples/artifacts.rs` writes them.
 crates/lrsalvage-cli/artifacts/** -text
+
+# `Cargo.lock` is written by `cargo` with `\n` on every platform, and
+# `scripts/check.sh package` rewrites it. A checkout that smudged it to CRLF (a
+# Windows default, `core.autocrlf=true`) left the two sizes disagreeing, so `git
+# status` called the file modified for the rest of the session over bytes that
+# `git diff` reports as identical — and `git update-index --refresh` cannot clear
+# it, because it reports a size-mismatched entry as needing update rather than
+# hashing it. `-text` makes the checkout carry the bytes cargo writes.
+Cargo.lock -text
