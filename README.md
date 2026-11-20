@@ -673,7 +673,7 @@ keeps the files an earlier one wrote instead of reporting a whole library as
 somebody else's.
 
 A review-held row is a gap stated rather than hidden: those are the promises the
-frozen-surface review in [the 0.3 checklist](docs/release-0.3.md) reads by hand,
+frozen-surface review in [the 0.4 checklist](docs/release-0.4.md) reads by hand,
 because no test can. Where a row says gate, the test it names is the authority and
 this page is the summary.
 
@@ -782,7 +782,7 @@ instead: `lrsalvage-cli`'s `tests/readme.rs` checks the flag list and the
 the archive set and `SHA256SUMS`, the generated completion scripts and man page
 attached beside them, and the changelog-derived release body are described. The
 commit a tag is cut on is chosen by
-[the 0.3 checklist](docs/release-0.3.md), not by the tag itself.
+[the 0.4 checklist](docs/release-0.4.md), not by the tag itself.
 
 What that release deliberately does not do. Each is a decision with a cost, and
 the cost is why it stays out:

@@ -9,6 +9,6 @@ description = "Synthetic Lightroom vaults for lrsalvage's tests"
 publish = false
 
 [dependencies]
-lrsalvage-core = { path = "../lrsalvage-core", version = "0.3.0" }
+lrsalvage-core = { path = "../lrsalvage-core", version = "0.4.0" }
 rusqlite.workspace = true
 tempfile.workspace = true

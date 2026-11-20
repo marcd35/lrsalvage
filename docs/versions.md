@@ -94,7 +94,7 @@ the artifact is the page — and not a claim about a released artifact.*
 | Choose where the JPEGs go | yes, with the destination safety rules in [Safety](../README.md#safety) | intended, through a folder picker |
 | Choose a folder layout | the catalog's tree only | the tree, or one flat folder, previewed before writing |
 | Take previews under the 640 px floor | [`--min-long-edge`](../README.md#quick-start) | intended, as an explicit small-preview group |
-| Cap the level that gets written | `0.4.0` | not planned |
+| Cap the level that gets written | yes, [`--max-long-edge`](../README.md#quick-start) | not planned |
 | See a preview before deciding to keep it | no — no pixels are ever decoded | intended: thumbnails and an enlarged view |
 | Save one preview on its own | no — a run writes its plan | intended, from the enlarged view |
 | Predict what would be written, writing nothing | [`--dry-run`](../README.md#quick-start) | intended, as a final-paths preview |
@@ -107,7 +107,7 @@ the artifact is the page — and not a claim about a released artifact.*
 | Export AI masks | `lrsalvage masks` | not planned |
 | Search, filter and sort results | no — `manifest.json` carries every fact a script needs to filter | intended |
 | Group results by original folder | no | intended, collapsible |
-| Reserve a destination with not enough free space | `0.4.0` refuses the run | intended, and it depends on that slice |
+| Reserve a destination with not enough free space | no — the run refuses with exit `4` before it writes anything, naming the shortfall ([exit codes](../README.md#exit-codes)) | intended, and it depends on that slice |
 | Keyboard-only operation | yes — it is a terminal | target, and it is verified |
 | Screen-reader usable | whatever the terminal provides | target: [WCAG 2.2 AA](adr/0012-two-release-lines.md) |
 | Scriptable, usable in CI | yes | no |

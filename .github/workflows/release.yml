@@ -27,7 +27,7 @@ jobs:
   # Nothing here runs a gate and nothing here restates one: the gate list is
   # `scripts/check.sh` and `ci.yml` is what runs it. So this job trusts the tag to
   # be cut on a commit that reached `main` through that workflow — the checklist in
-  # `docs/release-0.3.md` is where the tag's commit is chosen — and a tag on a
+  # `docs/release-0.4.md` is where the tag's commit is chosen — and a tag on a
   # commit that never did is not caught here.
   build:
     name: ${{ matrix.target }}

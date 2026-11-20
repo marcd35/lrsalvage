@@ -57,9 +57,15 @@ fn the_native_baseline_is_what_the_driver_reports() {
         report["source_sha256"], report["snapshot_sha256"],
         "the verified acquisition hashes both halves, and they agree"
     );
+    // The digest is over the bytes a run writes, and those carry our EXIF
+    // segment's `Software` marker — `lrsalvage <version>`, from
+    // `env!("CARGO_PKG_VERSION")`. So a workspace version bump moves this
+    // literal by design, and updating it is part of the bump rather than a
+    // regression to be investigated: what the literal detects is a change to the
+    // driver or the pipeline, and a version is neither.
     assert_eq!(
         report["outputs_sha256"],
-        "862b856e861428589dab318ba311971374c4659353c5199eb5bdee3fb28863ff",
+        "b44eb74e742ff5bf92bb9bb186f7ed3bcb5bfb939743440a1f89b8e9a41ae15b",
         "the JPEG bytes, as one digest over the paths and their own"
     );
 }

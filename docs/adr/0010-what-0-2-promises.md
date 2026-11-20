@@ -118,6 +118,30 @@ rather than defaulting, so a new variant does not compile until the mapping give
 it one. Moving an existing variant to a different code, and the rows' prose,
 remain a reviewer's job.
 
+### Added by 0.4.0 — 2026-11-20
+
+`0.4.0` is additive under the rule below, and it adds exactly this:
+
+- **The flag `--max-long-edge`**, on `scan` and `extract`: write the largest level
+  at or below this long edge instead of the largest level present, `0` meaning no
+  cap (#88; `adr-0013-a-cap-demotes-the-level` records the choice).
+- **The stat `above_cap`** — the levels the cap passed over — in the terminal
+  summary, `scan --json` and the verification report's `stats`
+  (`adr-0012-two-release-lines` D6 is the one home for how many names the frozen
+  set holds before and after; `report`'s spec holds the list).
+- **`options.max_long_edge`** in the verification report's echo of the options
+  that produced it.
+- **A widened trigger for exit `4`**, not a sixth code: a destination without the
+  free space this run would still write is refused before the first file is
+  written, naming the shortfall, and `--dry-run` returns the same verdict while
+  writing nothing (#64).
+
+No existing surface changes meaning: `0`–`5` read exactly as they did — `4` keeps
+its "the destination is not usable" meaning and gains one more way to reach it —
+the status words are the ones it had, `--json` gains `above_cap` and nothing else,
+`report.csv`, `extract.csv` and `manifest.json` gain no column or member, and the
+`Software` marker moves only the version inside it.
+
 ## Consequences
 
 - `0.2.0` is `v0.1.0` plus the v2 work, and **`0.2.x` changes nothing a script
