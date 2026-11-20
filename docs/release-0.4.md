@@ -399,8 +399,12 @@ holds.
       dependency that trips `deny.toml`'s allow-list is a decision rather than a
       config edit. `base64 0.23` turns on a default SIMD feature it did not have
       before — `cargo deny` is the check that says whether that changed the
-      licence or advisory picture, and its answer is recorded in the pull request
-      that merges it.
+      licence or advisory picture. **Corrected 2026-11-20:** this said the answer
+      is recorded in the pull request that merges the bump, and a Dependabot PR
+      carries the bot's body and nothing of a review's — so the answer is
+      recorded in the slice's record pull request,
+      [#154](https://github.com/marcd35/lrsalvage/pull/154), which is where
+      slice 1's box points.
 
 ### Frozen surface — what 0.3 promised, still promised
 
@@ -594,8 +598,13 @@ on a tree where a failure is unambiguous. `base64` follows, and it is the one to
 re-read `deny.toml` against, because a default-on SIMD feature is a build-level
 change the licence and advisory policy has not seen.
 
-**What each merge must show, in the pull request that merges it** — this is the
-replacement for a green on a stale base:
+**What each merge must show, and where it is recorded** — the merging pull
+requests are Dependabot's, so the evidence sits in the slice's record pull
+request, [#154](https://github.com/marcd35/lrsalvage/pull/154), and the merge
+comment on each PR states the three gates without the run's line. *Corrected
+2026-11-20:* this said "in the pull request that merges it", which for a bot's PR
+is a place no evidence can be written. This is the replacement for a green on a
+stale base:
 
 - CI green on a run whose merge base is the current `main`.
 - `sh scripts/check.sh msrv` green, with the floor the bump publishes compared to
