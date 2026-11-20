@@ -655,7 +655,7 @@ checksum = "5d15f86d12da44cd8d4ec3c73984537eb7f4cadcb9776a575a0a8a05ca11005c"
 
 [[package]]
 name = "lrsalvage-app"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "lrsalvage-core",
  "lrsalvage-fixtures",
@@ -666,7 +666,7 @@ dependencies = [
 
 [[package]]
 name = "lrsalvage-cli"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "assert_cmd",
  "clap",
@@ -683,7 +683,7 @@ dependencies = [
 
 [[package]]
 name = "lrsalvage-core"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "base64",
  "filetime",
@@ -707,7 +707,7 @@ dependencies = [
 
 [[package]]
 name = "lrsalvage-fixtures"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "lrsalvage-core",
  "rusqlite",
@@ -716,7 +716,7 @@ dependencies = [
 
 [[package]]
 name = "lrsalvage-web"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "lrsalvage-app",
  "lrsalvage-core",

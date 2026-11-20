@@ -59,7 +59,7 @@ path = "src/main.rs"
 name = "artifacts"
 
 [dependencies]
-lrsalvage-core = { path = "../lrsalvage-core", version = "0.3.0" }
+lrsalvage-core = { path = "../lrsalvage-core", version = "0.4.0" }
 clap.workspace = true
 walkdir.workspace = true
 serde_json.workspace = true

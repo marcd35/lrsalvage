@@ -1188,7 +1188,7 @@ demoted pyramid.
 ### 5.12 The build from this tree, run against the 1:1 cache — VERIFIED
 
 On 2026-11-18 the binary built from this tree — `0.3.0` plus the
-`--max-long-edge` work in `[Unreleased]` — was run against §5.10's catalog C and
+`--max-long-edge` work 0.4.0 ships — was run against §5.10's catalog C and
 its cache, read-only, with every write under a scratch root outside both trees. No
 path appears below: the numbers are the runs' own output and the `--report` file,
 which is path-free by construction.

@@ -286,7 +286,15 @@ reader closing the tracker can check coverage without re-deriving it:
       forgotten. The artifacts move; like the comment above, no `0.3.0` of
       history is rewritten in prose.
       The changelog section's content is decided below, under
-      [Docs](#docs--the-record); the bump does not invent it.
+      [Docs](#docs--the-record); the bump does not invent it. *Verified 2026-11-20:*
+      the bump is `b64f3ae` — `0.4.0` in the manifest and both pins, `Cargo.lock`
+      re-read as five workspace lines, the changelog renamed with an empty
+      `[Unreleased]` above it, the man page regenerated in two tokens, and one
+      assert outside `crates/` named after a version —
+      `crates/lrsalvage-web/tests/baseline.rs`'s `outputs_sha256`, which moves
+      because the `Software` marker carries the version. **The box stays unticked
+      until that commit is on `main`**, because that is the evidence slice 4's and
+      slice 5's `Verified` lines name.
 
 ### Evidence — what the release may claim
 
@@ -416,8 +424,11 @@ holds.
       list in `specs/modules/report.md` — because "nothing else moved" is a claim
       about a search.
 - [ ] The frozen `stats` list's growth is the decision ADR 0013 records, not a
-      field that appeared: that record is the one home for how many names it holds
-      before and after, and this page points at it rather than counting.
+      field that appeared, and ADR 0012 D6 is the one home for how many names it
+      holds before and after: this page points at it rather than counting.
+      *Corrected 2026-11-20:* this named ADR 0013 as the home for the count. 0013
+      records the decision and carries no number — the number is in D6, which is
+      where ADR 0010's block points.
 - [ ] A destination a 0.3.0 run wrote is still recognised and skipped byte for
       byte, because the marker comparison stops at the prefix. Held by
       `extract`'s `a_preexisting_verified_file_is_skipped_and_its_bytes_untouched`,
@@ -436,7 +447,7 @@ stated with it**: `docs/release-0.2.md`, `docs/release-0.3.md` and the ADRs'
 dated history keep their `0.3.0` references, because they are records of what was
 true then. This is a sweep of what a reader takes as the present, not a rename.
 
-- [ ] The six sentences that name the 0.3 checklist — five in `README.md`, one in
+- [x] The six sentences that name the 0.3 checklist — five in `README.md`, one in
       `release.yml` — are re-read and repointed where they describe *this* release,
       and kept where they describe 0.3.0's own measurement. *Measured 2026-11-18,
       and each classified:* `README.md`'s frozen-surface sentence and its "the
@@ -444,8 +455,11 @@ true then. This is a sweep of what a reader takes as the present, not a rename.
       as does `release.yml`'s comment naming the checklist the tag's commit is
       chosen by; `README.md`'s archive-check sentence, its `cargo install
       --version 0.3.0` sentence and its version paragraph describe 0.3.0's own
-      runs and stay until the post-publish box rewrites them.
-- [ ] `docs/versions.md`'s two `0.4.0` capability cells become proved rows **in
+      runs and stay until the post-publish box rewrites them. *Moved 2026-11-20 by
+      the bump's own slice:* `README.md:676`, `README.md:785` and
+      `.github/workflows/release.yml:30` now name `docs/release-0.4.md`, and the
+      three that describe 0.3.0's own runs are untouched.
+- [x] `docs/versions.md`'s two `0.4.0` capability cells become proved rows **in
       the bump slice** — the cap names the flag and links the README section
       `readme.rs` holds; the free-space row names the refusal — because they
       describe the tagged tree. Its *verified at core 0.3.0* line, the sentence
@@ -455,11 +469,19 @@ true then. This is a sweep of what a reader takes as the present, not a rename.
       box here; the pages that do name one are the README, `CHANGELOG.md`,
       `docs/versions.md`, `docs/format-notes.md`, the ADRs and the two earlier
       checklists, and each is classified either by the paragraph above this list
-      or by the `[Unreleased]` box below.
-- [ ] ADR 0010 gains its dated *added by 0.4.0* block naming the four additions,
+      or by the `[Unreleased]` box below. *Verified 2026-11-20:* at
+      `docs/versions.md:97` the cap's cell is *yes*, linking the flag to
+      `../README.md#quick-start`; at `:110` the free-space row says the run
+      refuses with exit `4` before it writes anything, naming the shortfall, and
+      links the exit-code table. The *verified at* line, the current-release
+      sentence and the support paragraph's example are untouched for the
+      post-publish box.
+- [x] ADR 0010 gains its dated *added by 0.4.0* block naming the four additions,
       in the shape 0.3.0's block took — flag, stat, `options` member and the
       widened exit-`4` trigger — with the sentence that says no existing surface
-      changed meaning.
+      changed meaning. *Verified 2026-11-20:* the block is *Added by 0.4.0 —
+      2026-11-20*, under 0.3.0's, and it points at ADR 0012 D6 for how the frozen
+      set grew rather than counting it.
 - [x] **ADR 0012 D7's attribution is corrected with a date**, in this slice's own
       pull request: the two README non-goals are #67's decision 1, and decision 2
       is the cap. *Found by the review of this page rather than by a gate*, and
@@ -467,11 +489,17 @@ true then. This is a sweep of what a reader takes as the present, not a rename.
       number names text that is not in this tree, so no test can compare the two.
       *Verified 2026-11-18:* the correction is in D7 and the wrong pointer is gone
       from the record.
-- [ ] `specs/modules/extract.md` records the free-space check and where it sits in
+- [x] `specs/modules/extract.md` records the free-space check and where it sits in
       the order; `specs/modules/cli.md` records what `--dry-run` now prints, if it
       prints something new; and `specs/fixtures.md` carries the `cannot show` row
       the seam's slice adds. The cap's specs need no edit: they landed with #88.
-- [ ] `CHANGELOG.md`'s `[0.4.0]` section carries three headings, because the
+      *Verified 2026-11-20:* all three stand as written —
+      `specs/modules/extract.md:91` names `extract::ensure_room` and the plan's own
+      byte total, `specs/modules/cli.md:151` has the verdict in both modes with
+      `:162` saying `--dry-run` prints the same lines, and
+      `specs/fixtures.md:245` is M19 with its *cannot show a short disk* text. The
+      bump edits no spec.
+- [x] `CHANGELOG.md`'s `[0.4.0]` section carries three headings, because the
       section is the release body verbatim:
       **Added** — the cap, `above_cap`, `options.max_long_edge`, and the
       free-space refusal as a new trigger for exit `4`;
@@ -479,12 +507,24 @@ true then. This is a sweep of what a reader takes as the present, not a rename.
       its own line;
       **Packaging** — #123's tarball running its own suite, the two dependency
       majors if both re-runs are green, and the five generated files if they are
-      attached.
-- [ ] `[Unreleased]` is a heading three files name, and the bump renames it.
+      attached. *Verified 2026-11-20:* the section carries those three and a
+      fourth, **Build**, and the correction is stated here rather than left to be
+      discovered: #142 and #144 — the filesystem seam and its `wasm32` half —
+      landed after this box was written, they are in the tree the tag ships, and a
+      release body that omitted them would be a body about another tree. The bump
+      renamed the heading and added only what this box enumerates plus the
+      section's lead paragraph, so the fourth heading moves no decision this page
+      recorded.
+- [x] `[Unreleased]` is a heading three files name, and the bump renames it.
       *Measured 2026-11-18:* `format-notes.md` §5.12 names it in the present tense
       and moves; ADR 0012 D5's two references are a dated record of where the wait
       was stated and may stay, gaining one dated amendment only if the sweep finds
-      a reader who would take them as the present.
+      a reader who would take them as the present. *Verified 2026-11-20:*
+      `CHANGELOG.md` opens with an empty `## [Unreleased]` above `## [0.4.0]`,
+      `format-notes.md` §5.12 now names the `--max-long-edge` work as 0.4.0's, and
+      the sweep found the reader that paragraph describes: D5's first paragraph
+      pointed at the heading in the present tense, so it carries its dated
+      amendment.
 - [ ] Each slice corrects its own ticket's stale sentence in the pull request that
       implements it, from the drafts in
       [*Text held for approval*](#text-held-for-approval) — #64's and #62's

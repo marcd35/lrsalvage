@@ -141,6 +141,11 @@ is deleted with the limit it described. `docs/release-0.3.md` records the same
 closure. What D5 says about the *published* 0.3.0 artifact still holds: its crate
 page states the limitation and stays wrong until `0.4.0` republishes it.
 
+**Amended 2026-11-20:** the section D5's first paragraph names moved with the
+bump. The wait it was stated in is over — `CHANGELOG.md`'s `## [0.4.0]`, whose
+Packaging entry records the closure, since #123's tarball now runs its own suite
+— and `[Unreleased]` above it is empty again.
+
 Rules out: annotating the published crate page (impossible — its readme is the
 tarball's, and the tarball for 0.3.0 is fixed); bundling #123 into a patch that
 carries a contract change; leaving the debt to be discovered by an auditor.

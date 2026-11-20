@@ -10,6 +10,18 @@ minor saying so here before one is removed, renamed or given a different meaning
 
 ## [Unreleased]
 
+## [0.4.0]
+
+0.4.0 is the daily-use minor, in
+[ADR 0012](https://github.com/marcd35/lrsalvage/blob/main/docs/adr/0012-two-release-lines.md)'s
+D4 sentence: *the tool you run every day, and the published crate that should
+behave like its repository*. A script can observe exactly four things it could not
+observe before — `--max-long-edge`, the `above_cap` count, the report's
+`options.max_long_edge`, and a free-space refusal that reuses exit `4`.
+[ADR 0010](https://github.com/marcd35/lrsalvage/blob/main/docs/adr/0010-what-0-2-promises.md)
+loses nothing: no status word, exit code, flag, field, column or output name is
+removed, renamed or given a different meaning.
+
 ### Added
 
 - **The destination's free space is checked before the first file is written.**
@@ -27,7 +39,7 @@ minor saying so here before one is removed, renamed or given a different meaning
   free-space operation.
 - **`--max-long-edge`, a cap on the level written.** `scan` and `extract` both
   take it, default `0` (no cap). A cache that built 1:1 previews holds a doubling
-  ladder ending at each original's own long edge (`docs/format-notes.md` §5.7), so
+  ladder ending at each original's own long edge (`docs/format-notes.md` §5.10), so
   until now salvage wrote the largest level it found; with a cap it writes the
   largest level at or below the cap, and the levels it passed over are `above_cap`
   items — every one of them under `--all-levels`, and otherwise the image's own
@@ -43,6 +55,13 @@ minor saying so here before one is removed, renamed or given a different meaning
   the other filters and every rename template stay declined, and the README now
   says so rather than leaving them unmentioned.
 
+### Changed
+
+- **The `Software` marker names `0.4.0`.** Only the version inside it moves. The
+  `lrsalvage ` prefix both the writer and the resume check compare is unchanged,
+  so a destination 0.3.0 wrote is still recognised as ours and skipped byte for
+  byte.
+
 ### Packaging
 
 - **`lrsalvage-core`'s tarball runs its own `cargo test`**
@@ -52,6 +71,14 @@ minor saying so here before one is removed, renamed or given a different meaning
   drops; an unpacked crate now builds `--all-targets` and runs the suite it
   carries. `scripts/check.sh package` tests that tarball rather than only
   building it, so the property cannot rot back.
+- **The two dependency majors are in this release**, both decided by its first
+  slice rather than deferred: `sha2` 0.11.1 and `base64` 0.23.1. The green
+  standing on either pull request predated `v0.3.0` itself, so both were re-run
+  against this tree — CI on a merge base of the current `main`, and `msrv`,
+  `deny` and `package` green — and `deny.toml` is unchanged. `sha2` 0.11 is the
+  digest API's versions, not its output; `base64` 0.23's new default
+  `simd-unsafe` feature is the one the licence and advisory policy was re-read
+  against.
 - **Four completion scripts and a man page are attached to the release**
   ([#62](https://github.com/marcd35/lrsalvage/issues/62)): `lrsalvage.bash`,
   `_lrsalvage` for zsh, `lrsalvage.fish`, `_lrsalvage.ps1` and `lrsalvage.1`.
