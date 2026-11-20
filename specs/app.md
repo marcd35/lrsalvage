@@ -121,11 +121,13 @@ reverse — so the seam is registered one way for both pages.
   footer action bar), its two-row entry form ("Lightroom catalog" / "Preview
   folder · found beside catalog") and its copy for these screens were deliberately
   **not** carried into this page: the page was written from the user stories and
-  from the counts the report carries, and the prototype is not in this tree, so no
-  checkout could hold a port to it. Porting the shell and the copy is a design
+  from the counts the report carries, and the prototype lived outside this tree
+  when the page was built, so no checkout could hold a port to it. Porting the shell and the copy is a design
   decision waiting for someone to make it — not a rewrite, because every string a
   person reads lives in `web/view.js` and nothing else in the slice depends on it:
-  the browser run asserts the report, so its evidence stays valid either way.
+  the browser run asserts the report, so its evidence stays valid either way. The
+  prototype itself is in this tree as `docs/prototype/` (#149), so the port has a
+  reference a checkout can open.
 - **The page has no test hook in it.** The harness's page (`web/test.html`,
   `web/test.js`) is a second page that imports the same *functions*, and that is
   exactly the limit of what it proves: the product page's own markup, its
