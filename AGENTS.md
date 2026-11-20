@@ -70,12 +70,23 @@ synthetic vaults `specs/fixtures.md` requires — the byte shapes, the catalog a
 `Vault`; it does not write a fixture of its own, and a fourth ad-hoc writer is
 not allowed.
 
+`crates/lrsalvage-app` is the shipped page (`0.1.0`, ADR 0012 D10) and is not a
+module: a `publish = false` crate holding the app's one entry, the page a browser
+loads, and the seam's page-side JavaScript (`web/seam/`, which the harness imports
+rather than copy). It owns no format and no decision, and every number it shows
+was observed by a module with a spec of its own. `specs/app.md` is its spec.
+
 `crates/lrsalvage-web` is the browser parity harness and is not a module either:
 a `publish = false` crate holding one scan-and-extract driver that compiles for
 both targets, the page a browser loads, and the native binary the comparison
 needs. It is what `scripts/browser-parity.sh` runs, and it is **not a gate** —
-the reason is in `specs/modules/fs.md`, *Where the harness lives*. Nothing
-shipped depends on it.
+the reason is in `specs/modules/fs.md`, *Where the harness lives*. It links
+`lrsalvage-app` for the seam's registration and page-side bridge; the app links
+nothing from it, so nothing shipped depends on a harness.
+
+`scripts/browser-app.sh` is the app's own measurement — the entry in headless
+Chromium over seven vaults, with a stop, a recheck and a cancelled picker — and it
+is not a gate for the same reason.
 
 ## Verification
 

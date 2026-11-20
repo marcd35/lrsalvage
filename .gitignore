@@ -16,6 +16,8 @@ lrsalvage-report-*
 Thumbs.db
 desktop.ini
 
-# The wasm-bindgen output the browser harness generates; the sources are in
-# `crates/lrsalvage-web/web/` and `scripts/browser-parity.sh` rebuilds this.
+# The wasm-bindgen output the two browser pages generate; the sources are in each
+# crate's `web/`, and the two scripts rebuild it (`scripts/browser-parity.sh`,
+# `scripts/browser-app.sh`).
 /crates/lrsalvage-web/web/pkg/
+/crates/lrsalvage-app/web/pkg/

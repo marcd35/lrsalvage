@@ -1,0 +1,290 @@
+//! The browser app's one entry: a source in, a scan's report out.
+//!
+//! `0.1.0` is a static page (#117, ADR 0012 D10), and this crate is that page's
+//! Rust half: the `cdylib` the page loads and the module a native test drives.
+//! It owns no format and no decision — [`scan`] composes `lrsalvage_core`'s own
+//! `snapshot`, `catalog`, `previews_db` and `plan` in the order #149 recorded,
+//! and turns their answers into the JSON the page renders. Everything a user
+//! could disagree with is in a module with a spec; everything here is plumbing.
+//!
+//! The order is the entry decision (`#117`, *Entry and review*), and it is why
+//! the page cannot reorder it:
+//!
+//! 1. **Copy** the catalog and its sidecars into the origin-private pool and
+//!    checkpoint them (`snapshot::capture_verified`) — the private copy *is* the
+//!    snapshot, so `--verify-source`'s two digests are the same two digests.
+//! 2. **Open** that copy. A copy that is not the catalog is a refusal, never a
+//!    warning.
+//! 3. **Index**: copy `previews.db` into the pool too, because SQLite can only
+//!    open what the pool holds, and let `previews_db::open` degrade with a
+//!    reason rather than refuse (an absent index is a mode —
+//!    `adr-0006-degrade-without-guessing`).
+//! 4. **Scan**: one reported build, stoppable at a unit boundary.
+//!
+//! Nothing is written outside the pool, which is why this slice has no
+//! destination and no refusal to make: `extract` is not called here at all.
+
+use std::path::{Path, PathBuf};
+
+use lrsalvage_core::catalog::Catalog;
+use lrsalvage_core::fs;
+use lrsalvage_core::plan::{Control, Options, Plan, Progress};
+use lrsalvage_core::previews_db::{self, IndexProblem};
+use lrsalvage_core::snapshot::CatalogSnapshot;
+use serde_json::{Value, json};
+
+#[cfg(not(target_arch = "wasm32"))]
+pub mod vault;
+#[cfg(target_arch = "wasm32")]
+pub mod wasm;
+
+/// Where the plan numbers its output paths, until a destination is picked.
+///
+/// The scan decides *which* images are worth writing and how their names
+/// collide, and it needs an output root to do either: `plan` resolves every
+/// item's path against one. No mount answers for this path on purpose — a
+/// placeholder that resolved would be a destination the user never chose, and
+/// this slice writes nothing. The save slice replaces it with the picked folder
+/// and re-plans, which is where #117's `showDirectoryPicker({mode: 'readwrite'})`
+/// arrives.
+const OUTPUT_ROOT: &str = "/destination";
+
+/// The step a failure happened in, so a page can say which one.
+///
+/// A page has to tell "the copy did not fit" from "that file is not a catalog",
+/// and those are the same `error::Error` shape to this crate; the stage is what
+/// the caller knows and the error does not.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Stage {
+    /// The catalog and its sidecars, into the private pool.
+    Copy,
+    /// Opening the private copy.
+    Open,
+    /// Copying the index into the pool, and reading it.
+    Index,
+    /// The reported build over the catalog and the cache.
+    Scan,
+}
+
+impl Stage {
+    /// The word this stage is reported as.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Stage::Copy => "copy",
+            Stage::Open => "open",
+            Stage::Index => "index",
+            Stage::Scan => "scan",
+        }
+    }
+}
+
+/// Why a scan did not finish, in terms a page can render.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Failure {
+    pub stage: Stage,
+    /// A stable word for the class of failure — `not-a-catalog`, `out-of-room`,
+    /// `catalog-changed`, `unreadable`, `pool-refused`, `io`, `other`. The page
+    /// maps these to sentences; the message travels beside it so a class nobody
+    /// anticipated still says something true.
+    pub kind: &'static str,
+    pub message: String,
+}
+
+impl Failure {
+    /// Classify one `error::Error` as the failure of `stage`.
+    ///
+    /// The classes are the distinctions a person can act on, not every variant:
+    /// a catalog that is not a catalog, one that changed under the copy, a store
+    /// that refused the copy for space, and everything else, which the message
+    /// is left to describe (`#149`, *Decisions*).
+    pub fn of(stage: Stage, error: &lrsalvage_core::Error) -> Self {
+        use lrsalvage_core::Error;
+        let kind = match error {
+            Error::NotACatalog { .. } => "not-a-catalog",
+            Error::SourceChanged { .. } => "catalog-changed",
+            Error::Sqlite(_) => "unreadable",
+            Error::Io { source, .. } => match source.kind() {
+                std::io::ErrorKind::StorageFull => "out-of-room",
+                std::io::ErrorKind::NotFound => "not-found",
+                std::io::ErrorKind::Unsupported => "unsupported",
+                std::io::ErrorKind::WouldBlock => "busy",
+                _ => "io",
+            },
+            _ => "other",
+        };
+        Self {
+            stage,
+            kind,
+            // The whole chain: a pool's message is the only description of some
+            // failures, and the path context is what a person needs to act.
+            message: format!("{error}"),
+        }
+    }
+
+    /// This failure as the JSON the page reads.
+    pub fn to_json(&self) -> Value {
+        json!({
+            "stage": self.stage.as_str(),
+            "kind": self.kind,
+            "message": self.message,
+        })
+    }
+}
+
+/// One scan of one source: the report a page renders, or the failure to explain.
+///
+/// The three paths are mount-relative spellings on `wasm32` and ordinary paths
+/// natively, which is what makes the same call run in both places.
+pub fn scan(
+    catalog: &Path,
+    cache: &Path,
+    progress: &mut dyn FnMut(Progress) -> Control,
+) -> Result<Value, Failure> {
+    // 1. The catalog and its `-wal`/`-shm`, into the store, checkpointed. One
+    //    call: a copy is not something a page can stop halfway through, which is
+    //    why the page names this stage instead of drawing a bar for it.
+    let snapshot = CatalogSnapshot::capture_verified(catalog)
+        .map_err(|error| Failure::of(Stage::Copy, &error))?;
+    let digests = snapshot
+        .digests()
+        .map(|digests| (digests.source().to_string(), digests.snapshot().to_string()));
+
+    // 2. The private copy, read-only and immutable now that its WAL is folded in.
+    let catalog_db =
+        Catalog::from_snapshot(&snapshot).map_err(|error| Failure::of(Stage::Open, &error))?;
+
+    // 3. The index, copied where SQLite can open it. `open` answers a missing
+    //    file with its own reason, so an absent index is copied by not being
+    //    copied and the plan then reports every image as `no-cache-entry`.
+    let index_dir = fs::scratch_dir("lrsalvage-app-index-")
+        .map_err(|source| Failure::of(Stage::Index, &io_without_path(source)))?;
+    let index_copy = index_dir.path().join(previews_db::INDEX_FILE);
+    let index_present = match fs::copy(&cache.join(previews_db::INDEX_FILE), &index_copy) {
+        Ok(()) => true,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
+        Err(source) => {
+            return Err(Failure::of(
+                Stage::Index,
+                &lrsalvage_core::Error::Io {
+                    path: index_copy,
+                    source,
+                },
+            ));
+        }
+    };
+    let opened = previews_db::open(&index_copy);
+
+    // 4. The build. `None` is a stop, and a stop goes back to source selection
+    //    rather than presenting a plan about the images it did not reach.
+    let built = Plan::build_reported(
+        &catalog_db,
+        &opened.index,
+        cache,
+        Path::new(OUTPUT_ROOT),
+        &Options::default(),
+        progress,
+    )
+    .map_err(|error| Failure::of(Stage::Scan, &error))?;
+
+    Ok(match built {
+        Some(plan) => report(&plan, &opened.problem, index_present, digests, &catalog_db),
+        None => json!({ "ok": true, "stopped": true }),
+    })
+}
+
+/// The conditions and counts one finished scan reports.
+///
+/// Every number here was observed by the module that owns it; the page renders
+/// them and invents none (`#117` user stories 4 and 5).
+fn report(
+    plan: &Plan,
+    problem: &Option<IndexProblem>,
+    index_present: bool,
+    digests: Option<(String, String)>,
+    catalog: &Catalog,
+) -> Value {
+    let stats = &plan.stats;
+    let cache = &plan.cache;
+    json!({
+        "ok": true,
+        "stopped": false,
+        "source_sha256": digests.as_ref().map(|(source, _)| source.clone()),
+        "snapshot_sha256": digests.as_ref().map(|(_, snapshot)| snapshot.clone()),
+        "index": {
+            "present": index_present,
+            "problem": match problem {
+                None => Value::Null,
+                Some(IndexProblem::Missing) => json!({ "kind": "missing" }),
+                Some(IndexProblem::Unreadable(text)) => json!({ "kind": "unreadable", "text": text }),
+            },
+        },
+        "cache": {
+            "layout": cache.layout.as_str(),
+            "db_version": cache.db_version,
+            "crs_version": cache.crs_version,
+            "shapes": {
+                "level_file": cache.shapes.level_file,
+                "suffix_matches_sof": cache.shapes.suffix_matches_sof,
+                "container": cache.shapes.container,
+            },
+            "thumbnail_pyramids": cache.thumbnail_pyramids,
+        },
+        "stats": {
+            "images": stats.images,
+            "recoverable": stats.recoverable,
+            "missing_payload": stats.missing_payload,
+            "no_cache_entry": stats.no_cache_entry,
+            "unmapped": stats.unmapped,
+            "suspect": stats.suspect,
+            "failed": stats.failed,
+            "original_present": stats.original_present,
+            "below_floor": stats.below_floor,
+            "above_cap": stats.above_cap,
+            "levels": stats.levels,
+            "selected_items": stats.selected_items,
+            "selected_images": stats.selected_images,
+            "superseded": stats.superseded,
+            "deleted": stats.deleted,
+            "unrecognised": stats.unrecognised,
+            "bytes": stats.bytes,
+        },
+        "roots": roots(catalog),
+    })
+}
+
+/// The catalog's recorded root folders, each with whether this page can reach it.
+///
+/// Reachable means the seam answers for the recorded spelling: a mount covers it
+/// and something is under it. A drive that is not connected, and a folder this
+/// page was never given, are the same answer — `false` — and that is what makes
+/// "check again" meaningful: mount the folder and ask the same question again
+/// (`#149`, *Decisions*).
+fn roots(catalog: &Catalog) -> Value {
+    let roots = catalog.root_folders().unwrap_or_default();
+    Value::Array(
+        roots
+            .into_iter()
+            .map(|root| {
+                let reachable = fs::exists(Path::new(&root.path)).unwrap_or(false);
+                json!({
+                    "path": root.path,
+                    // A path that no mount covers cannot be asked about at all;
+                    // the page says so instead of pretending the folder is empty.
+                    "images": root.images,
+                    "in_reach": reachable,
+                })
+            })
+            .collect(),
+    )
+}
+
+/// An `io::Error` that arrived without a path, as the path-carrying variant.
+///
+/// The seam's own errors are bare `io::Error`s (`specs/modules/fs.md`), and this
+/// crate is what attaches the path a page should have named.
+fn io_without_path(source: std::io::Error) -> lrsalvage_core::Error {
+    lrsalvage_core::Error::Io {
+        path: PathBuf::from(OUTPUT_ROOT),
+        source,
+    }
+}

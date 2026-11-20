@@ -155,12 +155,23 @@ export class Bridge {
   }
 }
 
-/** Install `globalThis.lrsalvage`, the name the generated glue calls. */
-export function installBridge({ memory, sab, mounts }) {
+/**
+ * Install `globalThis.lrsalvage`: the seam's call, and the scan's progress report.
+ *
+ * Both names are declared by the wasm module and read when it is instantiated, so
+ * a page that paints nothing still has to install `scan_progress` — hence the
+ * default that carries on and reports nowhere. `progress` is what a page that
+ * does paint passes: it is called once per unit (a cache file walked, a level
+ * file measured, a catalog image finished) and answers `0` to carry on and
+ * anything else to stop. It runs inside the run's synchronous frame, so it may
+ * not await: it posts, reads the stop flag, and returns.
+ */
+export function installBridge({ memory, sab, mounts, progress }) {
   const bridge = new Bridge(memory, sab, mounts);
   globalThis.lrsalvage = {
     fs_call: (op, requestPtr, requestLen, outPtr, outCap) =>
       bridge.call(op, requestPtr, requestLen, outPtr, outCap),
+    scan_progress: progress ?? (() => 0),
   };
   return bridge;
 }

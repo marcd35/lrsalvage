@@ -58,8 +58,12 @@ impl CatalogSnapshot {
             ),
         })?;
 
+        // The catalog is the path this refusal is about, and it is also the only
+        // honest one: `std::env::temp_dir` *panics* on `wasm32-unknown-unknown`
+        // rather than answering, because a page has no temporary directory — it
+        // has the store the seam allocates under (`specs/modules/fs.md`).
         let dir = fs::scratch_dir("lrsalvage-").map_err(|source| Error::Io {
-            path: std::env::temp_dir(),
+            path: catalog.to_path_buf(),
             source,
         })?;
 

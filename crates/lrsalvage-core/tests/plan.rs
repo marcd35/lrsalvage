@@ -13,7 +13,7 @@
 
 use std::path::{Component, Path};
 
-use lrsalvage_core::plan::{Options, Plan, PlanItem, Status};
+use lrsalvage_core::plan::{Control, Options, Plan, PlanItem, Progress, Status};
 use lrsalvage_fixtures::vault::{ImageRow, Level, PyramidRow, Vault, digest_of};
 
 const UUID: &str = "AAAA0001-1111-4111-8111-000000000001";
@@ -437,4 +437,158 @@ fn two_images_whose_names_differ_only_in_case_do_not_collide() {
             "one overwrites the other unless the dedupe key is case-insensitive"
         );
     }
+}
+
+// -- reporting and stopping (#149) -------------------------------------------
+//
+// The contract these hold: every report is a boundary a caller may stop at, a
+// report carries the number of units *finished*, and the reported build is the
+// only build — so a plan that was never reported is the same plan.
+
+/// Three images with a payload each, in three different pyramids, as level
+/// files: a legacy container's levels live inside one file, so only this medium
+/// gives the measured pass more than one unit to report.
+fn three_images() -> Vault {
+    let second = "AAAA0002-1111-4111-8111-000000000002";
+    let third = "AAAA0003-1111-4111-8111-000000000003";
+    Vault::modern()
+        .image(ImageRow::new(1, "IMG_0001").cache(UUID))
+        .image(ImageRow::new(2, "IMG_0002").cache(second))
+        .image(ImageRow::new(3, "IMG_0003").cache(third))
+        .pyramid(PyramidRow::new(UUID).level(1616, 1077))
+        .pyramid(PyramidRow::new(second).level(1616, 1077))
+        .pyramid(PyramidRow::new(third).level(1616, 1077))
+        .level_file(Level::sized(UUID, 1616, 1077))
+        .level_file(Level::sized(second, 1616, 1077))
+        .level_file(Level::sized(third, 1616, 1077))
+        .write()
+}
+
+#[test]
+fn a_reported_build_is_the_build_it_reports() {
+    let vault = three_images();
+    let options = Options::default();
+    let plain = vault.plan(&options);
+
+    let mut events = Vec::new();
+    let reported = vault
+        .plan_reported(&options, &mut |progress| {
+            events.push(progress);
+            Control::Continue
+        })
+        .expect("a callback that never stops cannot stop a build");
+
+    // Same decisions, item for item: the reported path is not a second opinion.
+    assert_eq!(reported.items.len(), plain.items.len());
+    assert_eq!(reported.stats, plain.stats);
+    assert_eq!(reported.cache, plain.cache);
+    for (left, right) in reported.items.iter().zip(&plain.items) {
+        assert_eq!(left.status, right.status);
+        assert_eq!(left.output, right.output);
+    }
+
+    // The stage order, and every unit in it: one cache file per walk step, one
+    // level file measured, one image finished — and the last report is the
+    // stage's end at `total`.
+    let cache: Vec<u64> = events
+        .iter()
+        .filter_map(|progress| match progress {
+            Progress::Cache { files } => Some(*files),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        cache,
+        (0..cache.len() as u64).collect::<Vec<_>>(),
+        "one unit per file, and never a skipped or repeated count"
+    );
+    let walked = lrsalvage_core::fs::walk_files(vault.previews())
+        .expect("walk the cache")
+        .len() as u64;
+    assert_eq!(
+        cache.len() as u64,
+        walked,
+        "the walk reports every file it looks at"
+    );
+
+    let payloads: Vec<(u64, u64)> = events
+        .iter()
+        .filter_map(|progress| match progress {
+            Progress::Payloads { done, total } => Some((*done, *total)),
+            _ => None,
+        })
+        .collect();
+    assert!(!payloads.is_empty(), "the measured pass reports too");
+    assert!(payloads.iter().all(|(_, total)| *total == payloads[0].1));
+
+    let images: Vec<(u64, u64)> = events
+        .iter()
+        .filter_map(|progress| match progress {
+            Progress::Images { done, total } => Some((*done, *total)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        images,
+        vec![(0, 3), (1, 3), (2, 3), (3, 3)],
+        "one report before each image, and the stage's end at the total"
+    );
+
+    // The order is the order the work happens in.
+    let stage = |progress: &Progress| match progress {
+        Progress::Cache { .. } => 0,
+        Progress::Payloads { .. } => 1,
+        Progress::Images { .. } => 2,
+    };
+    let mut last = 0;
+    for progress in &events {
+        let now = stage(progress);
+        assert!(now >= last, "stage went backwards at {progress:?}");
+        last = now;
+    }
+}
+
+#[test]
+fn a_stop_lands_on_an_image_boundary_and_leaves_no_plan() {
+    let vault = three_images();
+    let mut reported = Vec::new();
+    let built = vault.plan_reported(&Options::default(), &mut |progress| {
+        reported.push(progress);
+        // Stop the build at the boundary where one image is finished.
+        match progress {
+            Progress::Images { done: 1, .. } => Control::Stop,
+            _ => Control::Continue,
+        }
+    });
+
+    assert!(built.is_none(), "a stopped build is not a partial plan");
+    assert_eq!(
+        reported.last(),
+        Some(&Progress::Images { done: 1, total: 3 }),
+        "the boundary is the one the stop was asked for, and the build asked \
+         nothing about the image after it"
+    );
+    assert!(
+        !reported
+            .iter()
+            .any(|progress| matches!(progress, Progress::Images { done, .. } if *done > 1)),
+        "no image past the stop was reported, so none was read"
+    );
+}
+
+#[test]
+fn a_stop_during_the_cache_walk_ends_before_any_payload_is_read() {
+    let vault = three_images();
+    let mut reported = Vec::new();
+    let built = vault.plan_reported(&Options::default(), &mut |progress| {
+        reported.push(progress);
+        Control::Stop
+    });
+
+    assert!(built.is_none());
+    assert_eq!(
+        reported,
+        vec![Progress::Cache { files: 0 }],
+        "the first boundary is before the first file, and nothing later ran"
+    );
 }

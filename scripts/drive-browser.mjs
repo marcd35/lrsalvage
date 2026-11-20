@@ -31,7 +31,14 @@ import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { extname, join, normalize, resolve, sep } from 'node:path';
 
-const WEB_ROOT = resolve(import.meta.dirname, '..', 'crates', 'lrsalvage-web', 'web');
+// Two pages, two crates: the harness's and the app's, each with its own `web/`.
+// The app's page is the shipped one and the harness's reaches sideways into it
+// for the seam's JavaScript (`#149`, DEC-S5), so the served tree is `crates/`
+// rather than one crate's `web/` — and nothing outside it, so a run's own
+// directory and the two pages are all this server may answer with.
+const ROOT = resolve(import.meta.dirname, '..');
+const PARITY_PAGE = '/crates/lrsalvage-web/web/index.html';
+const APP_PAGE = '/crates/lrsalvage-app/web/index.html';
 
 const TYPES = {
   '.html': 'text/html; charset=utf-8',
@@ -57,7 +64,8 @@ const CHROME_CANDIDATES = [
 function usage(message) {
   if (message) console.error(message);
   console.error(
-    'usage: node scripts/drive-browser.mjs <out-dir> [--chrome <path>] [--timeout <s>] [--attach <port>] [--verbose]',
+    `usage: node scripts/drive-browser.mjs <out-dir> [--chrome <path>] [--timeout <s>] [--attach <port>] [--verbose] [--page <path>]\n` +
+      `  --page defaults to ${PARITY_PAGE}; the app's page is ${APP_PAGE}`,
   );
   process.exit(2);
 }
@@ -68,12 +76,18 @@ let chromePath = null;
 let timeoutSeconds = 240;
 let attachPort = 0;
 let verbose = false;
+let pagePath = PARITY_PAGE;
 for (let index = 0; index < args.length; index += 1) {
   const arg = args[index];
   if (arg === '--chrome') chromePath = args[++index];
   else if (arg === '--timeout') timeoutSeconds = Number(args[++index]);
   else if (arg === '--attach') attachPort = Number(args[++index]);
   else if (arg === '--verbose') verbose = true;
+  else if (arg === '--page') {
+    // A leading slash is optional: `sh` on this machine rewrites an argument that
+    // begins with one into a Windows path, so the script passes it without.
+    pagePath = `/${String(args[++index] ?? '').replace(/^\/+/, '')}`;
+  }
   else if (out === null) out = resolve(arg);
   else usage(`unexpected argument: ${arg}`);
 }
@@ -88,8 +102,8 @@ const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
 async function main() {
   const server = await serve(out);
   const port = server.address().port;
-  const page = `http://127.0.0.1:${port}/${verbose ? '?verbose' : ''}`;
-  console.log(`serving ${WEB_ROOT} and ${out} on ${page}`);
+  const page = `http://127.0.0.1:${port}${pagePath}${verbose ? '?verbose' : ''}`;
+  console.log(`serving ${ROOT} (crates/ only) and ${out} on ${page}`);
 
   if (attachPort) {
     // A Chrome somebody else started: open a tab on this run's page and drive it.
@@ -142,9 +156,16 @@ function serve(root) {
   const server = createServer(async (request, response) => {
     const url = new URL(request.url, 'http://127.0.0.1');
     const path = decodeURIComponent(url.pathname);
-    const file = path === '/' || path === '/index.html' ? 'index.html' : path.slice(1);
-    const roots = [WEB_ROOT, root];
+    // `/` is the parity page, which is what this driver was written for; a run
+    // that names another page does so with `--page`.
+    const file = path === '/' || path === '/index.html' ? PARITY_PAGE.slice(1) : path.slice(1);
+    const roots = [ROOT, root];
     for (const base of roots) {
+      // The checkout answers only for `crates/`: this server is what serves two
+      // pages' modules, and a checkout's `.env` is not one of them.
+      if (base === ROOT && !file.startsWith('crates' + sep) && !file.startsWith('crates/')) {
+        continue;
+      }
       const candidate = normalize(join(base, file));
       if (!candidate.startsWith(base + sep) && candidate !== base) continue;
       try {
@@ -217,6 +238,42 @@ async function waitForTarget(port) {
   throw new Error(`Chrome did not offer a page on ${port} within 30 s`);
 }
 
+/**
+ * Call `window.__gesture()` once, with a user gesture, and leave its answer where
+ * the page can read it (`window.__gestureResult`).
+ *
+ * A page that offers it does so because its first act is a dialog: the app's own
+ * page calls `showDirectoryPicker`, and `scripts/browser-parity.sh`'s page offers
+ * none, so this is a no-op there. The call is awaited *inside* the gesture, which
+ * is what makes the rejection count as the page's.
+ */
+async function offerGesture(send) {
+  // A few seconds, not the whole run: a page that offers no gesture offers none,
+  // and waiting out the timeout would spend the run's budget on nothing.
+  const until = Date.now() + 5_000;
+  for (;;) {
+    const offered = await send('Runtime.evaluate', {
+      expression: 'typeof window.__gesture === "function" && window.__gestureDone !== true',
+      returnByValue: true,
+    });
+    if (offered.result?.value === true) break;
+    if (Date.now() > until) return;
+    await sleep(100);
+  }
+  const picked = await send('Runtime.evaluate', {
+    expression:
+      'Promise.resolve(window.__gesture()).then((value) => { window.__gestureResult = value; window.__gestureDone = true; return JSON.stringify(value); })',
+    awaitPromise: true,
+    returnByValue: true,
+    userGesture: true,
+  });
+  if (picked.exceptionDetails) {
+    console.log(`[gesture] threw: ${picked.exceptionDetails.text ?? 'no detail'}`);
+    return;
+  }
+  console.log(`[gesture] ${picked.result?.value ?? 'no answer'}`);
+}
+
 /** Read `window.__result` out of the page, and report it. */
 async function run(target, seconds) {
   const socket = new WebSocket(target.webSocketDebuggerUrl);
@@ -259,6 +316,13 @@ async function run(target, seconds) {
   await send('Page.navigate', { url: target.url });
 
   const deadline = Date.now() + seconds * 1000;
+
+  // One real user gesture, if the page offers one. A File System Access picker
+  // refuses without a gesture ("Must be handling a user gesture"), and no headless
+  // browser can be handed a dialog to answer — so this is how the *refusal* and the
+  // *cancellation* of a picker are driven rather than imitated (`#149`).
+  await offerGesture(send);
+
   let state = null;
   while (Date.now() < deadline) {
     const evaluated = await send('Runtime.evaluate', {

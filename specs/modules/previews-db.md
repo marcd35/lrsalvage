@@ -159,3 +159,17 @@ decision.
   image claims, whether a claimed one is `superseded`, and what an unclaimed one
   becomes, is `plan`'s decision too (`adr-0005-discover-payloads-by-index` ¶8,
   `adr-0006-degrade-without-guessing`).
+- **The walk reports each file and can be stopped, and there is one walk.**
+  `sweep(cache_root, progress)` takes `progress: &mut dyn FnMut(u64) -> bool` — the
+  number of files looked at so far, and `false` to stop — and answers
+  `Option<CacheSweep>`; a callback that never stops is a walk that cannot stop, so
+  the two are one function rather than a pair that could drift. One unit is one
+  file, because a file is the smallest thing this walk has: a stop therefore lands
+  between two files, and the `None` is how it says so. The count is a count and
+  never a total, because the walk cannot know how many files a tree holds until it
+  has finished it; a surface that wants a percentage of the *catalog's* images
+  takes that from `plan`, which knows the denominator
+  (`specs/modules/plan.md`, *Decisions*). The callback is a bare `bool` and not
+  `plan`'s `Control` because `plan` depends on this module and never the reverse
+  (`specs/architecture.md`, *Module dependency edges*), and this operation stays
+  out of the supported seam beside the `sweep` whose only caller it is.

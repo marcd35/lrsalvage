@@ -27,7 +27,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use lrsalvage_core::catalog::Catalog;
-use lrsalvage_core::plan::{Options, Plan};
+use lrsalvage_core::plan::{Control, Options, Plan, Progress};
 use lrsalvage_core::previews_db;
 use rusqlite::{Connection, params};
 use tempfile::TempDir;
@@ -461,6 +461,9 @@ pub struct Vault {
     /// Bytes to write at `previews.db` instead of an index: the torn file U4
     /// degrades on.
     raw_index: Option<Vec<u8>>,
+    /// Bytes to write as the catalog instead of a database: the file a person
+    /// picked believing it was a `.lrcat`, which SQLite refuses.
+    raw_catalog: Option<Vec<u8>>,
     db_version: String,
     crs_version: String,
     root_folder: Option<String>,
@@ -541,6 +544,7 @@ impl Vault {
             layout,
             has_index: true,
             raw_index: None,
+            raw_catalog: None,
             wal: false,
             db_version: db_version.to_string(),
             crs_version: crs_version.to_string(),
@@ -730,6 +734,17 @@ impl Vault {
         self
     }
 
+    /// Write these bytes as the catalog instead of a database.
+    ///
+    /// The state a person meets when they pick something that is not a `.lrcat`:
+    /// the copy is carried and the open is refused, which is a different answer
+    /// from "no images" and has to say so (`#117` user story 4).
+    #[must_use]
+    pub fn raw_catalog(mut self, bytes: &[u8]) -> Self {
+        self.raw_catalog = Some(bytes.to_vec());
+        self
+    }
+
     fn representation(&self) -> Representation {
         match self.layout {
             Layout::Legacy => Representation::Container,
@@ -832,9 +847,40 @@ impl Vault {
         Plan::build(&catalog, &index, self.previews(), self.out(), options).expect("build a plan")
     }
 
+    /// [`Self::plan`], reporting every unit and stoppable between two of them.
+    ///
+    /// `None` is a build `progress` stopped, which is not a failure: it is what a
+    /// surface that offers a stop asks for and gets.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the vault was not written, or if either store cannot be read.
+    pub fn plan_reported(
+        &self,
+        options: &Options,
+        progress: &mut dyn FnMut(Progress) -> Control,
+    ) -> Option<Plan> {
+        assert!(self.written, "call write() before plan()");
+        let (_snapshot, catalog) = Catalog::open(self.catalog()).expect("open the vault catalog");
+        let index = previews_db::open(&self.previews().join("previews.db")).index;
+        Plan::build_reported(
+            &catalog,
+            &index,
+            self.previews(),
+            self.out(),
+            options,
+            progress,
+        )
+        .expect("build a plan")
+    }
+
     // -- writers ------------------------------------------------------------
 
     fn write_catalog(&self) {
+        if let Some(bytes) = &self.raw_catalog {
+            fs::write(self.catalog(), bytes).expect("raw catalog");
+            return;
+        }
         let conn = Connection::open(self.catalog()).expect("create the catalog");
         conn.execute_batch(CATALOG_SCHEMA).expect("catalog schema");
         if self.metadata_table {

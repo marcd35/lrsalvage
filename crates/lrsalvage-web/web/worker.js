@@ -11,8 +11,10 @@
 // (`js_namespace = "lrsalvage"` in `crates/lrsalvage-web/src/wasm.rs`), and it is
 // installed before the first call into wasm can happen.
 
-import { installBridge } from './lrsalvage-fs.js';
-import init, { poll_install, probe, scan, start_install } from './pkg/lrsalvage_web.js';
+// The seam's worker half lives with the app, which owns it: this harness links
+// the app crate and imports its JavaScript for the same reason (`#149`, DEC-S5).
+import { installBridge } from '../../lrsalvage-app/web/seam/lrsalvage-fs.js';
+import init, { install_vault, poll_vault, probe, scan_vault } from './pkg/lrsalvage_web.js';
 
 const log = (...parts) => console.log('[lrsalvage-worker]', ...parts);
 
@@ -53,13 +55,13 @@ async function start({ sab, mounts, capacity, clear, vaults, probePaths }) {
   // Started and polled, not awaited: the store's install is a promise and this
   // crate takes no async runtime for one of them (`deny.toml` bans one, and the
   // seam is synchronous everywhere else). `specs/modules/fs.md` records it.
-  start_install(
+  install_vault(
     JSON.stringify(mounts.map(({ path, store }) => ({ path, store: store === true }))),
     capacity,
     clear,
   );
   for (;;) {
-    const state = poll_install();
+    const state = poll_vault();
     if (state === 'done') break;
     if (state.startsWith('failed')) throw new Error(state);
     await macrotask();
@@ -72,7 +74,7 @@ async function start({ sab, mounts, capacity, clear, vaults, probePaths }) {
   const runs = [];
   for (const vault of vaults) {
     const began = performance.now();
-    const report = JSON.parse(scan(vault.catalog, vault.cache, vault.output));
+    const report = JSON.parse(scan_vault(vault.catalog, vault.cache, vault.output));
     log('scanned', vault.name, 'in', Math.round(performance.now() - began), 'ms');
     runs.push({ name: vault.name, report });
   }

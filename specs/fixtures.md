@@ -112,6 +112,9 @@ Vault::preoccupied_destination(relative, bytes)  a file already in the output tr
 Vault::same_destination_as(&Vault)  recover into another vault's `out`: two catalogs,
                                     one destination (M15)
 Vault::raw_index(bytes)            bytes at `previews.db` instead of an index (a torn file)
+Vault::raw_catalog(bytes)          bytes at the catalog instead of a database: a file a
+                                    person picked believing it was a `.lrcat`, whose copy
+                                    is carried and whose open is refused (`#149`)
 Vault::with_wal()                  leave the catalog between checkpoints: half its
                                     image rows in the main file and half in the `-wal`
                                     beside it, which is what Lightroom leaves and what

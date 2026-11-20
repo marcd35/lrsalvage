@@ -18,7 +18,10 @@
 // driver reads. Every failure is in `__result.differences` as a sentence; a run
 // that cannot happen at all posts `__result.error`.
 
-import { FsHost } from './fs-host.js';
+import { FsHost } from '../../lrsalvage-app/web/seam/fs-host.js';
+// The vault mounting lives with the app, which needs the same one for its own
+// browser run: two copies would be two answers to "which bytes did the page read".
+import { json, mountVault, freshDirectory } from '../../lrsalvage-app/web/mount.js';
 
 const SAB_BYTES = 1024 * 1024 + 8;
 const CAPACITY = 64;
@@ -65,12 +68,9 @@ async function main() {
 
   const began = performance.now();
   for (const vault of native.vaults) {
-    for (const relative of vault.files) {
-      const path = `/${vault.name}/${relative.split('/').map(encodeURIComponent).join('/')}`;
-      const response = await fetch(path);
-      if (!response.ok) throw new Error(`${path}: HTTP ${response.status}`);
-      await writeFile(dirs[vault.name], relative, new Uint8Array(await response.arrayBuffer()));
-    }
+    // The handle `mountVault` hands back is the one to mount from here on: it
+    // removes and recreates the directory, so the one the loop above made is gone.
+    dirs[vault.name] = await mountVault(root, vault.name, `/${vault.name}`, vault.files);
   }
   log('mounted', native.vaults.length, 'vaults in', Math.round(performance.now() - began), 'ms');
 
@@ -257,31 +257,4 @@ function compare(native, browser) {
   }
 
   return { ok: differences.length === 0, differences, numbers };
-}
-
-async function json(path) {
-  const response = await fetch(path);
-  if (!response.ok) throw new Error(`${path}: HTTP ${response.status}`);
-  return response.json();
-}
-
-async function freshDirectory(base, name) {
-  try {
-    await base.removeEntry(name, { recursive: true });
-  } catch (error) {
-    if (error.name !== 'NotFoundError') throw error;
-  }
-  return base.getDirectoryHandle(name, { create: true });
-}
-
-async function writeFile(dir, relative, bytes) {
-  const parts = relative.split('/');
-  let handle = dir;
-  for (const part of parts.slice(0, -1)) {
-    handle = await handle.getDirectoryHandle(part, { create: true });
-  }
-  const file = await handle.getFileHandle(parts[parts.length - 1], { create: true });
-  const stream = await file.createWritable();
-  await stream.write(bytes);
-  await stream.close();
 }

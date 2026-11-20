@@ -30,6 +30,12 @@ requires. Nothing ships with it, neither crate links it into a binary, and it is
 not a module in the table below — it exists so the byte shapes and the catalog
 fixtures have exactly one implementation (`fixtures`).
 
+Two more members are neither published nor test-only, and they are the browser
+line: `lrsalvage-app` is the shipped page's crate (`0.1.0`, ADR 0012 D10) and
+`lrsalvage-web` is the harness that measures the seam under it. Neither is a
+module of the pipeline below; `specs/app.md` owns the app and
+`specs/modules/fs.md` (*Where the harness lives*) owns the harness.
+
 The pipeline is a straight line, and every stage is pure with respect to the one
 before it:
 
@@ -96,7 +102,8 @@ field.
 | Item | Tier | Public because |
 |---|---|---|
 | `snapshot::CatalogSnapshot`, `.capture`, `.path` | seam | the stable copy every other opener takes by reference |
-| `catalog::Catalog`, `::from_snapshot`, `::images`, `::xmp`, `::versions` | seam | the catalog queries a run begins with, over a snapshot |
+| `catalog::Catalog`, `::from_snapshot`, `::images`, `::xmp`, `::versions`, `::root_folders` | seam | the catalog queries a run begins with, over a snapshot. `root_folders` is the recorded root folders with their image counts — the "last known folder" a front end shows, and a query rather than a derivation of a joined path |
+| `catalog::RootFolder` (+ `path`, `images`) | seam | what `root_folders` hands back |
 | `catalog::CatalogVersions` (+ `db_version`, `crs_version`) | seam | what `versions` hands back; `CacheFacts` carries the same two strings |
 | `catalog::Catalog::open` | convenience | `capture` + `from_snapshot` in one call |
 | `catalog::Catalog::image_count` | convenience | a count without materialising `images()`; no in-tree caller |
@@ -104,8 +111,8 @@ field.
 | `previews_db::PreviewIndex` (+ fields, `pyramid`, `levels`, `best_level`, `deletion`, `candidates`, `row_for_size`, `payload_path`) | seam | the index a front-end builds and hands to the plan |
 | `previews_db::PyramidKey` (+ `new`, `of`, `uuid`, `digest`), `Candidate` (+ `path`, `row`, `long_edge`) | seam | the key and the candidate a seam lookup is expressed in |
 | `previews_db::Layout` (+ `as_str`), `INDEX_FILE`, `CONTAINER_GRAMMAR`, `LEVEL_FILE_GRAMMAR` | seam | the layout word reaches `scan --json`, and the two templates are the only form of a payload path that may leave the machine (`adr-0007-publish-a-verification-report`) |
-| `previews_db::sweep`, `CacheSweep`, `PyramidOnDisk`, `LevelOnDisk` | not supported | one walk, owed to the plan and called by `Plan::build`; a second caller would be a second answer. The CLI's and the core's tests are the outside callers |
-| `plan::Plan` (+ fields, `build`, `selected`, `selected_images`), `PlanItem` (+ fields, `long_edge`), `Options`, `Stats`, `CacheFacts`, `Shapes`, `Status` (+ `as_str`), `Payload` (+ `path`), `Tier` (+ `as_str`) | seam | the plan is the hinge, and a front-end both builds it and reads it |
+| `previews_db::sweep`, `CacheSweep`, `PyramidOnDisk`, `LevelOnDisk` | not supported | one walk, owed to the plan and called by `Plan::build`; a second caller would be a second answer. The CLI's and the core's tests are the outside callers, and the walk's progress callback exists for the same one caller, so a page can see a walk and stop it |
+| `plan::Plan` (+ fields, `build`, `build_reported`, `selected`, `selected_images`), `PlanItem` (+ fields, `long_edge`), `Options`, `Stats`, `CacheFacts`, `Shapes`, `Status` (+ `as_str`), `Payload` (+ `path`), `Tier` (+ `as_str`), `Progress`, `Control` | seam | the plan is the hinge, and a front-end both builds it and reads it. `build_reported` and its two types are how a front end shows a scan moving and stops one: the progress unit and the stop signal are the plan's vocabulary, and a surface that paints every unit is the surface's own cost (`specs/modules/plan.md`) |
 | `plan::Tier::from_long_edge` | convenience | the mapping behind a tier a front-end only ever reads |
 | `extract::extract`, `ExtractOptions`, `Outcome`, `OutcomeStatus` (+ `as_str`), `outcome_summary`, `write_outcomes_csv`, `below_floor` | seam | the writer and what it reports; `extract` is the only module that writes user-visible output |
 | `extract::ensure_safe_destination_pending`, `ensure_safe_destination_create`, `ensure_create_outside` | seam | the refusal that must happen before the first write, on the destination and on `.lrcat-data` |

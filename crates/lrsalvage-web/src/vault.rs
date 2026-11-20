@@ -5,40 +5,11 @@
 //! and put into origin-private storage — so the composition is built once, here,
 //! and both targets see the same files.
 
-use std::fs;
-use std::path::Path;
-
 use lrsalvage_fixtures::vault::{ImageRow, Level, PyramidRow, Vault};
-use serde_json::{Value, json};
-
-/// Every file in `from`, copied to `to` under the same relative path.
-///
-/// The page fetches the vault over HTTP from this copy, so what the browser reads
-/// and what the native run read are the same bytes rather than two buildings of
-/// the same composition.
-pub fn copy_tree(from: &Path, to: &Path) -> Vec<Value> {
-    let mut files = Vec::new();
-    for entry in walkdir::WalkDir::new(from) {
-        let entry = entry.expect("walk the vault");
-        let relative = entry
-            .path()
-            .strip_prefix(from)
-            .expect("a path inside the vault");
-        if relative.as_os_str().is_empty() {
-            continue;
-        }
-        let target = to.join(relative);
-        if entry.file_type().is_dir() {
-            fs::create_dir_all(&target).expect("create a directory");
-            continue;
-        }
-        fs::create_dir_all(target.parent().expect("a parent")).expect("create a directory");
-        fs::copy(entry.path(), &target).expect("copy a vault file");
-        files.push(json!(relative.to_string_lossy().replace('\\', "/")));
-    }
-    files.sort_by(|left, right| left.as_str().cmp(&right.as_str()));
-    files
-}
+// The tree copy lives with the app crate, which needs the same one for its own
+// browser run (`#149`): two walkers would be two answers to "which files does the
+// page see".
+pub use lrsalvage_app::vault::copy_tree;
 
 /// One vault's rows: every status a plan can reach, and a payload for each that
 /// has one.
