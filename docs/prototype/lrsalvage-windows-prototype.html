@@ -1,0 +1,849 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>lrsalvage · Windows prototype</title>
+<style>
+:root { font: 16px/1.45 "Segoe UI", system-ui, sans-serif; color: #20242b; background: #eceff3; accent-color: #244b78; }
+* { box-sizing: border-box; }
+body { margin: 24px auto; padding: 0 16px; max-width: 1020px; }
+h1,h2,p { margin: 0 0 12px; }
+h1 { font-size: 1.3rem; } h2 { font-size: 1.65rem; }
+button,input,select { font: inherit; color: inherit; }
+button { border: 1px solid #8b929d; background: #fff; border-radius: 5px; padding: 7px 13px; min-height: 40px; cursor: pointer; }
+button:disabled { opacity: .55; cursor: default; }
+button[aria-pressed="true"] { background: #dce6f3; border-color: #244b78; }
+.primary { background: #244b78; color: white; border-color: #244b78; }
+:focus-visible { outline: 3px solid #245a97; outline-offset: 3px; }
+.shell { background: #fff; border: 1px solid #a5aab2; border-radius: 9px; margin-top: 18px; overflow: clip; }
+.titlebar, nav, main, .actions { padding: 14px 22px; }
+.titlebar { background: #f4f5f7; font-weight: 600; }
+nav { display: flex; flex-wrap: wrap; gap: 8px 20px; border-bottom: 1px solid #c7cbd1; font-size: .92rem; }
+nav [aria-current] { font-weight: 700; color: #244b78; }
+main { min-height: 330px; padding-block: 22px; }
+.actions { position: sticky; bottom: 0; z-index: 1; border-top: 1px solid #c7cbd1; background: #f4f5f7; }
+.actions strong { margin-right: auto; }
+.row { display: flex; gap: 8px 12px; align-items: center; flex-wrap: wrap; }
+.spread { justify-content: space-between; }
+.box { padding: 12px; border: 1px solid #c7cbd1; border-radius: 5px; margin: 12px 0; }
+.muted { color: #4b5563; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(155px, 1fr)); gap: 10px; margin-top: 12px; }
+.tile { margin: 0; padding: 8px; border: 1px solid #c7cbd1; border-radius: 5px; }
+.picture { display: grid; place-items: center; width: 100%; min-height: 84px; border: 1px solid #aeb6c1; background: #eef1f5; }
+.tile label { display: flex; align-items: center; gap: 5px; min-height: 32px; }
+.tile small { margin-left: 24px; }
+input[type=search],select { padding: 7px; max-width: 100%; }
+progress { width: min(100%, 440px); height: 22px; }
+dialog { width: min(640px, 92vw); border: 1px solid #7b8593; border-radius: 8px; padding: 20px; }
+dialog::backdrop { background: #182334a8; }
+.loupe { min-height: min(42vh, 330px); margin-block: 12px; padding: 16px; text-align: center; }
+.support { margin-top: 20px; font-size: .95rem; }
+.support a, .support button { color: #244b78; }
+.support button { border: 0; padding-inline: 0; text-decoration: underline; }
+.receipt-action { margin-top: 4px; margin-bottom: 8px; }
+summary { cursor: pointer; padding-block: 4px; }
+[hidden] { display: none !important; }
+
+/* The medium-fidelity prototype uses the same sample recovery in both views. */
+:root { color: #162732; background: #e7ecef; accent-color: #126a63; }
+body { max-width: 1180px; margin-top: 18px; margin-bottom: 84px; }
+h1 { font-size: 1.12rem; } h2 { font-size: 1.85rem; letter-spacing: -.026em; }
+h3 { margin: 8px 0; }
+button { border-color: #a3b0b7; border-radius: 7px; }
+.primary { border-color: #12645e; background: #12645e; }
+button[aria-pressed="true"] { background: #dcece8; border-color: #12645e; }
+.shell { border-color: #a9b6bc; border-radius: 13px; box-shadow: 0 16px 42px #35465122; }
+.titlebar { background: #17343b; color: #fff; letter-spacing: .02em; }
+.titlebar a { color: #fff; font-size: .92rem; letter-spacing: normal; }
+nav { background: #f7f9fa; padding-block: 11px; }
+nav [aria-current] { color: #12645e; }
+.box { border-color: #d2dce1; background: #f8fafb; }
+.actions { background: #f6f9fa; z-index: 3; }
+.layout-controls { margin-bottom: 10px; }
+.layout-controls input, .layout-controls select { border: 1px solid #a3b0b7; border-radius: 6px; background: white; }
+.view-controls { gap: 8px; margin-left: auto; }
+.view-controls label { display: inline-flex; align-items: center; gap: 5px; min-height: 40px; }
+.density-button { display: grid; place-items: center; min-width: 42px; padding-inline: 8px; color: #17343b; }
+.density-icon { display: grid; grid-template-columns: repeat(3, 1fr); width: 16px; height: 16px; gap: 2px; }
+.density-icon span { background: currentColor; border-radius: 1px; }
+.density-button[aria-pressed="true"] .density-icon { grid-template-columns: repeat(2, 1fr); }
+.density-button[aria-pressed="true"] .density-icon span:nth-child(n+5) { display: none; }
+.grid { grid-template-columns: repeat(auto-fill, minmax(143px,1fr)); }
+.grid.large { grid-template-columns: repeat(auto-fill, minmax(207px,1fr)); }
+.tile { overflow: hidden; background: #f9fbfc; border-color: #d2dce1; }
+.tile .picture { padding: 0; overflow: hidden; border: 0; border-radius: 5px; min-height: 0; }
+.tile .picture[aria-pressed="true"] { outline: 2px solid #12645e; outline-offset: -2px; }
+.tile .picture span { width: 100%; }
+.art { display: block; aspect-ratio: 1; background-image: url("sample-photo-atlas.png"); background-size: 400% 300%; background-repeat: no-repeat; }
+.tile label { font-weight: 600; }
+.review-split { display: grid; grid-template-columns: minmax(0,1fr) minmax(230px,29%); gap: 16px; align-items: start; }
+.review-side { padding: 14px; background: #f0f5f5; border: 1px solid #d0dcde; border-radius: 9px; }
+.review-side .art { width: 100%; border-radius: 6px; }
+.review-side button { margin-top: 6px; }
+.review-list { display: grid; grid-template-columns: 1fr; gap: 0; }
+.review-list .tile { display: grid; grid-template-columns: 65px minmax(110px,1fr) minmax(90px,auto); gap: 6px 12px; align-items: center; border-radius: 0; }
+.review-list .tile + .tile { border-top-width: 0; }
+.review-list .tile small { margin: 0; text-align: right; }
+.review-list.large .tile { grid-template-columns: 104px minmax(110px,1fr) minmax(90px,auto); }
+.gallery-summary { padding: 9px 12px; background: #edf5f3; border-radius: 7px; }
+#filename-options summary { padding: 4px 0; }
+#filename-options .row { margin-top: 12px; }
+#filename-options input { max-width: 150px; }
+#filename-options p { margin: 10px 0 0; }
+.folder-group { margin-top: 10px; border: 1px solid #d2dce1; border-radius: 7px; }
+.folder-group summary { padding: 8px 10px; background: #f8fafb; overflow-wrap: anywhere; }
+.folder-group .grid, .folder-group .review-list { margin: 10px; }
+.source-path, .output-path { overflow-wrap: anywhere; }
+.export-layout { padding: 8px 12px 12px; }
+.export-layout label + label { margin-left: 16px; }
+#planned-files { max-height: 190px; overflow-y: auto; padding-left: 22px; }
+.file-comparison { max-height: 240px; overflow-y: auto; }
+.file-comparison table { width: 100%; table-layout: fixed; border-collapse: collapse; }
+.file-comparison th, .file-comparison td { padding: 8px; text-align: left; vertical-align: top; border-bottom: 1px solid #d2dce1; overflow-wrap: anywhere; }
+.loupe { display: block; max-height: 50vh; overflow: auto; min-height: 0; background: #1c2b33; padding: 8px; }
+.loupe .art { width: min(100%, 380px); margin: 0 auto; }
+.loupe.actual .art { width: var(--actual); }
+#photo-dialog { width: min(760px, 94vw); }
+#guide { max-width: 980px; padding: 0 4px; }
+.guide-hero { padding: 27px 26px; background: #17343b; color: #fff; border-radius: 13px; margin-top: 16px; }
+.guide-hero a { color: white; }
+.guide-hero button { color: #17343b; }
+.guide-step { margin: 19px 0; background: #fff; padding: 18px; border: 1px solid #cad6dd; border-radius: 10px; }
+.guide-step img { display: block; max-width: 100%; border: 1px solid #c7d4da; border-radius: 7px; }
+#flow[hidden], #guide[hidden] { display: none; }
+@media (max-width: 760px) {
+  .review-split { display: block; }
+  .review-side { margin: 12px 0; }
+  .review-side .art { max-width: 190px; }
+}
+</style>
+</head>
+<body>
+<h1>lrsalvage Windows prototype</h1>
+<p>Can someone find the photos they care about and save the right JPEGs? Try a sample recovery below. The demo uses sample files and folders.</p>
+<div class="row" aria-label="Prototype views"><button id="flow-link" aria-pressed="true">Windows app</button><button id="guide-link" aria-pressed="false">Website guide</button></div>
+<div id="flow"><div class="row" id="scenarios" style="margin-top:12px" role="group" aria-label="Walkthroughs">
+  <button data-scenario="normal" aria-pressed="true">Save a batch</button>
+  <button data-scenario="small" aria-pressed="false">Find a small preview</button>
+  <button data-scenario="folders" aria-pressed="false">Folders and duplicate names</button>
+  <button data-scenario="stop" aria-pressed="false">Stop and continue</button>
+  <button data-scenario="empty" aria-pressed="false">No previews found</button>
+</div>
+<p id="hint" class="muted" style="margin-top:8px"></p>
+<div class="shell">
+  <header class="titlebar row spread"><span>lrsalvage</span><a href="#guide" id="context-help">Help</a></header>
+  <nav id="steps" aria-label="Recovery steps"></nav>
+  <main id="screen"></main>
+  <footer class="actions row" id="actions"></footer>
+</div>
+</div>
+<section id="guide" hidden>
+  <div class="guide-hero"><h2>Recover photos from Lightroom Classic previews</h2><p>Windows quick start</p><p><button disabled>Download for Windows</button></p><p><a href="#guide-1">Start the walkthrough</a> · <a href="#samples">Practice with sample catalogs</a></p></div>
+  <section class="guide-step" id="guide-1"><h3>1. Choose a Lightroom catalog</h3><p>Pick the .lrcat file. If the matching preview folder lives somewhere else, choose it when prompted.</p><img src="guide-01.png" alt="Catalog and preview folder selected in the Windows prototype" loading="lazy"></section>
+  <section class="guide-step" id="guide-2"><h3>2. Scan for previews</h3><p>If the originals were on an external drive, reconnect it and check again, or continue with previews.</p><img src="guide-02.png" alt="Windows prototype checking a Lightroom catalog and preview folder" loading="lazy"></section>
+  <section class="guide-step" id="guide-3"><h3>3. Review photos</h3><p>Switch between gallery and list views, and use Preview pane to inspect a photo as you browse. Group by folder to see photos by their original location. In an enlarged preview, use the arrow keys to move between photos and Esc to close it.</p><img src="guide-03.png" alt="Sample photos in a grid with a search box and selection count" loading="lazy"></section>
+  <section class="guide-step" id="guide-4"><h3>4. Choose a save folder</h3><p>Keep the original folder structure inside the recovery folder or put all JPEGs together. Check the example paths and available space. Expand Customize file names if you want to add a prefix or suffix.</p><img src="guide-04.png" alt="Sample save destination, folder layout choices, and disk-space check" loading="lazy"></section>
+  <section class="guide-step" id="guide-5"><h3>5. Open your JPEGs</h3><p>Use Open folder on the receipt to see what was saved.</p><img src="guide-05.png" alt="Recovery receipt with an Open folder button" loading="lazy"></section>
+  <section class="guide-step" id="samples"><h3>Practice with sample catalogs</h3><ul><li>Everything works · six JPEGs</li><li>Partially recoverable · four ready, two small, two missing</li><li>Catalog cannot be opened · try another catalog</li><li>Preview layout is unrecognized · try another preview folder</li></ul><p>Download links are placeholders for this prototype. The Windows app prototype includes a sample walkthrough.</p></section>
+</section>
+<dialog id="folder-dialog" aria-labelledby="folder-title"></dialog>
+<dialog id="single-dialog" aria-labelledby="single-title"></dialog>
+<dialog id="report-dialog" aria-labelledby="report-title"></dialog>
+<dialog id="photo-dialog" aria-labelledby="photo-title"></dialog>
+<dialog id="share-dialog" aria-labelledby="share-title"></dialog>
+
+<script>
+const regular = [
+  ['0431', 'Coastal cliffs', 2560, 1707], ['0432', 'Birthday candles', 4000, 2670],
+  ['0433', 'Family picnic', 1920, 1280], ['0434', 'Grandpa in the garden', 1280, 1920],
+  ['0435', 'A snowy morning', 1024, 768], ['0436', 'The old house', 2048, 1365],
+  ['0437', 'Lake at dusk', 2048, 1365], ['0438', 'School play', 1280, 1920],
+  ['0439', 'Sunday lunch', 1024, 768], ['0440', 'Train window', 1600, 900],
+  ['0441', 'Holiday lights', 1920, 1280], ['0442', 'Beach portrait', 640, 960]
+];
+const small = [['0481', 'Train through the valley', 320, 213], ['0482', 'Lights after sunset', 480, 320], ['0483', 'Beach portrait', 213, 320]];
+const missing = ['IMG_0491', 'IMG_0492', 'IMG_0493', 'IMG_0494'];
+const scenarios = {
+  normal: 'Choose the sample catalog, scan, and save the selected JPEGs.',
+  small: 'Scan the backup catalog. Locate its preview folder, then find and add Beach portrait.',
+  folders: 'Scan, turn on Group by folder, and add Beach portrait from View small previews. On the save screen, compare both folder layouts to see how duplicate names and small previews are handled.',
+  stop: 'Choose the sample catalog → Scan for previews → Choose save folder → Save 12 JPEGs. When the demo waits, click Stop saving, then Continue saving.',
+  empty: 'Scan the sample catalog with an empty preview folder. Try another preview folder from the results screen.'
+};
+const byId = id => document.getElementById(id);
+const screen = byId('screen');
+const actions = byId('actions');
+const photoDialog = byId('photo-dialog');
+const shareDialog = byId('share-dialog');
+const singleDialog = byId('single-dialog');
+const folderDialog = byId('folder-dialog');
+const reportDialog = byId('report-dialog');
+const guide = byId('guide');
+const flow = byId('flow');
+let previewId = null;
+let zoom = false;
+const sharedRuns = new Set();
+let communityTotal = 24817;
+const formatCount = new Intl.NumberFormat('en-US');
+const roots = ['Pictures', 'Desktop', 'Backup drive'];
+const timings = { scan: 1250, save: 460 };
+const mainPhotos = state => {
+  if (state.demo) return regular.slice(0, 6);
+  if (state.scenario === 'folders') return regular.filter(([id]) => ['0432', '0440', '0441'].includes(id));
+  return state.scenario === 'small' ? regular.slice(0, 9) : regular;
+};
+const initialState = scenario => ({
+  scenario, stage: 'source', catalog: false, cache: '', empty: false, group: 'regular',
+  selected: new Set(), query: '', batchRoot: null, oneOffRoot: null, completed: 0, shareId: null, selectedOnly: false, sort: 'filename',
+  listView: false, previewPane: false, large: false, single: new Map(), demo: false, prefix: '', suffix: '',
+  scanRoot: null, scanSaved: false, pausedOnce: false, groupFolders: false, collapsedFolders: new Set(),
+  outputLayout: 'mirrored'
+});
+const scanResults = state => ({
+  ...state, stage: 'review', group: 'regular', query: '',
+  selected: new Set(state.empty ? [] : mainPhotos(state).map(([id]) => id))
+});
+function advanceSave(state) {
+  const completed = state.completed + 1;
+  return { ...state, completed, stage: completed === state.selected.size ? 'done' : 'saving' };
+}
+let state = initialState('normal');
+let timer;
+let stopping = false;
+let waitingAtCheckpoint = false;
+let photoIndex = 0;
+let photoPhotos = [];
+let folderOpened = false;
+let folderTarget;
+let pendingRoot;
+let filenameField = 'suffix';
+const slash = String.fromCharCode(92);
+const catalogFolders = {
+  beach: { path: ['E:', 'Family Photos', '2019', 'Beach'].join(slash), relative: ['Family Photos', '2019', 'Beach'].join(slash) },
+  birthday: { path: ['F:', 'Family Photos', '2021', 'Birthday'].join(slash), relative: ['Family Photos', '2021', 'Birthday'].join(slash) },
+  home: { path: ['E:', 'Family Photos', '2020', 'Home'].join(slash), relative: ['Family Photos', '2020', 'Home'].join(slash) },
+  unknown: { path: 'Original folder unknown', relative: '' }
+};
+const displayName = id => ({'0440': 'IMG_0432 (2)', '0441': 'IMG_0432', '0483': 'IMG_0432'}[id] ?? 'IMG_' + id);
+const folderKey = id => {
+  if (id === '0439') return 'unknown';
+  if (['0431', '0440', '0442', '0483'].includes(id)) return 'beach';
+  if (['0432', '0438', '0441', '0482'].includes(id)) return id === '0441' ? 'home' : 'birthday';
+  return 'home';
+};
+const originalFolder = id => catalogFolders[folderKey(id)].path;
+const rootPath = root => root === 'Backup drive' ? 'E:' + slash : ['C:', 'Users', 'Casey', root].join(slash);
+const batchRoot = () => state.batchRoot ?? state.oneOffRoot ?? roots[0];
+const scanRoot = () => state.scanRoot ?? batchRoot();
+const path = () => {
+  const root = rootPath(batchRoot());
+  return root + (root.endsWith(slash) ? '' : slash) + 'Recovered from Family Catalog';
+};
+const failed = () => Number(state.scenario === 'stop' && state.completed === state.selected.size && state.completed > 0);
+const saved = () => {
+  const batch = [...state.selected].slice(0, state.completed - failed());
+  return new Set([...batch, ...state.single.keys()]).size;
+};
+const jpegCount = count => formatCount.format(count) + (count === 1 ? ' JPEG' : ' JPEGs');
+const visiblePhotos = () => {
+  const group = state.group === 'small' ? small : mainPhotos(state);
+  const matching = group.filter(([id, title]) => (!state.selectedOnly || state.selected.has(id)) &&
+    (displayName(id) + ' ' + title + ' ' + originalFolder(id)).toLowerCase().includes(state.query.trim().toLowerCase()));
+  matching.sort((a, b) => displayName(a[0]).localeCompare(displayName(b[0])));
+  if (state.sort === 'size') matching.sort((a, b) => Math.max(b[2], b[3]) - Math.max(a[2], a[3]));
+  if (state.sort === 'folder' || state.groupFolders) matching.sort((a, b) => originalFolder(a[0]).localeCompare(originalFolder(b[0])));
+  return matching;
+};
+const shownPhotos = photos => state.groupFolders
+  ? photos.filter(([id]) => !state.collapsedFolders.has(folderKey(id)))
+  : photos;
+const allPhotos = [...regular, ...small];
+const artwork = (id, title) => {
+  const position = allPhotos.findIndex(photo => photo[0] === id);
+  const index = position < regular.length ? position : position - small.length;
+  return '<span role="img" aria-label="' + title + '" class="art" style="background-position:' + (index % 4 * 100 / 3) + '% ' + (Math.floor(index / 4) * 50) + '%"></span>';
+};
+const sampleFilename = () => displayName(state.selected.values().next().value || '0431');
+function planSampleOutputs(prefix, suffix) {
+  const smallIds = new Set(small.map(([id]) => id));
+  const photos = allPhotos.filter(([id]) => state.selected.has(id));
+  const entries = photos.map(([id, , width, height]) => ({
+    id,
+    directory: state.outputLayout === 'mirrored' ? catalogFolders[folderKey(id)].relative : '',
+    small: smallIds.has(id),
+    stem: expandTags(prefix, width, height) + displayName(id) + expandTags(suffix, width, height) +
+      (smallIds.has(id) ? '_small' : '')
+  }));
+  const relative = (entry, number) =>
+    [entry.directory, entry.stem + (number > 1 ? ' (' + number + ')' : '') + '.jpg'].filter(Boolean).join(slash);
+  const reserved = new Set(entries.map(entry => relative(entry, 1).toLowerCase()));
+  const used = new Set();
+  return entries.map(entry => {
+    let number = 1;
+    let output = relative(entry, number);
+    if (used.has(output.toLowerCase())) {
+      do { output = relative(entry, ++number); }
+      while (used.has(output.toLowerCase()) || reserved.has(output.toLowerCase()));
+    }
+    used.add(output.toLowerCase());
+    return {...entry, output};
+  });
+}
+const expandTags = (field, width, height) => field.replaceAll('<width>', String(width)).replaceAll('<height>', String(height));
+const requiredSpace = () => state.selected.size * 1.4;
+const insufficientSpace = () => batchRoot() === 'Backup drive' && requiredSpace() > 8;
+const button = (label, action, attrs = '') => '<button type="button" data-action="' + action + '" ' + attrs + '>' + label + '</button>';
+const heading = text => '<h2 id="screen-title" tabindex="-1">' + text + '</h2>';
+const primary = 'class="primary"';
+
+function render() {
+  const stage = state.stage;
+  const step = ['source', 'scanning'].includes(stage) ? 0 : stage === 'review' ? 1 : 2;
+  byId('context-help').setAttribute('href', '#guide-' + ({source:1, scanning:2, review:3, folder:4, saving:4}[stage] || 5));
+  byId('steps').innerHTML = ['Choose catalog', 'Review photos', 'Save JPEGs'].map((label, index) =>
+    '<span ' + (index === step ? 'aria-current="step"' : '') + '>' + label + '</span>').join('');
+  byId('hint').textContent = scenarios[state.scenario];
+  for (const item of byId('scenarios').querySelectorAll('button')) {
+    item.setAttribute('aria-pressed', String(item.dataset.scenario === state.scenario));
+  }
+  if (stage === 'source') {
+    screen.innerHTML = heading('Choose your Lightroom catalog') +
+      '<p>Save JPEG copies from the previews Lightroom Classic stored for your photos.</p>' +
+      '<div class="box row spread"><span><strong>Lightroom catalog</strong><br>' +
+      (state.catalog ? 'Family Catalog.lrcat' : 'Choose the .lrcat file from your Lightroom files.') +
+      '</span>' + button(state.catalog ? 'Use sample catalog again' : 'Choose sample catalog', 'catalog', state.catalog ? '' : primary) + '</div>' +
+      (!state.catalog ? '' : '<div class="box row spread"><span><strong>Preview folder</strong><br>' +
+      (state.cache ? 'Family Catalog Previews.lrdata · ' + (state.cache === 'found' ? 'found beside catalog' : 'folder selected') :
+        'Look for a folder named Family Catalog Previews.lrdata in your backup.') +
+      '</span>' + button(state.cache ? 'Change preview folder' : 'Choose preview folder', 'cache') + '</div>');
+    if (state.catalog && state.scenario === 'small') {
+      screen.insertAdjacentHTML('beforeend', '<div class="box"><strong>Last known location E:\\Photos</strong><p>This could be an external drive. Reconnect it to check again, or continue with previews.</p>' +
+      '<a href="https://helpx.adobe.com/sg/lightroom-classic/desktop/manage-catalogs-and-files/locate-missing-photos.html" target="_blank" rel="noopener noreferrer">Adobe’s guide to finding missing photos</a> ' +
+      button('Check again', 'check-originals') + '<p id="originals-note" role="status" hidden>The sample drive is still unavailable.</p></div>');
+    }
+    actions.innerHTML = button('Try with sample photos', 'demo') + '<strong>Your Lightroom files are read-only.</strong>' + button('Scan for previews', 'scan', primary + (state.cache ? '' : ' disabled'));
+  }
+  if (stage === 'scanning') {
+    screen.innerHTML = heading('Looking for Lightroom previews') + '<p>Checking the catalog and preview folder.</p><progress aria-label="Scanning"></progress>';
+    actions.innerHTML = button('Stop scan', 'stop-scan');
+  }
+  if (stage === 'review') {
+    screen.innerHTML = state.empty ? heading('No previews found') +
+      '<p>The catalog opened, but the selected preview folder contained no cached photos to save.</p>' +
+      '<div class="box"><h3>What we found</h3><ul><li>Catalog opened successfully</li><li>12 catalog photos checked</li>' +
+      '<li>Preview index found and readable</li><li>0 cached photo files found</li></ul></div>' +
+      '<p>If you copied the catalog from a backup, look for another folder named Family Catalog Previews.lrdata.</p>' : heading('Review photos') +
+      '<p><strong>' + mainPhotos(state).length + ' previews ready to save</strong> as JPEG copies.</p>' +
+      (state.demo ? '' : '<div class="box"><div class="row spread"><span>3 smaller previews available</span>' +
+      button(state.group === 'small' ? 'Back to larger previews' : 'View small previews', 'group') +
+      '</div><details><summary>No preview found for 4 photos</summary><ul>' +
+      missing.map(name => '<li>' + name + '</li>').join('') + '</ul></details></div>') +
+      (state.group === 'small' ? '<h3>Small previews</h3><p>A small copy is all we found for these photos.</p>' : '') +
+      '<div class="row layout-controls"><label>Search <input id="search" type="search" autocomplete="off"></label>' +
+      '<label>Filter <select id="filter"><option value="all">All in this group</option><option value="selected">Selected only</option></select></label>' +
+      '<label>Sort <select id="sort"><option value="filename">Filename</option><option value="size">Largest preview first</option>' +
+      '<option value="folder">Original folder</option></select></label>' +
+      '<div class="row view-controls"><label>View <select id="layout"><option value="gallery">Gallery</option><option value="list">List</option></select></label>' +
+      button('<span class="density-icon" aria-hidden="true">' + '<span></span>'.repeat(9) + '</span>', 'density',
+        'class="density-button" aria-label="Larger thumbnails in this view" aria-pressed="' + state.large +
+        '" title="Change thumbnail display size only"') +
+      '<label><input type="checkbox" id="preview-pane"' + (state.previewPane ? ' checked' : '') + '> Preview pane</label></div></div>' +
+      '<div class="row spread"><div class="row"><label><input type="checkbox" id="group-folders"' +
+      (state.groupFolders ? ' checked' : '') + '> Group by folder</label><span id="visible-count" class="muted"></span></div><div class="row">' +
+      button('Select visible photos', 'select-group') + button('Clear selection', 'clear') + '</div></div>' +
+      '<div id="review-content" class="' + (state.previewPane ? 'review-split' : '') + '"><div id="grid"></div>' +
+      (state.previewPane ? '<aside id="side-preview" class="review-side" aria-label="Photo preview"></aside>' : '') + '</div>';
+    if (!state.empty) {
+      byId('search').value = state.query;
+      byId('filter').value = state.selectedOnly ? 'selected' : 'all';
+      byId('sort').value = state.sort;
+      byId('layout').value = state.listView ? 'list' : 'gallery';
+      renderGrid();
+    } else {
+      actions.innerHTML = button('Back to catalog', 'back-source') + button('View log', 'scan-log') +
+        button('Check another preview folder', 'another-cache', primary);
+    }
+  }
+  if (stage === 'folder') {
+    screen.innerHTML = heading('Choose where to save your JPEGs') +
+      '<p>The app will save one JPEG per selected photo, with catalog metadata where available.</p>' +
+      '<div class="box"><div class="row spread"><span>Save location <strong id="location"></strong></span>' +
+      button('Choose folder…', 'batch-folder') + '</div><p id="destination">Destination <strong>' + path() + '</strong></p></div>' +
+      '<p class="gallery-summary"><strong>Space needed</strong> ' + requiredSpace().toFixed(1) +
+      ' MB · <strong>Space available</strong> <span id="free-space"></span></p>' +
+      '<p id="space-note" role="status" hidden>Choose a folder with more free space.</p>' +
+      '<fieldset class="box export-layout"><legend>Folder layout</legend>' +
+      '<label><input type="radio" name="export-layout" value="mirrored"' + (state.outputLayout === 'mirrored' ? ' checked' : '') +
+      '> Keep original folders</label><label><input type="radio" name="export-layout" value="flat"' +
+      (state.outputLayout === 'flat' ? ' checked' : '') + '> Put all JPEGs in one folder</label></fieldset>' +
+      '<section class="box" id="small-versions" hidden><h3>Small versions</h3><p id="small-example"></p></section>' +
+      '<details id="filename-options" class="box"><summary>Customize file names · <strong id="name-example"></strong></summary>' +
+      '<div class="row"><label>Prefix <input id="prefix"></label><label>Suffix <input id="suffix"></label></div>' +
+      '<div class="row" role="group" aria-label="Insert a dimension tag into the active field"><span>Insert tag</span>' +
+      button('Width', 'insert-tag', 'data-tag="width"') + button('Height', 'insert-tag', 'data-tag="height"') + '</div>' +
+      '<p><strong>Before</strong> ' + sampleFilename() + '.jpg</p><p><strong>After</strong> <span id="name-result"></span></p>' +
+      '<p id="name-error" role="status" hidden>Use valid Windows filename text and the &lt;width&gt; or &lt;height&gt; tags.</p></details>' +
+      '<details class="box" id="output-preview" open><summary>Files inside the recovery folder</summary><ul id="planned-files"></ul>' +
+      '<div id="comparison" class="file-comparison" hidden><table><thead><tr><th scope="col">Before customization</th>' +
+      '<th scope="col">After customization</th></tr></thead><tbody id="comparison-paths"></tbody></table></div></details>';
+    byId('prefix').value = state.prefix;
+    byId('suffix').value = state.suffix;
+    actions.innerHTML = button('Back to photos', 'back-review') + '<strong></strong>' +
+      button('Save ' + jpegCount(state.selected.size), 'start-save', primary);
+    updateSaveOptions();
+  }
+  if (stage === 'saving') {
+    screen.innerHTML = heading('Saving ' + Math.min(state.completed + 1, state.selected.size) + ' of ' + state.selected.size + ' JPEGs') +
+      '<p>' + path() + '</p><progress aria-label="JPEGs processed" max="' + state.selected.size + '" value="' + state.completed +
+      '"></progress><p>' + state.completed + ' saved</p><p id="stop-hint" hidden>Two sample JPEGs are saved. Click Stop saving to try resuming.</p>';
+    actions.innerHTML = button(stopping ? 'Finishing current file…' : 'Stop saving', 'stop-save', stopping ? 'disabled' : '');
+  }
+  if (stage === 'paused') {
+    screen.innerHTML = heading('Saving stopped') + '<p>' + jpegCount(state.completed) + ' saved. ' +
+      (state.selected.size - state.completed) + ' still to save.</p><p>' + path() + '</p>';
+    actions.innerHTML = button('Open folder', 'open-folder') + '<strong></strong>' + button('Continue saving', 'continue-save', primary);
+  }
+  if (stage === 'done') {
+    screen.innerHTML = heading(jpegCount(saved()) + ' saved') + '<p>' + (state.completed ? 'Saved to <strong>' + path() + '</strong>' : 'Saved in the location you chose for each photo.') + '</p>' +
+      button('Open folder', 'open-folder', 'class="primary receipt-action"') +
+      (failed() ? '<details class="box"><summary>1 JPEG couldn’t be saved</summary><p>' +
+        'The preview for IMG_0442.jpg could no longer be read from the source folder.</p></details>' : '') +
+      (state.completed ? '<details class="box"><summary>Recovery reports</summary><p>These files are in the recovery folder.</p><ul>' +
+        '<li><a href="#report" data-report="report.csv">report.csv</a> · Photos and scan outcomes</li>' +
+        '<li><a href="#report" data-report="extract.csv">extract.csv</a> · Save outcomes</li>' +
+        '<li><a href="#report" data-report="manifest.json">manifest.json</a> · Recovery data for tools</li></ul>' +
+        button('Open reports folder', 'open-folder') + '</details>' : '') +
+      '<section class="box" aria-labelledby="scan-save-title"><h3 id="scan-save-title">Save a scan report?</h3>' +
+      '<p>Keep a copy of what this scan found.</p><div class="row spread"><span id="scan-location">' + rootPath(scanRoot()) + '</span>' +
+      button('Choose folder…', 'scan-folder') + '</div><p>' + button('Save scan report', 'save-scan') + ' ' +
+      button('View log', 'scan-log') + '</p><p id="scan-saved" role="status"' + (state.scanSaved ? '' : ' hidden') +
+      '>This prototype simulated saving the scan results.</p></section>' +
+      (saved() && !state.demo ? '<section class="box" aria-labelledby="community-title"><h3 id="community-title">Community recovery total</h3>' +
+        (sharedRuns.has(state.shareId) ? '<p role="status">Your count was added. Thank you!</p>' :
+          '<p>Share the number of JPEGs you saved. No account required.</p>') +
+        button(sharedRuns.has(state.shareId) ? 'View community total' : 'Share my count', 'share') + '</section>' : '') +
+      '<div class="support row"><span>If lrsalvage helped</span>' +
+      '<a href="https://github.com/marcd35/lrsalvage" target="_blank" rel="noopener noreferrer">Star on GitHub</a>' +
+      button('Buy me a coffee', 'coffee') + '<span hidden id="coffee-note" role="status">Support link placeholder for this demo.</span></div>';
+    actions.innerHTML = button('Start another recovery', 'reset');
+  }
+  if (folderOpened && ['paused', 'done'].includes(stage)) {
+    const anchor = screen.querySelector('.receipt-action');
+    const note = '<p class="box" id="folder-note" role="status" tabindex="-1">In the Windows app, this would open the destination in File Explorer.</p>';
+    if (anchor) anchor.insertAdjacentHTML('afterend', note);
+    else screen.insertAdjacentHTML('beforeend', note);
+  }
+}
+function tileMarkup([id, title, w, h]) {
+  return '<article class="tile">' + button(artwork(id, title), 'photo', 'class="picture" data-id="' + id +
+    '" aria-label="' + (state.previewPane ? 'Show details for ' : 'Open preview of ') + title + '"') +
+    '<label><input type="checkbox" data-photo="' + id + '" aria-label="Include ' + displayName(id) + '" ' +
+    (state.selected.has(id) ? 'checked' : '') + '> ' + displayName(id) + '</label><small class="muted">' + w + ' × ' + h + ' px</small></article>';
+}
+function renderGrid() {
+  const grid = byId('grid');
+  const photos = visiblePhotos();
+  const viewClass = (state.listView ? 'review-list' : 'grid') + (state.large ? ' large' : '');
+  grid.className = state.groupFolders ? '' : viewClass;
+  if (photos.length === 0) {
+    grid.innerHTML = '<p>No photos match your search.</p>';
+  } else if (state.groupFolders) {
+    const groups = new Map();
+    for (const photo of photos) {
+      const key = folderKey(photo[0]);
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(photo);
+    }
+    grid.innerHTML = [...groups].map(([key, group]) =>
+      '<details class="folder-group" data-folder="' + key + '"' + (state.collapsedFolders.has(key) ? '' : ' open') +
+      '><summary>' + catalogFolders[key].path + ' · ' + group.length + (group.length === 1 ? ' photo' : ' photos') +
+      '</summary><div class="' + viewClass + '">' + group.map(tileMarkup).join('') + '</div></details>').join('');
+  } else {
+    grid.innerHTML = photos.map(tileMarkup).join('');
+  }
+  updateReviewCounts(shownPhotos(photos));
+}
+function updateReviewCounts(photos) {
+  byId('visible-count').textContent = photos.length + (photos.length === 1 ? ' photo shown' : ' photos shown');
+  const bulk = screen.querySelector('[data-action="select-group"]');
+  bulk.textContent = 'Select ' + photos.length + ' visible';
+  bulk.disabled = !photos.length;
+  if (state.previewPane) renderSidePreview(photos);
+  renderSelection();
+}
+function renderSidePreview(photos) {
+  const photo = photos.find(([id]) => id === previewId) ?? photos[0];
+  const tiles = byId('grid').querySelectorAll('.picture');
+  tiles.forEach(tile => tile.setAttribute('aria-pressed', String(photo?.[0] === tile.dataset.id)));
+  byId('side-preview').innerHTML = photo ? artwork(photo[0], photo[1]) + '<h3>' + photo[1] + '</h3><p class="source-path">' +
+    originalFolder(photo[0]) + '</p><p>' + photo[2] + ' × ' + photo[3] +
+    ' px</p>' + button('Enlarge preview', 'enlarge', 'data-id="' + photo[0] + '"') : '<p>No preview to show.</p>';
+}
+function updateSaveOptions() {
+  const {prefix, suffix} = state;
+  const forbidden = /[<>:"/\\|?*\u0000-\u001f]/u;
+  const customized = prefix !== '' || suffix !== '';
+  const allowed = value => !forbidden.test(expandTags(value, 800, 600));
+  const hasRoom = !insufficientSpace();
+  const proposed = allowed(prefix) && allowed(suffix) ? planSampleOutputs(prefix, suffix) : null;
+  const valid = proposed !== null && proposed.every(({output}) => output.split(slash).pop().length <= 120);
+  const outputs = valid ? proposed : [];
+  const first = outputs.find(entry => entry.id === state.selected.values().next().value) ?? outputs[0];
+  const name = first?.output.split(slash).pop() ?? '—';
+  const smallOutputs = outputs.filter(entry => entry.small);
+  const smallCount = small.filter(([id]) => state.selected.has(id)).length;
+  byId('destination').querySelector('strong').textContent = path();
+  byId('location').textContent = rootPath(batchRoot());
+  byId('free-space').textContent = batchRoot() === 'Backup drive' ? '8 MB' : '42 GB';
+  byId('space-note').hidden = hasRoom;
+  byId('name-error').hidden = valid;
+  byId('name-example').textContent = valid ? name : 'Check the prefix or suffix';
+  byId('name-result').textContent = name;
+  byId('small-versions').hidden = smallCount === 0;
+  byId('small-example').textContent = smallCount + (smallCount === 1 ? ' small preview selected' : ' small previews selected') +
+    (smallOutputs.length ? ' · ' + smallOutputs[0].output.split(slash).pop() : '');
+  byId('planned-files').hidden = customized;
+  byId('comparison').hidden = !customized || !valid;
+  byId('planned-files').replaceChildren(...(customized ? [] : outputs).map(({output}) => {
+    const item = document.createElement('li');
+    item.className = 'output-path';
+    item.textContent = output;
+    return item;
+  }));
+  const before = customized && valid ? planSampleOutputs('', '') : [];
+  byId('comparison-paths').replaceChildren(...before.map((entry, index) => {
+    const row = document.createElement('tr');
+    row.insertCell().textContent = entry.output;
+    row.insertCell().textContent = outputs[index].output;
+    return row;
+  }));
+  actions.querySelector('[data-action="start-save"]').disabled = !valid || !hasRoom;
+}
+function showGuide(show, anchor) {
+  guide.hidden = !show;
+  flow.hidden = show;
+  byId('guide-link').setAttribute('aria-pressed', String(show));
+  byId('flow-link').setAttribute('aria-pressed', String(!show));
+  if (show && anchor) byId(anchor)?.scrollIntoView();
+}
+function renderSelection() {
+  const count = state.selected.size;
+  if (!byId('selection-count')) {
+    actions.innerHTML = button('Back to catalog', 'back-source') + button('View log', 'scan-log') + '<strong id="selection-count" role="status"></strong>' +
+      button('Choose save folder', 'folder', primary);
+  }
+  if (state.single.size && !actions.querySelector('[data-action="finish"]')) {
+    actions.querySelector('[data-action="folder"]').insertAdjacentHTML('beforebegin', button('Finish recovery', 'finish'));
+  }
+  byId('selection-count').textContent = count + ' selected to save';
+  actions.querySelector('[data-action="folder"]').disabled = count === 0;
+}
+function go(stage) {
+  state.stage = stage;
+  render();
+  byId('screen-title').focus();
+}
+function reset(scenario) {
+  clearTimeout(timer);
+  stopping = false;
+  waitingAtCheckpoint = false;
+  folderOpened = false;
+  previewId = null;
+  state = initialState(scenario);
+  go('source');
+}
+function renderPhoto() {
+  const [id, title, w, h] = photoPhotos[photoIndex];
+  photoDialog.innerHTML = '<div class="row spread"><h2 id="photo-title">' + title + '</h2>' +
+    button('Close preview', 'close-photo', 'autofocus') + '</div><div class="loupe' + (zoom ? ' actual' : '') + '" style="--actual:' + w + 'px">' +
+    artwork(id, title) + '</div><div class="row spread"><div><p>' + displayName(id) + ' · ' + w + ' × ' + h + ' px</p>' +
+    '<p class="source-path muted">' + originalFolder(id) + '</p></div>' +
+    button(zoom ? 'Fit' : 'Actual size', 'zoom') + '</div><div class="row">' +
+    '<label><input type="checkbox" id="photo-include" ' + (state.selected.has(id) ? 'checked' : '') + '> Include in recovery</label>' +
+    button('Save this JPEG', 'single') + (state.single.has(id) ? '<span role="status">Saved</span>' + button('Open folder', 'single-folder') : '') +
+    '</div><p id="single-folder-note" role="status" hidden>In the Windows app, this opens the location you chose.</p><div class="row" style="margin-top:8px">' +
+    button('Previous photo', 'previous', photoIndex === 0 ? 'disabled' : '') +
+    button('Next photo', 'next', photoIndex === photoPhotos.length - 1 ? 'disabled' : '') + '</div>';
+}
+function movePhoto(direction) {
+  const next = photoIndex + direction;
+  if (next < 0 || next >= photoPhotos.length) return;
+  photoIndex = next;
+  renderPhoto();
+  const arrow = photoDialog.querySelector('[data-action="' + (direction === 1 ? 'next' : 'previous') + '"]');
+  (arrow.disabled ? photoDialog.querySelector('[data-action="close-photo"]') : arrow).focus();
+}
+function renderShare() {
+  const shared = sharedRuns.has(state.shareId);
+  shareDialog.innerHTML =
+    '<p class="muted">Simulated browser page · sample total</p>' +
+    '<h2 id="share-title">Community recovery total</h2><p><strong>' + jpegCount(communityTotal) +
+    ' saved</strong> by people who chose to share their counts.</p>' +
+    (shared ? '<p role="status">Your ' + jpegCount(saved()) + ' have been added to the total.</p>' :
+      '<p>This sends your count and a random ID that keeps this run from being counted twice. No account is required.</p>') +
+    '<div class="row">' + button(shared ? 'Done' : 'Cancel', 'close-share', 'autofocus') +
+    (shared ? '' : button('Add ' + formatCount.format(saved()) + ' to the total', 'confirm-share', primary)) + '</div>';
+}
+function nextWrite() {
+  state = advanceSave(state);
+  if (state.stage === 'done') { go('done'); return; }
+  if (stopping) { stopping = false; state.pausedOnce = true; go('paused'); return; }
+  byId('screen-title').textContent = 'Saving ' + (state.completed + 1) + ' of ' + state.selected.size + ' JPEGs';
+  screen.querySelector('progress').value = state.completed;
+  screen.querySelector('progress + p').textContent = state.completed + ' saved';
+  if (state.scenario === 'stop' && !state.pausedOnce && state.completed === 2) {
+    waitingAtCheckpoint = true;
+    byId('stop-hint').hidden = false;
+    return;
+  }
+  timer = setTimeout(nextWrite, timings.save);
+}
+function chooseFolder(target, current) {
+  folderTarget = target;
+  folderDialog.innerHTML = '<h2 id="folder-title">Choose a folder</h2><p>Sample folder picker</p><fieldset><legend>Save location</legend>' +
+    roots.map(root => '<p><label><input type="radio" name="sample-folder" value="' + root + '"' +
+      (root === current ? ' checked' : '') + '> ' + rootPath(root) + '</label></p>').join('') +
+    '</fieldset><div class="row" style="margin-top:12px">' + button('Cancel', 'cancel-folder') +
+    button('Select folder', 'confirm-folder', primary) + '</div>';
+  folderDialog.showModal();
+}
+function showReport(name, text) {
+  reportDialog.innerHTML = '<h2 id="report-title"></h2><p id="report-body"></p>' + button('Close', 'close-report', 'autofocus');
+  byId('report-title').textContent = name;
+  byId('report-body').textContent = text;
+  byId('report-body').style.whiteSpace = 'pre-wrap';
+  reportDialog.showModal();
+}
+const handlers = {
+  catalog() { state.catalog = true; state.cache = state.scenario === 'small' ? '' : 'found'; state.empty = state.scenario === 'empty'; go('source'); },
+  cache() { state.cache = 'chosen'; state.empty = false; go('source'); },
+  scan() { go('scanning'); timer = setTimeout(() => { state = scanResults(state); go('review'); }, timings.scan); },
+  'stop-scan'() { clearTimeout(timer); go('source'); },
+  'back-source'() { go('source'); },
+  'another-cache'() { state.cache = ''; state.empty = false; go('source'); },
+  group() { state.group = state.group === 'small' ? 'regular' : 'small'; state.query = ''; render(); screen.querySelector('[data-action="group"]').focus(); },
+  'select-group'() { for (const [id] of shownPhotos(visiblePhotos())) state.selected.add(id); renderGrid(); },
+  clear() { state.selected.clear(); renderGrid(); },
+  photo(control, event) {
+    if (state.previewPane && event.detail > 0) {
+      previewId = control.dataset.id;
+      renderSidePreview(shownPhotos(visiblePhotos()));
+      return;
+    }
+    handlers.enlarge(control);
+  },
+  enlarge(control) {
+    zoom = false;
+    photoPhotos = shownPhotos(visiblePhotos());
+    photoIndex = photoPhotos.findIndex(([id]) => id === control.dataset.id);
+    if (photoIndex < 0) return;
+    previewId = photoPhotos[photoIndex][0];
+    renderPhoto();
+    photoDialog.showModal();
+  },
+  zoom() { zoom = !zoom; renderPhoto(); photoDialog.querySelector('[data-action="zoom"]').focus(); },
+  single() {
+    const [id] = photoPhotos[photoIndex];
+    pendingRoot = state.oneOffRoot ?? roots[0];
+    singleDialog.innerHTML = '<h2 id="single-title">Save this JPEG</h2><p><label>File name <input id="single-name"></label></p>' +
+      '<div class="box row spread"><span>Save location <strong id="single-location">' + rootPath(pendingRoot) + '</strong></span>' +
+      button('Choose folder…', 'single-folder-picker') + '</div><div class="row">' +
+      button('Cancel', 'cancel-single') + button('Save JPEG', 'confirm-single', primary) + '</div>';
+    byId('single-name').value = displayName(id) + '.jpg';
+    singleDialog.showModal();
+    byId('single-name').select();
+  },
+  'confirm-single'() {
+    const [id] = photoPhotos[photoIndex];
+    const basename = byId('single-name').value.trim();
+    if (!basename) return;
+    state.single.set(id, basename);
+    state.oneOffRoot = pendingRoot;
+    singleDialog.close();
+    renderPhoto();
+    photoDialog.querySelector('[data-action="single"]').focus();
+    renderSelection();
+  },
+  'cancel-single'() { singleDialog.close(); },
+  'single-folder'() { byId('single-folder-note').hidden = false; },
+  'single-folder-picker'() { chooseFolder('single', pendingRoot); },
+  'batch-folder'() { chooseFolder('batch', batchRoot()); },
+  'scan-folder'() { chooseFolder('scan', scanRoot()); },
+  'insert-tag'(control) {
+    const field = byId(filenameField);
+    const tag = '<' + control.dataset.tag + '>';
+    field.setRangeText(tag, field.selectionStart, field.selectionEnd, 'end');
+    state[filenameField] = field.value;
+    updateSaveOptions();
+    field.focus();
+  },
+  'cancel-folder'() { folderDialog.close(); },
+  'confirm-folder'() {
+    const chosen = folderDialog.querySelector('input:checked').value;
+    if (folderTarget === 'single') {
+      pendingRoot = chosen;
+      byId('single-location').textContent = rootPath(chosen);
+    } else if (folderTarget === 'batch') {
+      state.batchRoot = chosen;
+      updateSaveOptions();
+    } else {
+      state.scanRoot = chosen;
+      state.scanSaved = false;
+      byId('scan-location').textContent = rootPath(chosen);
+      byId('scan-saved').hidden = true;
+    }
+    folderDialog.close();
+  },
+  'save-scan'() { state.scanSaved = true; byId('scan-saved').hidden = false; },
+  'scan-log'() {
+    const lines = state.empty ?
+      ['Catalog opened: Family Catalog.lrcat', 'Catalog photos checked: 12', 'Preview index: readable', 'Cached photo files found: 0'] :
+      ['Catalog opened: Family Catalog.lrcat', 'Preview index: readable', 'Previews above the default cutoff: ' + mainPhotos(state).length];
+    showReport('Scan log', ['Sample log', ...lines].join(String.fromCharCode(10)));
+  },
+  'close-report'() { reportDialog.close(); },
+  finish() { go('done'); },
+  density() { state.large = !state.large; render(); screen.querySelector('[data-action="density"]').focus(); },
+  demo() { reset('normal'); state.demo = true; handlers.catalog(); },
+  'check-originals'() { byId('originals-note').hidden = false; },
+  'close-photo'() { photoDialog.close(); },
+  previous() { movePhoto(-1); },
+  next() { movePhoto(1); },
+  folder() { go('folder'); },
+  'back-review'() { go('review'); },
+  'start-save'() { state.completed = 0; state.shareId = null; state.pausedOnce = false; folderOpened = false; handlers['continue-save'](); },
+  'continue-save'() { go('saving'); timer = setTimeout(nextWrite, timings.save); },
+  'stop-save'() {
+    if (waitingAtCheckpoint) {
+      waitingAtCheckpoint = false;
+      state.pausedOnce = true;
+      go('paused');
+      return;
+    }
+    stopping = true;
+    const control = actions.querySelector('button');
+    control.textContent = 'Finishing current file…';
+    control.disabled = true;
+  },
+  'open-folder'() { folderOpened = true; render(); byId('folder-note').focus(); },
+  share() {
+    state.shareId ??= crypto.randomUUID();
+    renderShare();
+    shareDialog.showModal();
+  },
+  'confirm-share'() {
+    if (!sharedRuns.has(state.shareId)) {
+      communityTotal += saved();
+      sharedRuns.add(state.shareId);
+    }
+    renderShare();
+    shareDialog.querySelector('button').focus();
+  },
+  'close-share'() { shareDialog.close(); },
+  coffee() { byId('coffee-note').hidden = false; },
+  reset() { reset(state.scenario); }
+};
+document.addEventListener('click', event => {
+  const reportLink = event.target.closest('[data-report]');
+  if (reportLink) {
+    event.preventDefault();
+    const planned = planSampleOutputs(state.prefix, state.suffix);
+    const lines = planned.slice(0, 4).map(({id, output}) =>
+      originalFolder(id) + slash + displayName(id) + '.CR2 → ' + path() + slash + output);
+    showReport(reportLink.dataset.report, ['Sample source and output paths', ...lines].join(String.fromCharCode(10)));
+    return;
+  }
+  const control = event.target.closest('button');
+  if (!control) return;
+  if (control.dataset.scenario) reset(control.dataset.scenario);
+  if (control.dataset.action) handlers[control.dataset.action](control, event);
+});
+screen.addEventListener('dblclick', event => {
+  const control = event.target.closest('[data-action="photo"]');
+  if (control && state.previewPane) handlers.enlarge(control);
+});
+screen.addEventListener('toggle', event => {
+  const group = event.target;
+  if (!group.isConnected || !group.dataset.folder || state.stage !== 'review') return;
+  if (group.open) state.collapsedFolders.delete(group.dataset.folder);
+  else state.collapsedFolders.add(group.dataset.folder);
+  updateReviewCounts(shownPhotos(visiblePhotos()));
+}, true);
+screen.addEventListener('input', event => {
+  if (['prefix','suffix'].includes(event.target.id)) {
+    filenameField = event.target.id;
+    state[filenameField] = event.target.value;
+    updateSaveOptions();
+  }
+  if (event.target.id === 'search') {
+    state.query = event.target.value;
+    renderGrid();
+  }
+});
+screen.addEventListener('focusin', event => {
+  if (['prefix', 'suffix'].includes(event.target.id)) filenameField = event.target.id;
+});
+screen.addEventListener('change', event => {
+  const field = event.target;
+  if (field.dataset.photo) {
+    if (field.checked) state.selected.add(field.dataset.photo);
+    else state.selected.delete(field.dataset.photo);
+    if (state.selectedOnly) renderGrid();
+    else renderSelection();
+  }
+  if (field.id === 'filter' || field.id === 'sort') {
+    state.selectedOnly = byId('filter').value === 'selected';
+    state.sort = byId('sort').value;
+    renderGrid();
+  }
+  if (field.id === 'preview-pane') {
+    state.previewPane = field.checked;
+    render();
+    byId('preview-pane').focus();
+  }
+  if (field.id === 'layout') {
+    state.listView = field.value === 'list';
+    renderGrid();
+  }
+  if (field.id === 'group-folders') {
+    state.groupFolders = field.checked;
+    renderGrid();
+  }
+  if (field.name === 'export-layout') {
+    state.outputLayout = field.value;
+    updateSaveOptions();
+  }
+});
+photoDialog.addEventListener('keydown', event => {
+  if (event.key === 'ArrowLeft') { event.preventDefault(); movePhoto(-1); }
+  if (event.key === 'ArrowRight') { event.preventDefault(); movePhoto(1); }
+});
+photoDialog.addEventListener('change', event => {
+  if (event.target.id !== 'photo-include') return;
+  const [id] = photoPhotos[photoIndex];
+  if (event.target.checked) state.selected.add(id);
+  else state.selected.delete(id);
+  renderGrid();
+});
+photoDialog.addEventListener('close', () => {
+  if (state.stage !== 'review') return;
+  const id = photoPhotos[photoIndex][0];
+  previewId = id;
+  renderGrid();
+  byId('grid').querySelector('[data-photo="' + id + '"]')?.closest('.tile').querySelector('button').focus();
+});
+byId('guide-link').addEventListener('click', () => showGuide(true));
+byId('flow-link').addEventListener('click', () => showGuide(false));
+byId('context-help').addEventListener('click', event => {
+  event.preventDefault();
+  showGuide(true, event.currentTarget.hash.slice(1));
+});
+shareDialog.addEventListener('close', () => {
+  render();
+  screen.querySelector('[data-action="share"]').focus();
+});
+render();
+</script>
+</body>
+</html>
