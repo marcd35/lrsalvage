@@ -754,9 +754,16 @@ copy of a discard at all. Each gate fails rather than skipping when its own pair
 of names is unset, and `.env.example` names all four pairs.
 
 It covers formatting, clippy with `--all-targets`, the workspace tests, the
-release build, spelling (config in `typos.toml`) and the licence/advisory policy
-in `deny.toml`. A missing tool fails rather than skipping, so a green run here
-means a green CI.
+release build, the generated completion scripts and man page, spelling (config in
+`typos.toml`) and the licence/advisory policy in `deny.toml`. A missing tool
+fails rather than skipping, so a green run here means a green CI.
+
+`sh scripts/check.sh completions` regenerates the four completion scripts and the
+man page from the binary's own `clap` definition and diffs them against the
+committed copies under `crates/lrsalvage-cli/artifacts`, so an artifact that no
+longer matches the binary fails a run rather than a user who installed it. A
+release attaches those five files beside its archives; nothing about them adds a
+flag or a subcommand.
 
 `cargo deny check` is what keeps the dual MIT/Apache-2.0 licence honest: a new
 dependency that is not permissively licensed fails the build rather than being
@@ -772,8 +779,9 @@ instead: `lrsalvage-cli`'s `tests/readme.rs` checks the flag list and the
 
 `lrsalvage` is a command-line binary. This tree does release it: a `v*` tag runs
 [`.github/workflows/release.yml`](.github/workflows/release.yml), which is where
-the archive set, the `SHA256SUMS` file and the changelog-derived release body are
-described. The commit a tag is cut on is chosen by
+the archive set and `SHA256SUMS`, the generated completion scripts and man page
+attached beside them, and the changelog-derived release body are described. The
+commit a tag is cut on is chosen by
 [the 0.3 checklist](docs/release-0.3.md), not by the tag itself.
 
 What that release deliberately does not do. Each is a decision with a cost, and

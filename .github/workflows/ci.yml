@@ -31,8 +31,13 @@ jobs:
       # The Rust gates live in scripts/check.sh so this job, AGENTS.md and
       # README.md cannot drift apart: they drifted once, and the documented
       # clippy lost its --all-targets and stopped linting test code.
+      #
+      # `completions` is here rather than on one runner because it compares bytes
+      # a checkout writes: three operating systems' `core.autocrlf` settings meet
+      # those files, and `.gitattributes` marks them `-text` so they arrive as
+      # generated. A gate on one OS alone would not say that.
       - name: Check
-        run: sh scripts/check.sh fmt shell clippy test doc build
+        run: sh scripts/check.sh fmt shell clippy test doc build completions
 
   # The MSRV the manifest publishes, proven instead of asserted. This job holds no
   # version and installs nothing of its own: the gate lives in scripts/check.sh

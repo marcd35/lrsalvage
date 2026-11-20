@@ -22,7 +22,9 @@ references:
 ## Responsibility
 
 The `lrsalvage` binary: three subcommands (`scan`, `extract`, `masks`), their
-flags, the progress bar, the files a run claims, and the exit code it returns.
+flags, the progress bar, the files a run claims, and the exit code it returns. Its
+`clap` definition is also what the four completion scripts and the man page a
+release attaches are generated from.
 
 ## Boundary
 
@@ -32,6 +34,30 @@ it needs to know about an image comes from a `Plan`.
 
 ## Decisions
 
+- **The crate has a library root, and the binary is still the whole tool.**
+  `src/lib.rs` carries two modules and no behaviour: `cli`, the one `clap`
+  definition (`cli::command()`), and `exit`, the six published codes with a
+  one-line meaning each. `src/main.rs` parses with that definition, drives the
+  core pipeline, and keeps `exit_code_for` — the mapping from an error to a code —
+  with the unit test that pins it. The root exists because a binary crate's items
+  are private to it and the artifacts below are *generated* rather than
+  hand-kept: a generator cannot reach a definition it cannot name.
+- **The completion scripts and the man page are generated from the definition,
+  never written by hand, and nothing new reaches the CLI.**
+  `examples/artifacts.rs` writes four completion scripts and one man page into a
+  directory it is given, under the names `clap_complete` and this crate's own
+  man-page file give them; `scripts/check.sh completions` regenerates them into a
+  temporary directory and diffs the result against the committed copies under
+  `crates/lrsalvage-cli/artifacts`, and `release.yml` generates them into `dist`
+  and attaches those five files. It is an *example*
+  target because that is the one kind `cargo` compiles with the crate's
+  dev-dependencies — so a consumer of the published crate resolves neither
+  `clap_complete` nor `clap_mangen` — and installs no second command. There is no
+  `completions` subcommand and no flag moves: ADR 0010's flag-and-command surface
+  does not grow. The man page's synopsis, every flag row and every default are
+  `clap`'s, and its `EXIT STATUS` section is `exit::PUBLISHED`, whose numbers are
+  the constants the test below pins — so a code added to the mapping fails that
+  test until the page has a row for it.
 - **One exit-code vocabulary**, and it is the CLI's alone: `0` success (including
   `--help` and `--version`), `1` usage or input error, `2` extract finished with
   some failures, `3` nothing selected to do, `4` unsafe, unwritable or too small a

@@ -160,6 +160,69 @@ gate_wasm() {
         -p lrsalvage-core -p lrsalvage-app -p lrsalvage-web -- -D warnings
 }
 
+# The five files a release attaches beside its archives — four completion
+# scripts and one man page — are **generated** from the `clap` definition, so the
+# committed copies are a claim about this binary, and no other gate reads them:
+# `clippy` and `test` lint the definition, not the five files beside it. This
+# regenerates them into a scratch directory and diffs the result against the
+# committed tree, so a flag, a default or a help string that changed without the
+# artifacts changing fails a run rather than a user who installed a script naming
+# a flag this binary no longer has.
+#
+# `diff -r` rather than a list of names, so this gate holds no inventory of its
+# own: the directory the generator writes and the committed directory are the two
+# sides, and a file the generator stopped writing, or one somebody added by hand,
+# fails here too. Where the five names *are* written — `release.yml`'s upload
+# list and its `gh release create` arguments, and the Artifact box in
+# `docs/release-0.4.md` — those are explicit paths by design, and each fails
+# loudly when a name is wrong: `if-no-files-found: error` there, `gh` here.
+#
+# The red arm of this gate was proved once, in a scratch copy of the tree with a
+# flag renamed in `src/cli.rs`: `#62`'s pull request records the run.
+#
+# The same five names are written a second time in `release.yml`, because a
+# workflow cannot read prose, so this gate holds that copy to the generator: the
+# literal `dist/<name>` paths there — the upload list and the arguments to
+# `gh release create` — must be exactly what was just written here. Globs and
+# `${{ }}` expansions are skipped, because they name no file. What it does not
+# tell apart is the two lists inside `release.yml`; a name dropped from one and
+# kept in the other is `if-no-files-found` and `gh`'s own refusal, at tag time.
+gate_completions() {
+    printf '%s\n' '== completions'
+    staged_dir=$(mktemp -d)
+    generated=$(cargo run --quiet -p lrsalvage-cli --example artifacts -- "$staged_dir" | sort)
+    printf '%s\n' "$generated"
+    if ! diff -ru crates/lrsalvage-cli/artifacts "$staged_dir"; then
+        printf '%s\n' \
+            'the committed completions and man page are not what this binary generates;' \
+            'regenerate them with: cargo run -p lrsalvage-cli --example artifacts -- crates/lrsalvage-cli/artifacts' >&2
+        exit 1
+    fi
+    attached=$(grep -v '[$*]' .github/workflows/release.yml \
+        | grep -oE 'dist/[A-Za-z0-9._-]+' | sed 's|^dist/||' | sort -u)
+    if [ "$generated" != "$attached" ]; then
+        printf '%s\n' \
+            'release.yml does not attach what this generator writes:' \
+            "  generated: $(printf '%s ' $generated)" \
+            "  attached:  $(printf '%s ' $attached)" >&2
+        exit 1
+    fi
+    # The comparison above is only as good as the checkout: `core.autocrlf`
+    # rewrites a text file that `.gitattributes` does not mark, and the diff then
+    # blames the generator. `git check-attr` reads the rule git itself applies.
+    unmarked=$(git check-attr text -- crates/lrsalvage-cli/artifacts/* \
+        | grep -v 'text: unset' || true)
+    if [ -n "$unmarked" ]; then
+        printf '%s\n' \
+            'these generated files are not marked `-text` in .gitattributes, so a' \
+            'checkout may rewrite the bytes this gate compares:' \
+            "$unmarked" >&2
+        exit 1
+    fi
+    rm -rf "$staged_dir"
+    staged_dir=''
+}
+
 # The artifact, not the tree. Every other gate reads this checkout, so a package
 # that cannot build from its own generated manifest — a test tree the published
 # metadata drops, a dev-dependency Cargo strips, a README the crate page points at
@@ -382,7 +445,7 @@ gate_real_discard() {
     cargo test -p lrsalvage-cli --test discard -- --ignored
 }
 
-all_gates='fmt shell clippy test doc wasm build package typos deny msrv'
+all_gates='fmt shell clippy test doc wasm build completions package typos deny msrv'
 
 if [ "$#" -eq 0 ]; then
     set -- $all_gates
@@ -414,7 +477,7 @@ for gate in "$@"; do
         real-render) gate_real_render ;;
         real-1to1) gate_real_1to1 ;;
         real-discard) gate_real_discard ;;
-        fmt | shell | clippy | test | doc | wasm | build | package | typos | deny | msrv | real) "gate_$gate" ;;
+        fmt | shell | clippy | test | doc | wasm | build | completions | package | typos | deny | msrv | real) "gate_$gate" ;;
         *)
             # A usage error, not a gate that ran and failed.
             gate_in_flight=''

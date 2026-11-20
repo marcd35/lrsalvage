@@ -43,11 +43,20 @@ homepage = "https://github.com/marcd35/lrsalvage"
 # `cargo build --all-targets` and `cargo test` both finish green — the test run
 # executing `src/main.rs`'s fixture-free unit test, the error-to-exit-code
 # mapping, and nothing that needs the repository.
-exclude = ["tests"]
+exclude = ["tests", "artifacts"]
 
 [[bin]]
 name = "lrsalvage"
 path = "src/main.rs"
+
+# Not an example of the library's use: the generator behind the four completion
+# scripts and the man page. An *example* target is what `cargo` compiles with the
+# crate's dev-dependencies, which is where `clap_complete` and `clap_mangen` sit
+# — a consumer of the published crate resolves neither — and it is the one kind
+# of target `cargo install` does not turn into a second installed command.
+# `examples/artifacts.rs` says what it writes and where those files go.
+[[example]]
+name = "artifacts"
 
 [dependencies]
 lrsalvage-core = { path = "../lrsalvage-core", version = "0.3.0" }
@@ -65,3 +74,10 @@ tempfile.workspace = true
 # `path` only: a dev-dependency carrying a `version` is published to the index,
 # and `lrsalvage-fixtures` is test-only (`publish = false`).
 lrsalvage-fixtures = { path = "../lrsalvage-fixtures" }
+# The generator's two writers, and the only readers of the clap definition
+# outside `src/`. Dev-dependencies on purpose: a user of the published crate has
+# no completions or man page to generate, so neither ships in its dependency
+# graph. Their licences (MIT OR Apache-2.0, with `roff` beside them) are already
+# on `deny.toml`'s allow-list.
+clap_complete = "4"
+clap_mangen = "0.3"

@@ -1,3 +1,10 @@
 # A shell script with CRLF line endings cannot run: the interpreter sees `\r` as
 # part of the command. `scripts/check.sh` is executed by CI on all three OSes.
 *.sh text eol=lf
+
+# The four completion scripts and the man page are generated with `\n` and
+# compared byte for byte by `scripts/check.sh completions`, on three operating
+# systems: a checkout that rewrote them to CRLF would fail that gate for a reason
+# that has nothing to do with the binary. `-text` keeps the bytes exactly as
+# `crates/lrsalvage-cli/examples/artifacts.rs` writes them.
+crates/lrsalvage-cli/artifacts/** -text
