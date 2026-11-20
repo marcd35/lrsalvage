@@ -547,8 +547,11 @@ what is now known.
       landed, and #4 and #5 close on their own merges. Everything this release
       does not carry stays open **and is named when the tracker closes**, rather
       than left to be inferred from its absence: #93 (the macOS proof), #65 (the
-      `verify` exploration), #68 and #117 (the app map and its spec) and #126 (the
-      spike), all outside ADR 0012 D4's contents.
+      `verify` exploration) and #68 and #117 (the app map and its spec), all
+      outside ADR 0012 D4's contents. #126 used to be on this list: the spike
+      closed as completed on 2026-11-20, and
+      [#141](https://github.com/marcd35/lrsalvage/issues/141) — the audience test
+      — took over as the app line's deciding ticket.
 
 ## The two Dependabot majors
 
