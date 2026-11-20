@@ -99,11 +99,11 @@ one says it once, in advance, instead.
 ## What is left, and in what order
 
 The order is #125's table and is not repeated here. This one lists only what still
-moves, plus the two rows that have already moved:
+moves, plus the rows that have already moved:
 
 | Slice | What it changes | Closes |
 |---|---|---|
-| 1 | This file, and the two Dependabot majors merged into the tree | — |
+| 1 | **landed** `1249c24`, `21abb46`: this file, and the two Dependabot majors merged into the tree | — |
 | 2 | **landed** `dc5a8ad`: the cap — flag, `above_cap`, the report's `options` echo, `docs/adr/0013`, and the two README non-goals #88 landed | #88, #67 |
 | 3 | **landed** #129 and #131: the five fixture-dependent `#[cfg(test)]` modules moved out of `src/`, and `scripts/check.sh package` testing core's tarball rather than only building it | #123 |
 | 4 | **landed** `4b70929`: the free-space refusal reusing exit `4`, the `--dry-run` verdict, the README's exit-code row, and one seam the suite can drive | #64 |
@@ -137,12 +137,17 @@ reader closing the tracker can check coverage without re-deriving it:
       else enters this slice: the checklist's own merge is the release's first
       act, and a major that merged after the bump would be a dependency the
       tagged tree's evidence never met. *Verified 2026-11-20:* #5 merged as
-      `1249c24` from a re-run whose merge base was `main` at `e1e065f`, and #4
-      as `21abb46` from one based on `1249c24`; eight CI checks were green on
-      each, `msrv` was green on the published `rust-version = 1.89`, and
-      `deny` and `package` were green. `deny.toml` did not change: `base64
-      0.23.1`'s default `simd-unsafe` is an empty feature gate inside the
-      crate, so no dependency and no licence entered the tree.
+      `1249c24` and #4 as `21abb46`, each from a re-run cut from current `main`
+      — `e1e065f` and then `1249c24` — whose heads, `2bcc0d2` and `51789a0`, each
+      carried the whole gate list green, the run's last line naming the tree it
+      measured, and a green CI run on that same head. `msrv` was green on
+      `rust-version = 1.89`, above the floors the two publish — `sha2 0.11.1`'s
+      1.88 and `base64 0.23.1`'s 1.71.0 — and `package` was green on both.
+      `deny.toml` did not change: `deny` was green with the crates `sha2 0.11.1`
+      brings (`hybrid-array 0.4.15` and `const-oid 0.10.3`, both `MIT OR
+      Apache-2.0`) in the tree, and `base64 0.23.1`'s default `simd-unsafe`
+      gates that crate's own SIMD kernels and pulls no dependency, so its
+      licence and advisory picture is 0.22.1's.
 - [x] **2 — #88, landed.** The flag `--max-long-edge` on `scan` and `extract`,
       `above_cap` on the summary, `scan --json` and the report's `stats`,
       `options.max_long_edge` in the echo, and `docs/adr/0013` renumbered with its
@@ -601,11 +606,11 @@ replacement for a green on a stale base:
 ### Text held for approval
 
 Each item below is posted only on the maintainer's explicit approval of that
-exact action. The two marked **Posted** are on the tracker and keep the text that
-was approved, so a reader can compare the two.
+exact action. The items marked **Posted** are on the tracker and keep the text
+that was approved, so a reader can compare the two.
 
 **On #5 and #4, if the re-run is green — the merge comment.** One comment, on each
-PR, at the moment it is merged:
+PR, at the moment it is merged. **Posted 2026-11-20**, verbatim, on both:
 
 > Merged into 0.4.0's tree as part of
 > [#125](https://github.com/marcd35/lrsalvage/issues/125)'s first slice, on a
