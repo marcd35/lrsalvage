@@ -58,6 +58,27 @@ def package_samples(static):
     shutil.copyfile(APP / "practice/photos/canyon.jpg", practice / "preview.jpg")
 
 
+def package_web(static):
+    web = APP / "web"
+    tracked = subprocess.check_output(
+        ["git", "ls-files", "--cached", "-z", "--", web.relative_to(ROOT).as_posix()],
+        cwd=ROOT,
+    ).decode("utf-8").split("\0")
+    for path in filter(None, tracked):
+        source = ROOT / path
+        relative = source.relative_to(web)
+        if relative.parts[0] == "pkg" or relative.name in ("test.html", "test.js"):
+            continue
+        # A tracked symlink could point to a local file outside the build inputs.
+        if source.resolve() != source or not source.is_file():
+            raise SystemExit(f"expected a tracked regular web file: {path}")
+        target = static / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source, target)
+    (static / "index.html").rename(static / "recovery.html")
+    (static / "launch.html").rename(static / "index.html")
+
+
 def identity(metadata, tag):
     versions = {package["name"]: package["version"] for package in metadata["packages"]}
     commit = read("git", "rev-parse", "HEAD")
@@ -90,9 +111,7 @@ def main():
     out.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="app-static-", dir=out.parent) as scratch:
         static = Path(scratch) / "site"
-        shutil.copytree(APP / "web", static, ignore=shutil.ignore_patterns("pkg", "test.html", "test.js"))
-        (static / "index.html").rename(static / "recovery.html")
-        (static / "launch.html").rename(static / "index.html")
+        package_web(static)
         package_samples(static)
         run("wasm-bindgen", "--target", "web", "--no-typescript",
             "--out-dir", str(static / "pkg"), "--out-name", "lrsalvage_app",

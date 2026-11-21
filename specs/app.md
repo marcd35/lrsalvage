@@ -137,6 +137,26 @@ reverse — so the seam is registered one way for both pages.
   Extracting the renderers so the harness can call them would close it, and is
   worth doing when the grid slice makes the page's DOM worth asserting on.
 
+## Practice and distribution
+
+The guide opens the recovery page with a named practice case. A same-origin
+manifest identifies the bundled files and their byte revision. The app
+installs those files in a practice-only area of origin-private storage, then
+hands that directory to the same folder inspection and scan as a picked
+backup. A lock serializes installation of each revision. Once installed, its
+files stay available to other tabs using the same sample.
+
+The shared fixture builder generates the four downloadable ZIPs from
+synthetic catalogs and redistributable JPEGs. The ZIP and in-app route for each
+case use the same catalog and cache. The native app scan checks each case
+during packaging.
+
+[The static builder](../scripts/build-browser-app.py) packages tracked runtime
+assets, builds the WebAssembly module, and writes the app and core versions and
+checkout identity. [The deployment runbook](../docs/agents/browser-app-deployment.md)
+records how the same archived bytes reach Cloudflare Pages and how to check
+the deployed candidate.
+
 ## Testing
 
 - `crates/lrsalvage-app/tests/scan.rs` is the gate: one report per condition over
