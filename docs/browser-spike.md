@@ -52,8 +52,10 @@ with cancellation and resume never exercised. What remains beyond the writes is
 §7's list of costs and unknowns — Chromium-only, quota, a 149.7 s stall after a
 reload — not a wall.
 
-D10's audience test is still owed. It gates the release claim rather than the
-engineering, because the seam work and the UI are shared by both artifacts.
+The audience test was the release gate when the spike closed. The dated
+[ADR 0012](adr/0012-two-release-lines.md) D10 decision now owns the
+maintainer recovery gate and the use of the writer timing target. The
+measurements below describe the spike.
 
 The harness lived outside the repository, included the modules through `#[path]`
 rather than transcribing their SQL, and ran a native binary over the same code so

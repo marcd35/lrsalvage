@@ -19,7 +19,7 @@ someone reporting a problem, and someone changing the code.
 
 | | **Core line** | **App line** |
 |---|---|---|
-| What it ships | `lrsalvage-core` on crates.io, and `lrsalvage-cli` as a binary plus three platform archives | **the browser app**: a static page, deployed per tag; a native shell only if [ADR 0012](adr/0012-two-release-lines.md)'s D10 **audience** test comes back preferring an executable |
+| What it ships | `lrsalvage-core` on crates.io, and `lrsalvage-cli` as a binary plus three platform archives | **the browser app**, a static page deployed per app tag. [ADR 0012](adr/0012-two-release-lines.md) D10 records the release decision. |
 | Where it comes from | `cargo install lrsalvage-cli`, a release archive, or a package manager | its URL, or the same files deployed to any static host |
 | What a number means | the artifacts, the checksums and the contract surfaces below | the app's own screens and files |
 | Who owns the promise | [ADR 0010](adr/0010-what-0-2-promises.md), both lines alike | the same record |

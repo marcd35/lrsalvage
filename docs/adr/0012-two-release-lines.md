@@ -362,6 +362,25 @@ the page ships as the trial page #117's prototype already is, and the shell move
 from "deferred" to "next". D10's rule against shipping two front ends at once is
 unchanged.
 
+**Release decision recorded 2026-11-20.** This supersedes D10's audience
+tie-break for app 0.1.0. The browser is the release artifact. The
+[maintainer recovery](https://github.com/marcd35/lrsalvage/issues/173) on
+the deployed candidate and the pre-alpha Lightroom vault gates release.
+A failed recovery requires a fix and rerun. The
+[five-person study](https://github.com/marcd35/lrsalvage/issues/141) moves
+to post-release usability research.
+
+The [5,000-file writer check](https://github.com/marcd35/lrsalvage/issues/171)
+gates release on correctness, visible progress and safe stop and
+continuation. The 120-second figure is a performance target. Record the
+actual elapsed time and longest gap between completed writes.
+
+Cloudflare Pages hosts the HTTPS candidate and the tag-driven static
+release. The first app tag is `app-0.1.0`, which belongs to the app
+release line. The [release checklist](../release-app-0.1.md) owns the
+release evidence. Document Windows Chrome and Edge support from the
+deployed checks. The native shell remains deferred.
+
 ### D11 — Accessibility is a level, not a sentiment
 
 The app targets **WCAG 2.2 AA** (the current W3C Recommendation; WCAG 3 is a
