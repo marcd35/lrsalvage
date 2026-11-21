@@ -196,7 +196,11 @@ save and a batch reached it — and names beneath it the images already recovere
 at their planned paths, the images it could not save, and how many files the
 folder answered for when it was read back. The count is taken from commits: a
 file counts when its write has closed, never when it was planned. Both version
-numbers a bug report quotes sit on the receipt, in ADR 0012 D2's form.
+numbers a bug report quotes sit on the receipt, in ADR 0012 D2's form. When a
+batch finishes the receipt's heading takes focus, and it keeps the page's focus
+ring instead of suppressing it: the result title behaves the same way, a
+programmatic target with no indicator is worse than a firm one, and changing both
+is one piece of work rather than half of it (#169, test drive).
 
 Reconciliation reads the destination instead of trusting the run. When a batch
 settles the page lists the destination back through the same handle and compares
