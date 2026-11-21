@@ -55,8 +55,9 @@ capture_verified ─► from_snapshot ─► index copy + open ─► build_repo
 
 `src/wasm.rs` is the only file that mentions JavaScript: it declares the two host
 calls (the seam's `fs_call` and `scan_progress`) and exports `start_install`,
-`poll_install` and `scan`. `web/` holds the page and the seam's page-side
-JavaScript. `src/vault.rs` and `src/bin/vault-app.rs` are native-only and compose
+`poll_install`, `scan`, and the review, export and report calls the page makes.
+`web/` holds the page and the seam's page-side JavaScript. `src/vault.rs` and
+`src/bin/vault-app.rs` are native-only and compose
 the vaults the browser run needs, from `lrsalvage-fixtures`.
 
 `crates/lrsalvage-web` links this crate — harness depends on app, never the
@@ -181,8 +182,87 @@ The batch fixes its layout, selected paths and destination when started. It
 schedules at most eight files at a time. Stop leaves pending work unscheduled and
 allows in-flight writes to settle. Continue uses the same batch and committed
 paths. The page surfaces exceptions by relative output path and keeps successful
-writes in the open run. A finished batch writes the shared extraction CSV and
-manifest into its destination. An occupied report name gets the next free number.
+writes in the open run. A finished batch writes the reports the next section
+lists into its destination. An occupied report name gets the next free number.
+
+## Receipt, reports and diagnostics
+
+The receipt is a section of the result screen rather than a stage of its own: it
+appears when the first file commits and stays until another recovery starts, so a
+run that saved one photo ends with the same account a batch does, and a stopped
+batch shows its receipt with the continuation beside it. It leads with the count
+of catalog images the run **saved** — one per image, however many times a one-off
+save and a batch reached it — and names beneath it the images already recovered
+at their planned paths, the images it could not save, and the number of files the
+destination holds. The count is taken from commits: a file counts when its write
+has closed, never when it was planned. Both version numbers a bug report quotes
+sit on the receipt, in ADR 0012 D2's form.
+
+Reconciliation reads the destination instead of trusting the run. When a batch
+settles the page lists the destination back through the same handle and compares
+the committed paths with what is there, naming a planned path that is missing and
+a foreign file where a plan expected one; a read that cannot be finished — a
+disconnected folder, a lost grant — says so instead of claiming the files.
+**View saved files** shows that listing: the files this run saved or found
+already recovered, grouped by the catalog folder they came from, with names and
+byte sizes. A directory handle carries a name and nothing else, so the page
+cannot learn a folder's path or open one in Explorer; the receipt names the
+chosen folder, offers the name for copying, and explains how to find it there.
+The prototype's *Open folder* has no page equivalent and the page does not claim
+one.
+
+The destination receives the CLI's three report files — `report.csv` from the
+plan, `extract.csv` from the file outcomes, `manifest.json` from both — and each
+takes the next free number when its name is occupied. The receipt links the files
+it actually wrote, opening each from the bytes read back through the handle, and
+reports one that failed to write as a failure rather than as a link. The
+path-free verification report is offered separately, because it is the artifact a
+person chooses to share: **Save verification report** writes `verification.json`
+from the plan, the options the run applied and the copy's two digests — the field
+set `specs/modules/report.md` freezes for `scan --report`. Its arguments have to
+be true rather than convenient, so the entry retains the `Options` it planned
+with and the digests `capture_verified` measured, instead of the copy's strings
+alone. Writing the plan CSV and the verification report, and reading the two
+compiled version constants, are the three worker exports this needs.
+
+Diagnostics are kept in memory for the current run, never written into a
+destination, never uploaded, and copied only by a click. One serializer produces
+them for the receipt and for a failure view, so a copy is available before any
+receipt exists — the log starts at page load, which is what makes a failure at
+the catalog copy shareable. The object is:
+
+```json
+{ "schema": "lrsalvage.diagnostics",
+  "versions": {"app": "0.1.0", "core": "0.4.0", "build": "4606440a1b2c",
+               "browser": "Chrome 133.0.6943.99", "platform": "Windows", "platform_version": "15.0.0"},
+  "timings": {"storage_setup_ms": 812, "catalog_copy_ms": 2140, "scan_ms": 9100,
+              "first_thumbnail_ms": 9310, "first_saved_jpeg_ms": 12300,
+              "longest_write_gap_ms": 74, "elapsed_ms": 15600},
+  "scan": { "images": 5000, "recovered": 4998, "suspect": 0, "missing_payload": 2 },
+  "writes": {"planned": 120, "written": 118, "already_recovered": 2, "failed": 0,
+             "confirmed_on_disk": 120},
+  "events": {"stopped": 1, "settled": 1, "continued": 1},
+  "failures": {"destination_gone": 0, "permission": 0, "out_of_room": 0,
+               "occupied_foreign": 1, "source_unreadable": 0, "write_failed": 0, "other": 0} }
+```
+
+The field list is frozen here. `versions` carries the two release numbers, the
+checkout identity when a built page has one, and the browser and platform as the
+browser states them — a table mapping a platform version to a marketing name is a
+table that rots. `timings` are milliseconds since the page loaded and there is no
+absolute timestamp: the object describes a run's shape, not when its author was at
+their desk. `scan` carries exactly the eighteen `stats` members
+`specs/modules/report.md` freezes, so no second vocabulary is invented for a count
+the reports already name. `longest_write_gap_ms` measures consecutive commits
+across the whole run, so a stop appears in `events` and never as a slow write. A
+failure view contributes its stage and one of the entry's own kinds, never the
+error's message, which can name a path. A fact the run did not measure is `null`,
+never `""` and never absent, so the same members are on every copy.
+
+The list is curated at its source rather than filtered afterwards: the serializer
+has no field a path, filename, identifier or message could occupy, which is what
+leaves the page nothing to redact and nobody to remember what to remove — ADR
+0007's discipline applied to the second artifact that leaves a user's machine.
 
 ## Practice and distribution
 
@@ -226,8 +306,6 @@ the deployed candidate.
   laptop and operation with a screen reader remain manual checks.
 
 - The browser gate also drives one-off and batch saves through the product,
-  exercising path collisions, selection independence, stop and continuation,
-  directory loss, and overlap with input trees. It compares the default mirrored
   export against the CLI on identical fixture bytes. The JPEG tree and each JPEG
   byte must agree. In reports the check maps the sandbox output and cache roots
   to their browser mount paths and ignores the generation timestamp. The embedded
