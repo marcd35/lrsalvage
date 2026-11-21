@@ -30,11 +30,11 @@ pending.
       The 5,000-file run proves output parity, visible progress, safe stop
       and continuation. Record elapsed time and the longest gap between
       completed writes against the performance target recorded there.
-- [ ] Build the static candidate and deploy it to Cloudflare Pages over HTTPS.
-      Record the build commit and preview URL. Verify cross-origin isolation
-      and that the page and receipt report the candidate’s app and core
-      versions. Walk through the four practice cases and check the guide and
-      screenshots against the candidate.
+- [ ] The release maintainer builds the static candidate from trusted `main`
+      and deploys it to Cloudflare Pages over HTTPS. Record the build commit
+      and preview URL on [#172](https://github.com/marcd35/lrsalvage/issues/172).
+      Verify cross-origin isolation, the app and core versions on the page and
+      receipt, the four practice cases, and the guide and screenshots.
 - [ ] Record the [deployed browser and accessibility results](https://github.com/marcd35/lrsalvage/issues/172).
       Exercise the actual folder pickers in Windows Chrome and Edge.
       Link the accessibility statement with observed and unchecked criteria.

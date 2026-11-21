@@ -1,6 +1,22 @@
 name: browser app
 
 on:
+  pull_request:
+    paths:
+      - ".github/workflows/app-release.yml"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "rust-toolchain.toml"
+      - "LICENSE-*"
+      - "crates/lrsalvage-app/**"
+      - "crates/lrsalvage-core/**"
+      - "crates/lrsalvage-fixtures/**"
+      - "scripts/build-browser-app.py"
+      - "scripts/check-browser-artifact.py"
+      - "scripts/verify-browser-deployment.py"
+      - "scripts/browser-app.sh"
+      - "scripts/drive-browser.mjs"
+      - "scripts/check-preview-review.mjs"
   workflow_dispatch:
   push:
     tags: ["app-0.1.0"]
@@ -41,6 +57,13 @@ jobs:
           mkdir -p target/app-archive
           (cd target/app-static && zip -q -r "../app-archive/$name.zip" .)
           (cd target/app-archive && sha256sum "$name.zip" > SHA256SUMS)
+      - name: Verify the staged artifact
+        run: python3 scripts/check-browser-artifact.py target/app-static
+      - name: Check the product in Chromium
+        if: github.event_name == 'pull_request'
+        run: |
+          google-chrome --version
+          sh scripts/browser-app.sh --chrome "$(command -v google-chrome)"
       - uses: actions/upload-artifact@v7
         with:
           name: browser-app-static

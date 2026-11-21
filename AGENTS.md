@@ -84,9 +84,8 @@ the reason is in `specs/modules/fs.md`, *Where the harness lives*. It links
 `lrsalvage-app` for the seam's registration and page-side bridge; the app links
 nothing from it, so nothing shipped depends on a harness.
 
-`scripts/browser-app.sh` is the app's own measurement — the entry in headless
-Chromium over seven vaults, with a stop, a recheck and a cancelled picker — and it
-is not a gate for the same reason.
+Browser app changes use the [deployment runbook](docs/agents/browser-app-deployment.md)
+for synthetic fixtures, the Chromium product check and hosted release evidence.
 
 ## Verification
 
@@ -134,12 +133,10 @@ is not a gate for the same reason.
   are written. A fresh clone installs it with
   `git config core.hooksPath .githooks`; skip it deliberately with
   `git commit --no-verify`.
-- **`spec_validate` is the gate no script can run.** It reports dangling links,
-  duplicate ids and parent cycles across `specs/`, and it is an in-app tool, so
-  neither `scripts/check.sh` nor CI can call it. A slice that adds, moves or
-  re-links a spec ends by asking it for a clean graph — the link resolving and
-  the design agreeing are two different questions, and `tests/spec_graph.rs`
-  only answers the second.
+- **Spec graph changes use `cargo test --locked -p lrsalvage-core --test spec_graph`.**
+  The gate covers repository spec links, duplicate IDs, parent cycles and module
+  dependencies. CI runs it through the workspace test gate. The in-app
+  `spec_validate` tool can check the editor's view of the graph.
 - **The tests assert more than behaviour.** `tests/spec_graph.rs` checks each
   module's `depends-on` against the modules it actually reaches,
   `lrsalvage-cli`'s `tests/readme.rs` checks the README's flag and `--json`

@@ -3,16 +3,13 @@
 #
 #   sh scripts/browser-app.sh [--chrome <path>] [--attach <port>] [--verbose]
 #
-# **This is not a gate.** `specs/modules/fs.md` (*Where the harness lives*) records
-# why, and this script's prerequisites with it; `scripts/check.sh` is the gate list
-# and this is the `scripts/probe-cache.sh` shape — a real measurement a person or a
-# release check runs.
+# The browser app workflow runs this check on one Chromium runner for relevant
+# pull requests. See docs/agents/browser-app-deployment.md for setup and evidence.
 #
 # What it does:
 #
-#   1. `vault-app` composes seven vaults — one per way a scan can come back, and
-#      the folder the recheck needs — and runs `lrsalvage_app::scan` over each on
-#      the host, writing `native.json`.
+#   1. `vault-app` composes the synthetic vaults and runs `lrsalvage_app::scan`
+#      over each on the host, writing `native.json`.
 #   2. The same crate, compiled to `wasm32` and wrapped by `wasm-bindgen`, is
 #      loaded by the app's page. `web/test.js` drives the page's own entry over the
 #      same vault bytes, mounted into origin-private storage.
