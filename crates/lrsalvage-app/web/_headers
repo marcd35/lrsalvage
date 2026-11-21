@@ -1,0 +1,10 @@
+/*
+  Cross-Origin-Opener-Policy: same-origin
+  Cross-Origin-Embedder-Policy: require-corp
+  X-Content-Type-Options: nosniff
+
+/build.json
+  Cache-Control: no-cache
+
+/practice/samples.json
+  Cache-Control: no-cache

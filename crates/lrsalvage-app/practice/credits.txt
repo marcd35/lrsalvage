@@ -1,0 +1,20 @@
+The sample catalogs and all catalog metadata are synthetic. The JPEG pixels are
+adapted from public-domain astronaut photographs.
+
+Image courtesy of the Earth Science and Remote Sensing Unit, NASA Johnson Space Center.
+
+Canyon, Canyon Portrait, Canyon Small
+ISS039-E-5258, Grand Canyon, Arizona
+https://eol.jsc.nasa.gov/SearchPhotos/photo.pl?frame=5258&mission=ISS039&roll=E
+
+Snow, Snow Small
+ISS058-E-1605, Grand Canyon Under Snow
+https://eol.jsc.nasa.gov/SearchPhotos/photo.pl?frame=1605&mission=ISS058&roll=E
+
+Plateau, Plateau Portrait
+ISS033-E-17063, Colorado Plateau
+https://eol.jsc.nasa.gov/SearchPhotos/photo.pl?frame=17063&mission=ISS033&roll=E
+
+The JPEGs are center-cropped and resized derivatives with the source metadata
+removed. Canyon Portrait is black and white. NASA does not endorse this app.
+NASA image-use guidance: https://eol.jsc.nasa.gov/FAQ/

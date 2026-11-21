@@ -6,6 +6,9 @@ release decisions. Use this checklist to record the evidence and execute
 the release. For each completed box, record the date, tested commit and
 the result or a link to it.
 
+The [browser deployment runbook](agents/browser-app-deployment.md) covers the
+Pages project, deployment workflow and versioned static archive.
+
 The app release adds a versioned static page that takes a Lightroom
 Classic catalog folder and preview cache through scan, review, JPEG export
 and receipt. It preserves the [recovery contract](adr/0010-what-0-2-promises.md)
