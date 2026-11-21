@@ -2,8 +2,10 @@
 
 The [app release checklist](../release-app-0.1.md) owns the release go-ahead and
 evidence. The [browser app workflow](../../.github/workflows/app-release.yml)
-builds the site once and deploys the checked ZIP from that run. The CLI has its
-own release workflow and tag.
+builds and checks one static artifact per run. Pull requests build the artifact
+and run the verifier and Chromium product check without deployment credentials.
+Preview and production deployments use the checked ZIP from their own run.
+The CLI has its own release workflow and tag.
 
 ## Build locally
 
@@ -29,6 +31,25 @@ To open a local candidate, serve the output with
 `npx wrangler@4.166.0 pages dev target/app-static`. Visit the address it prints.
 The Pages emulator resolves `/recovery` and applies the site's `_headers` file.
 
+## Verify app pull requests
+
+Review the credential-free **browser app** build and its artifact checks.
+Run the product check locally with `sh scripts/browser-app.sh`. On Windows,
+use Git's shell. The script lists its tool prerequisites and runs the same
+shared synthetic cases as CI.
+
+For an on-disk synthetic catalog, generate the cases into a fresh directory:
+
+```sh
+cargo run --locked -p lrsalvage-app --bin vault-app -- target/app-fixtures
+```
+
+Use the ten-photo `review` case. Find its `catalog` and `cache` paths in
+`target/app-fixtures/native.json`. Both paths are relative to
+`target/app-fixtures/review`. In the app, select the catalog's containing folder
+and the separate cache. The review case includes a deliberately undecodable
+preview. Keep generated catalogs in scratch or `target`.
+
 ## Configure Pages
 
 Set up a [Cloudflare Pages Direct Upload project](https://developers.cloudflare.com/pages/get-started/direct-upload/)
@@ -43,9 +64,11 @@ Use selected deployment branches and tags in GitHub. Allow only the protected
 Edit applies across the account. Apply the repository's release approval
 process before making the tag.
 
-Test pull requests in the local Pages emulator. After the candidate merges,
-dispatch the **browser app** workflow from `main`. It uploads to a preview
-branch named for the commit. A push of `app-0.1.0` takes the tagged production
+The release maintainer owns setup and the first preview dispatch. After the
+candidate merges, dispatch the **browser app** workflow from trusted `main`.
+It uploads to a preview branch named for the commit.
+Record the hosted walkthrough and its URL on
+[#172](https://github.com/marcd35/lrsalvage/issues/172), before the app release tag. A push of `app-0.1.0` takes the tagged production
 path. The deployment job checks the configured project's production branch
 before uploading.
 

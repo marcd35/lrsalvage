@@ -182,11 +182,10 @@ the deployed candidate.
   the seven vaults, a stopped build with no plan, and an indexless cache still
   counting its payloads. It composes `lrsalvage-fixtures` vaults through
   `src/vault.rs`, so no fixture bytes live in this crate.
-- `scripts/browser-app.sh` is the measurement: the page's own entry in headless
-  Chromium against eight vaults, compared field by field with a native
-  run — the digests included — plus a stop, the recheck, a cancelled picker driven
-  through a real user gesture, and the capability gate. It is not a gate, and
-  `specs/modules/fs.md` (*Where the harness lives*) says why.
+- The browser app workflow runs `scripts/browser-app.sh` on one headless
+  Chromium runner for relevant pull requests. It compares the page's entry
+  and native results field by field, including digests, and covers stop,
+  recheck, picker cancellation and the capability check.
 - What the browser run cannot prove, and does not claim: that a human's accepted
   pick returns a handle. The mechanism is the browser's, one `await` deep, and the
   value it returns is the value the test supplies.

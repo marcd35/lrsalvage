@@ -193,8 +193,12 @@ export async function checkPreviewReview(send) {
   await send('Emulation.setDeviceMetricsOverride', {
     width: 760, height: 680, deviceScaleFactor: 1, mobile: false,
   });
+  await evaluate(button('Portrait.CR2') + '.focus({preventScroll: true})');
   await click(button('Portrait.CR2'));
-  await until(element('pane') + '.getBoundingClientRect().top >= 0 && ' +
+  // Chromium rounds the scroll offset to a pixel. Check the decoded layout
+  // with room for a fractional pixel at the top of the pane.
+  await until(paneImage + '?.naturalHeight === 800 && ' +
+    element('pane') + '.getBoundingClientRect().top >= -1 && ' +
     element('enlarge') + '.getBoundingClientRect().bottom < innerHeight',
     'The stacked pane was not brought into the narrow viewport');
   assert.equal(await evaluate('document.activeElement.id'), 'photo-enlarge');

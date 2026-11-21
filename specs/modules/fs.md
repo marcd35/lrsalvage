@@ -246,18 +246,11 @@ carrying a second copy of it (`#149`, DEC-S5).
 native binary that builds the vault and runs the driver on the host.
 `scripts/browser-parity.sh` builds it, serves it, drives headless Chromium over
 the DevTools Protocol and compares the two reports with `MAIN_SEPARATOR`
-normalised. `scripts/browser-app.sh` does the same for the app's entry: seven
-vaults, one per way a scan can come back, plus a stop, a recheck and a cancelled
-picker.
-
-**It is not a gate.** `scripts/check.sh` is the gate list and a missing tool there
-is a failure rather than a skip, so a gate here would make every CI runner install
-a browser to prove a claim about one. It is the same shape as
-`scripts/probe-cache.sh`: a real measurement, run by a person or a release check,
-that names the tree it measured. What the gate list does hold is that the crate
-and the seam's browser half *compile and lint* for the target — `scripts/check.sh
-wasm` does both, because before this slice that code was compiled by no gate at
-all.
+normalised. That standalone seam measurement is useful for development and
+release checks. The browser app workflow runs `scripts/browser-app.sh` on one
+Chromium runner for relevant pull requests. It compares the app's entry
+across targets and exercises the product page. The workspace's
+`scripts/check.sh wasm` gate compiles and lints the seam's browser half.
 
 The harness lives in the tree rather than beside it (#126's lived outside, and
 `#142`'s brief was that nothing from outside goes in): a harness nobody can run

@@ -52,7 +52,7 @@ prints it. Read that first; this page does not repeat it.
 | Byte-level numbers and their evidence labels | `docs/format-notes.md` |
 | The contract surfaces and what may change | `docs/adr/0010-what-0-2-promises.md` |
 | A ticket's recorded decisions | the issue body |
-| The spec graph's integrity | `spec_validate` — an in-app tool, so no script and no CI job can call it |
+| The spec graph's integrity | The workspace test gate in [scripts/check.sh](../../scripts/check.sh) runs `spec_graph` |
 
 ## Two timings for a version sentence
 
