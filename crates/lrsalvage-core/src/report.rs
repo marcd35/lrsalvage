@@ -246,6 +246,17 @@ const CSV_HEADER: &str = "status,tier,width,height,long_edge,color_profile,quali
 /// the seam has no stream to hand out: a row is under two hundred bytes, and the
 /// bytes are the same either way.
 pub fn write_csv(plan: &Plan, path: &Path) -> Result<()> {
+    fs::write(path, csv(plan).as_bytes()).at(path)?;
+    Ok(())
+}
+
+/// `report.csv`'s text, for a caller that writes the file itself.
+///
+/// The browser commits a whole file through the page's own writer, which has no
+/// path to hand this module and no seam above the origin's storage. It is the
+/// same encoder either way — a second renderer for the same published file would
+/// be a second dialect of it (`specs/modules/report.md`).
+pub fn csv(plan: &Plan) -> String {
     let mut text = String::with_capacity(CSV_HEADER.len() + 2 + plan.items.len() * 192);
     let mut line = String::with_capacity(256);
 
@@ -310,8 +321,7 @@ pub fn write_csv(plan: &Plan, path: &Path) -> Result<()> {
         text.push_str(&line);
     }
 
-    fs::write(path, text.as_bytes()).at(path)?;
-    Ok(())
+    text
 }
 
 fn optional_number(value: Option<u32>) -> String {
@@ -532,6 +542,9 @@ struct Verification<'a> {
     options: &'a Options,
     stats: &'a Stats,
     shapes: Shapes,
+    /// The host's clock, because a page has no clock this module can trust and
+    /// the CLI's is `unix_now`.
+    generated_unix: u64,
     /// The digest pair a verified acquisition proved, or `None` when the run
     /// never asked for it. The flag measured and nothing else does, so its echo
     /// in `options.verify_source` is this field's presence rather than a second
@@ -544,7 +557,7 @@ impl Verification<'_> {
         json!({
             "schema": VERIFICATION_SCHEMA,
             "version": self.version,
-            "generated_unix": unix_now(),
+            "generated_unix": self.generated_unix,
             // ADR 0004's one word and two verbatim strings, never interpreted.
             "layout": self.layout.as_str(),
             "db_version": self.db_version,
@@ -582,6 +595,24 @@ pub fn write_verification(
     path: &Path,
     version: &str,
 ) -> Result<()> {
+    let text = verification_json(plan, options, digests, version, unix_now());
+    fs::write(path, text.as_bytes()).at(path)?;
+    Ok(())
+}
+
+/// The verification report's text, with the timestamp supplied by the host.
+///
+/// The same object and the same pretty-printed bytes [`write_verification`]
+/// writes: the CLI's clock is `unix_now`, and the browser's is the page's, which
+/// is what lets a page write the report it would otherwise have to shell out
+/// for (`specs/modules/report.md`, *Belongs here*).
+pub fn verification_json(
+    plan: &Plan,
+    options: &Options,
+    digests: Option<&SourceDigests>,
+    version: &str,
+    generated_unix: u64,
+) -> String {
     let report = Verification {
         version,
         layout: plan.cache.layout,
@@ -591,17 +622,15 @@ pub fn write_verification(
         stats: &plan.stats,
         shapes: plan.cache.shapes,
         digests,
+        generated_unix,
     };
 
-    let mut text = serde_json::to_string_pretty(&report.to_json()).map_err(|error| {
-        crate::error::Error::Io {
-            path: path.to_path_buf(),
-            source: std::io::Error::other(format!("report serialisation failed: {error}")),
-        }
-    })?;
+    // A `Value` of these members cannot fail to serialise; the expectation is
+    // still named, because a silent empty file would be worse than a panic.
+    let mut text = serde_json::to_string_pretty(&report.to_json())
+        .expect("the verification report is JSON-serialisable by construction");
     text.push('\n');
-    fs::write(path, text.as_bytes()).at(path)?;
-    Ok(())
+    text
 }
 
 /// The plan's totals, as the frozen `stats` set.
@@ -1168,6 +1197,33 @@ recovered"
     }
 
     #[test]
+    fn csv_is_the_text_write_csv_puts_in_the_file() {
+        // The browser cannot hand a whole-file write a path it owns, so the two
+        // entry points have to be one encoder: a second renderer would be a
+        // second dialect of the same published file.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("report.csv");
+        let plan = plan_with_items(vec![
+            recovered_item(
+                "107 York St-1",
+                PathBuf::from("cache/payload.lrprev"),
+                PathBuf::from("out").join("107 York St-1.jpg"),
+            ),
+            recovered_item(
+                "107 York St-2",
+                PathBuf::from("cache/second.lrprev"),
+                PathBuf::from("out").join("a, \"quoted\" name.jpg"),
+            ),
+        ]);
+
+        write_csv(&plan, &path).unwrap();
+        let written = std::fs::read_to_string(&path).unwrap();
+
+        assert_eq!(csv(&plan), written);
+        assert!(written.starts_with("status,tier,"), "the header is first");
+    }
+
+    #[test]
     fn csv_writes_one_row_per_item_and_leaves_absent_fields_empty() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("report.csv");
@@ -1703,6 +1759,32 @@ recovered"
                 thumbnail_pyramids: 0,
             },
         }
+    }
+
+    #[test]
+    fn verification_json_is_the_object_write_verification_puts_in_the_file() {
+        // `write_verification` takes the timestamp from the clock; the browser
+        // takes it from the page, as it does for the manifest. One encoder, two
+        // clocks — so the two entry points must differ in nothing else.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("scan.json");
+        let plan = verification_plan();
+        let options = Options {
+            min_long_edge: 640,
+            max_long_edge: 0,
+            all_levels: false,
+            include_present: false,
+        };
+
+        write_verification(&plan, &options, None, &path, "9.9.9").unwrap();
+        let written: Value =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        let unix = written["generated_unix"].as_u64().unwrap();
+
+        let rendered: Value =
+            serde_json::from_str(&verification_json(&plan, &options, None, "9.9.9", unix)).unwrap();
+
+        assert_eq!(rendered, written);
     }
 
     #[test]
