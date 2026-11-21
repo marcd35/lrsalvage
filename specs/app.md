@@ -110,10 +110,11 @@ reverse — so the seam is registered one way for both pages.
   those images as `original-present`. The app is stateless between runs, so the
   recheck pays one more copy; that is the trade for an entry that is one function
   in and one report out (`#149`, DEC-S7).
-- **No framework and no build step.** Plain HTML, CSS and ES modules, served
-  cross-origin isolated because the bridge's `SharedArrayBuffer` needs it. A
-  browser without `showDirectoryPicker` is told so, and pointed at the CLI, before
-  it is offered anything.
+- **No framework or JavaScript bundler.** The page uses plain HTML, CSS and
+  ES modules. The static build packages them with the compiled WebAssembly and
+  practice files. Serve the page cross-origin isolated for the bridge's
+  `SharedArrayBuffer`. The browser capability check directs users to the CLI
+  when the folder picker is unavailable.
 - **This slice's page is its own design; porting #117's prototype is a later
   decision, not an oversight.** #117 carries a prototype — one self-contained HTML
   file, recorded by ADR 0012 — and it was written for the **Windows executable**
