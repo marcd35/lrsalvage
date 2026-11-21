@@ -55,6 +55,11 @@ jobs:
           if [ -n "$APP_RELEASE_TAG" ]; then
             args+=(--tag "$APP_RELEASE_TAG")
           fi
+          # `rust-cache` restores `target/`, which holds the artifact a previous
+          # run on this branch built — and the builder refuses an existing output
+          # directory on purpose, so a warm cache failed this job. The step owns
+          # its workspace: clear what a previous run left before building.
+          rm -rf target/app-static target/app-archive
           python3 scripts/build-browser-app.py --out target/app-static "${args[@]}"
           name=$(python3 -c 'import json; b=json.load(open("target/app-static/build.json")); print(f"lrsalvage-app-{b['"'"'app'"'"']}-{b['"'"'commit'"'"'][:12]}")')
           mkdir -p target/app-archive
