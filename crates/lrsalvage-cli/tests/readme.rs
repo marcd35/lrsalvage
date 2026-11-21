@@ -186,3 +186,103 @@ fn the_documented_report_csv_columns_match_the_header() {
         "`payload_metadata` is a field of its own, not a second `payload`: {header}"
     );
 }
+
+/// The end of a release tag starting at `start`, if one starts there.
+///
+/// A tag is `v<major>.<minor>.<patch>`, with an optional pre-release suffix. The
+/// three parts are required because this page also carries the *catalog's*
+/// version numbers — "LrC 13+", "v11 verified" — and none of those is a tag a
+/// user downloads. The suffix keeps its dots only where a digit follows, so
+/// `v0.2.0-rc.1.tgz` yields `v0.2.0-rc.1` rather than swallowing the extension.
+fn tag_at(bytes: &[u8], start: usize) -> Option<usize> {
+    if bytes.get(start) != Some(&b'v') {
+        return None;
+    }
+    let mut end = start + 1;
+    for part in 0..3 {
+        if part > 0 {
+            if bytes.get(end) != Some(&b'.') {
+                return None;
+            }
+            end += 1;
+        }
+        let digits = end;
+        while end < bytes.len() && bytes[end].is_ascii_digit() {
+            end += 1;
+        }
+        if end == digits {
+            return None;
+        }
+    }
+    if bytes.get(end) == Some(&b'-') {
+        end += 1;
+        while end < bytes.len()
+            && (bytes[end].is_ascii_alphanumeric()
+                || (bytes[end] == b'.' && bytes.get(end + 1).is_some_and(u8::is_ascii_digit)))
+        {
+            end += 1;
+        }
+    }
+    Some(end)
+}
+
+/// Every release tag in `text`, in the order they appear.
+fn tags_in(text: &str) -> Vec<String> {
+    let bytes = text.as_bytes();
+    let mut found = Vec::new();
+    let mut i = 0;
+    while i < bytes.len() {
+        // A `v` inside a word is not a tag.
+        let starts_word = i == 0 || !(bytes[i - 1].is_ascii_alphanumeric() || bytes[i - 1] == b'_');
+        match tag_at(bytes, i).filter(|_| starts_word) {
+            Some(end) => {
+                found.push(text[i..end].to_string());
+                i = end;
+            }
+            None => i += 1,
+        }
+    }
+    found
+}
+
+/// Every tag the README tells a user to fetch is the release this crate builds.
+///
+/// The page names the release in twenty-one places — the version paragraph, three
+/// archive filenames, the release link, three verify commands, the `cargo
+/// install` line and the binstall paragraph — and none of them is generated. The
+/// man page's two version strings are held by `scripts/check.sh completions`;
+/// these were held by whoever remembered, so a bump that rewrote the manifest and
+/// forgot the page shipped archive names that do not exist.
+#[test]
+fn every_tag_the_readme_names_is_this_crates_version() {
+    // The tags this page names as history, each with the sentence that justifies
+    // it: `v0.2.0-rc.1` proved the release workflow under its own tag spelling,
+    // and `v0.2.0` is the release that first had something to download at all.
+    const OTHER_TAGS: [&str; 2] = ["v0.2.0", "v0.2.0-rc.1"];
+
+    let version = env!("CARGO_PKG_VERSION");
+    let current = format!("v{version}");
+    let text = readme();
+
+    let named = tags_in(&text);
+    assert!(!named.is_empty(), "the README names no tag at all");
+    let stale: Vec<&String> = named
+        .iter()
+        .filter(|tag| **tag != current && !OTHER_TAGS.contains(&tag.as_str()))
+        .collect();
+    assert!(
+        stale.is_empty(),
+        "the README names tags this crate does not build: {stale:?} — it builds {current}"
+    );
+
+    // `Version <number>:` opens the paragraph that says what the number covers,
+    // and it names the version without a `v` for the rest of the paragraph to use.
+    let opening = text
+        .lines()
+        .find(|line| line.starts_with("Version "))
+        .expect("the README opens a paragraph with `Version <number>:`");
+    assert!(
+        opening.starts_with(&format!("Version {version}:")),
+        "the version paragraph opens {opening:?}, and this crate builds {version}"
+    );
+}
