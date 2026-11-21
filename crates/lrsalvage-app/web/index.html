@@ -322,6 +322,7 @@
       <h3 id="receipt-title" tabindex="-1">Recovery receipt</h3>
       <p id="receipt-headline" role="status"></p>
       <p id="receipt-detail"></p>
+      <p id="receipt-reconciled" class="review-note"></p>
       <p id="receipt-destination"></p>
       <p id="receipt-where" class="review-note"></p>
       <div class="review-tools">
@@ -338,6 +339,7 @@
           No report files were written in this run.
         </p>
         <ul id="receipt-report-list"></ul>
+        <ul id="receipt-report-failures" aria-label="Reports that could not be written"></ul>
         <button id="receipt-verification" type="button">Save verification report</button>
         <p id="receipt-report-status" class="review-note" role="status"></p>
       </details>
@@ -348,8 +350,9 @@
         </div>
         <p id="receipt-diagnostics-status" class="review-note" role="status"></p>
         <p id="receipt-support" hidden>
-          If lrsalvage helped: <a href="https://github.com/marcd35/lrsalvage">star it on GitHub</a>.
-          Both links here are optional.
+          If lrsalvage helped: <a href="https://github.com/marcd35/lrsalvage">star it on GitHub</a>,
+          or <a href="https://github.com/marcd35/lrsalvage/issues/new/choose">ask a question</a>.
+          Both links are optional.
         </p>
       </div>
     </section>

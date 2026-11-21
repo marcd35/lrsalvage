@@ -39,13 +39,51 @@ export async function checkReceipt(send) {
   const el = (selector) => 'document.querySelector(' + JSON.stringify(selector) + ')';
   const click = (selector) => evaluate(el(selector) + '.click()');
   const text = (selector) => evaluate(el(selector) + '.textContent');
+  // A string, not a function: `until` takes the expression to evaluate.
+  const expanded = el('#receipt-view') + '.getAttribute("aria-expanded") === "true"';
+  // The control toggles, so a second segment must not collapse what the first one
+  // opened.
+  async function openListing() {
+    if (!await evaluate(expanded)) await click('#receipt-view');
+    await until(expanded, 'The saved-files listing did not open');
+  }
   await until(el('#source') + '?.hidden === false', 'The source screen did not load');
 
+  // Clipboard permission, which a headless browser neither prompts for nor
+  // grants. The permission *names* have moved between Chromium versions, so the
+  // grant tries the descriptor form first and the legacy names after it: the
+  // assertion below reads the real clipboard, so an ungranted run fails loudly
+  // rather than passing on a serializer's return value.
   const origin = await evaluate('location.origin');
-  await send('Browser.grantPermissions', {
-    origin,
-    permissions: ['clipboardReadWrite', 'clipboardSanitizedWrite'],
-  });
+  async function grantClipboard() {
+    const attempts = [
+      () => send('Browser.setPermission', {
+        origin,
+        permission: { name: 'clipboard-read', allowWithoutSanitization: true },
+        setting: 'granted',
+      }),
+      () => send('Browser.setPermission', {
+        origin,
+        permission: { name: 'clipboard-write', allowWithoutSanitization: true },
+        setting: 'granted',
+      }),
+      () => send('Browser.grantPermissions', {
+        origin,
+        permissions: ['clipboardReadWrite', 'clipboardSanitizedWrite'],
+      }),
+    ];
+    let granted = 0;
+    for (const attempt of attempts) {
+      try {
+        await attempt();
+        granted++;
+      } catch {
+        // The next spelling of the same request.
+      }
+    }
+    if (granted === 0) throw new Error('Chromium refused every clipboard permission request');
+  }
+  await grantClipboard();
 
   // The same picker boundary every product check supplies: an accepted folder is
   // a value, and this page reads it like one.
@@ -176,7 +214,10 @@ export async function checkReceipt(send) {
     el('#export-start') + '.disabled === false', 'The batch did not commit three JPEGs');
   await until(el('#receipt-section') + '?.hidden === false', 'No receipt appeared after a batch');
   assert.equal(await text('#receipt-headline'), '3 photos saved');
-  assert.match(await text('#receipt-detail'), /3 files in the folder/);
+  assert.match(await text('#receipt-detail'), /3 files in the folder when it was read back/);
+  assert.match(await text('#receipt-reconciled'),
+    /Every file above was found in the folder when it was read back/,
+    'the receipt must say the destination answered, not just that writes resolved');
   assert.match(await text('#receipt-destination'), /receipt-output/);
   assert.equal(await text('#receipt-versions'), 'lrsalvage app 0.1.0 · core 0.4.0');
 
@@ -197,8 +238,7 @@ export async function checkReceipt(send) {
   assert.equal(decoder.decode(Uint8Array.from(files['report.csv'])), cliReport, 'app and CLI scan reports');
 
   // **View saved files** is the destination listed back, not a second plan.
-  await click('#receipt-view');
-  await until(el('#receipt-view') + '.getAttribute("aria-expanded") === "true"', 'The listing did not open');
+  await openListing();
   const listed = () => evaluate(
     "Array.from(document.querySelectorAll('#receipt-files li'), li => li.textContent)",
   );
@@ -259,6 +299,38 @@ export async function checkReceipt(send) {
     'a photo counted once must stay counted once');
   await click('#photo-close');
 
+  // A folder that refuses to be listed — the shape of a grant the browser took
+  // back after a restart. Every write still resolves, so only the read-back can
+  // notice, and the receipt must say its counts are the run's own record rather
+  // than what is on the disk.
+  await evaluate('(async () => {' +
+    ' const { freshDirectory } = await import("./mount.js");' +
+    ' receiptPicker.destination = await freshDirectory(receiptPicker.root, "receipt-unreadable");' +
+    ' })()');
+  await click('#export-pick');
+  await until(el('#export-destination') + '.textContent.endsWith("receipt-unreadable")',
+    'The unreadable destination was not accepted');
+  await evaluate('receiptPicker.destination.entries = () => {' +
+    ' throw new DOMException("The folder refused to be listed.", "NotAllowedError"); }; true');
+  await click('#export-start');
+  await until(el('#export-status') + '.textContent.includes("3 saved") && ' +
+    el('#export-start') + '.disabled === false',
+    'A batch into a folder that cannot be listed did not finish its writes');
+  await until(el('#receipt-reconciled') + '.textContent.includes("could not be read back")',
+    'the receipt kept claiming a folder it could not read');
+  assert.equal(await text('#receipt-headline'), '3 photos saved',
+    'the run did save those three, and the receipt says so beside the unreadable folder');
+  assert.equal(await text('#receipt-detail'), '',
+    'a count of files in the folder would be the run’s recollection, so there is none');
+  const unreadable = await copy();
+  assert.equal(unreadable.writes.written, 3, 'the earlier batch still counts');
+  assert.equal(unreadable.writes.failed, 0);
+  assert.equal(unreadable.writes.confirmed_on_disk, null, 'an unreadable folder confirms nothing');
+  await openListing();
+  assert.match(await text('#receipt-saved'), /own record/,
+    'the fallback to the ledger has to say it is a fallback');
+  assert.equal((await listed()).length, 3);
+
   // ---- a run that only ever saved one photo -------------------------------
   await click('#restart');
   await evaluate("prepareReceipt('working', 'receipt-one')");
@@ -301,6 +373,27 @@ export async function checkReceipt(send) {
     el('#export-start') + '.disabled === false', 'The stopped batch did not settle');
   await until(el('#receipt-section') + '?.hidden === false', 'A stopped batch got no receipt');
   assert.match(await text('#receipt-headline'), /^[1-9][\d]* photos? saved$/, 'the settled count is on the receipt');
+
+  // One committed file goes missing between the stop and the continuation. No
+  // row is re-written — the batch believes it wrote that file — so only the
+  // read-back can notice, and the receipt has to name it.
+  const removed = await evaluate(`(async () => {
+    const walk = async (folder, prefix) => {
+      for await (const [name, entry] of folder.entries()) {
+        if (entry.kind === 'directory') {
+          const found = await walk(entry, prefix + name + '/');
+          if (found) return found;
+        } else if (name.endsWith('.jpg')) {
+          await folder.removeEntry(name);
+          return prefix + name;
+        }
+      }
+      return null;
+    };
+    return walk(receiptPicker.destination, '');
+  })()`);
+  assert(typeof removed === 'string' && removed.endsWith('.jpg'), 'a saved JPEG was not removed');
+
   await click('#export-start');
   await until(el('#export-status') + '.textContent.startsWith("13 saved") && ' +
     el('#export-start') + '.disabled === false', 'Continuation did not finish');
@@ -311,14 +404,18 @@ export async function checkReceipt(send) {
   assertPathFree(resumed, await evaluate('receiptOutline'));
   assert.equal(resumed.writes.planned, 13);
   assert.equal(resumed.writes.written, 13);
-  assert.equal(resumed.writes.confirmed_on_disk, 13, 'the destination answers for all of them');
+  assert.equal(resumed.writes.confirmed_on_disk, 12,
+    'the destination answered for twelve of the thirteen committed files');
+  assert.equal(resumed.writes.failed, 0, 'the continuation wrote everything it believed it had not');
+  assert.match(await text('#receipt-detail'), /12 files in the folder when it was read back/);
+  assert(await text('#receipt-reconciled') === `1 of them is not in the folder any more: ${removed}.`,
+    'the receipt must name the file the folder no longer holds');
   assert.equal(resumed.events.stopped, 1);
   assert.equal(resumed.events.continued, 1);
   assert(resumed.events.settled >= 2, 'a stop settles, and so does the finish');
   assert(typeof resumed.timings.longest_write_gap_ms === 'number');
-  await click('#receipt-view');
-  await until(el('#receipt-view') + '.getAttribute("aria-expanded") === "true"', 'The listing did not open');
-  assert.equal((await listed()).length, 13, 'the folder is listed back with every saved file');
+  await openListing();
+  assert.equal((await listed()).length, 12, 'the listing is the folder, so the missing file is not in it');
 
   // ---- a failure before any receipt exists --------------------------------
   await click('#restart');

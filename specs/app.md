@@ -193,10 +193,10 @@ run that saved one photo ends with the same account a batch does, and a stopped
 batch shows its receipt with the continuation beside it. It leads with the count
 of catalog images the run **saved** — one per image, however many times a one-off
 save and a batch reached it — and names beneath it the images already recovered
-at their planned paths, the images it could not save, and how many files those
-photos put in the folder. The count is taken from commits: a file counts when its
-write has closed, never when it was planned. Both version numbers a bug report
-quotes sit on the receipt, in ADR 0012 D2's form.
+at their planned paths, the images it could not save, and how many files the
+folder answered for when it was read back. The count is taken from commits: a
+file counts when its write has closed, never when it was planned. Both version
+numbers a bug report quotes sit on the receipt, in ADR 0012 D2's form.
 
 Reconciliation reads the destination instead of trusting the run. When a batch
 settles the page lists the destination back through the same handle and compares
@@ -222,8 +222,9 @@ from the plan, the options the run applied and the copy's two digests — the fi
 set `specs/modules/report.md` freezes for `scan --report`. Its arguments have to
 be true rather than convenient, so the entry retains the `Options` it planned
 with and the digests `capture_verified` measured, instead of the copy's strings
-alone. Writing the plan CSV and the verification report, and reading the two
-compiled version constants, are the three worker exports this needs.
+alone. The plan CSV rides the report export a batch already calls; the
+verification report and the compiled version pair are the two new worker exports
+this needs.
 
 Diagnostics are kept in memory for the current run, never written into a
 destination, never uploaded, and copied only by a click. One serializer produces

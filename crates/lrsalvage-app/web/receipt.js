@@ -12,10 +12,6 @@
 
 import { log } from './diagnostics.js';
 
-/** The GitHub and issue links a finished run offers; neither is required. */
-const PROJECT = 'https://github.com/marcd35/lrsalvage';
-const ISSUES = 'https://github.com/marcd35/lrsalvage/issues/new/choose';
-
 const counted = (value) => Number(value).toLocaleString('en');
 
 /** `IMG_0001.jpg` from `2023/IMG_0001.jpg`. */
@@ -41,6 +37,7 @@ export function mountReceipt(document, actions) {
   const title = el('title');
   const headline = el('headline');
   const detail = el('detail');
+  const reconciled = el('reconciled');
   const destination = el('destination');
   const where = el('where');
   const view = el('view');
@@ -50,6 +47,7 @@ export function mountReceipt(document, actions) {
   const failures = el('failures');
   const reports = el('reports');
   const reportList = el('report-list');
+  const reportFailures = el('report-failures');
   const verification = el('verification');
   const reportStatus = el('report-status');
   const versions = el('versions');
@@ -68,6 +66,8 @@ export function mountReceipt(document, actions) {
     files.replaceChildren();
     failures.replaceChildren();
     reportList.replaceChildren();
+    reportFailures.replaceChildren();
+    reconciled.textContent = '';
     files.hidden = true;
     view.setAttribute('aria-expanded', 'false');
     saved.textContent = '';
@@ -101,9 +101,16 @@ export function mountReceipt(document, actions) {
     const parts = [];
     if (skipped.length) parts.push(`${counted(skipped.length)} already recovered`);
     if (state.failures.length) parts.push(`${counted(state.failures.length)} could not be saved`);
-    const inFolder = written.length + skipped.length;
-    parts.push(`${counted(inFolder)} ${inFolder === 1 ? 'file' : 'files'} in the folder`);
+    // The count belongs to a read-back: without one, the headline is the only
+    // claim this receipt makes about how many files there are.
+    if (state.reconciled?.ok) {
+      const found = state.reconciled.present.length;
+      parts.push(`${counted(found)} ${found === 1 ? 'file' : 'files'} ` +
+        'in the folder when it was read back');
+    }
     detail.textContent = parts.join(' · ');
+
+    renderReconciled(state);
 
     const chosen = state.destinationNames;
     destination.textContent = chosen.length
@@ -120,9 +127,40 @@ export function mountReceipt(document, actions) {
     el('files').setAttribute('aria-label', `Files in ${chosen.join(' and ') || 'the destination'}`);
     renderFailures(state.failures);
     renderReports(state.reports);
+    renderReportFailures(state.reportFailures ?? []);
     support.hidden = written.length === 0;
 
-    if (listed) renderFiles(entries);
+    if (listed) {
+      renderFiles(state);
+      describeListing(state);
+    }
+  }
+  /**
+   * What the destination answered for, and what it did not.
+   *
+   * This is the one line the spec insists on: a plan path the folder no longer
+   * holds is named, and a folder that cannot be read back says so rather than
+   * letting the run's own record pass for an observation.
+   */
+  function renderReconciled(state) {
+    const settled = state.reconciled;
+    if (!settled) {
+      reconciled.textContent = '';
+      return;
+    }
+    if (!settled.ok) {
+      reconciled.textContent =
+        'The folder could not be read back just now, so the counts above are this run’s ' +
+        'own record rather than what is on the disk.';
+      return;
+    }
+    if (settled.missing.length === 0) {
+      reconciled.textContent = 'Every file above was found in the folder when it was read back.';
+      return;
+    }
+    reconciled.textContent = `${counted(settled.missing.length)} of them ` +
+      `${settled.missing.length === 1 ? 'is' : 'are'} not in the folder any more: ` +
+      `${settled.missing.join(', ')}.`;
   }
 
   function renderFailures(state) {
@@ -154,10 +192,42 @@ export function mountReceipt(document, actions) {
     }
   }
 
-  function renderFiles(entries) {
+  /** A report that could not be written is a failure, never a link. */
+  function renderReportFailures(state) {
+    reportFailures.replaceChildren();
+    for (const { name, note } of state) {
+      const item = document.createElement('li');
+      item.textContent = `${name} · ${note}`;
+      reportFailures.append(item);
+    }
+  }
+
+  /**
+   * The listing: the destination's own answer when it was read, otherwise the
+   * run's record — with the difference said out loud in `#receipt-saved`.
+   */
+  function filesFor(state) {
+    const settled = state.reconciled;
+    if (settled?.ok) {
+      return settled.present.map((entry) => {
+        const known = state.ledger.get(entry.id);
+        return { path: entry.path, bytes: entry.bytes, status: known?.status ?? 'written' };
+      });
+    }
+    return [...state.ledger.values()];
+  }
+
+  /** What the listing is: the folder's answer, or this run's record when it could not read one. */
+  function describeListing(state) {
+    saved.textContent = state.reconciled?.ok
+      ? 'This is the folder listed back through this page, not a second plan.'
+      : 'The folder could not be read back, so this is this run’s own record.';
+  }
+
+  function renderFiles(state) {
     files.replaceChildren();
     const groups = new Map();
-    for (const entry of entries) {
+    for (const entry of filesFor(state)) {
       const key = folder(entry.path);
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key).push(entry);
@@ -193,8 +263,10 @@ export function mountReceipt(document, actions) {
     files.hidden = !listed;
     view.setAttribute('aria-expanded', String(listed));
     view.textContent = listed ? 'Hide saved files' : 'View saved files';
-    if (listed && current) renderFiles([...current.ledger.values()]);
-    if (listed) saved.textContent = 'This is the folder listed back through this page, not a second plan.';
+    if (listed && current) {
+      renderFiles(current);
+      describeListing(current);
+    }
   });
 
   copyName.addEventListener('click', () => {

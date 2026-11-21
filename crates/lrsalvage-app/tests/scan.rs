@@ -54,7 +54,7 @@ fn every_vault_reports_the_condition_it_was_built_for() {
             "working" => {
                 assert_eq!(report["ok"], Value::Bool(true), "{name}: {report}");
                 assert_eq!(number(&report, "/stats/images"), 4);
-                assert_eq!(number(&report, "/stats/recoverable"), 4);
+                assert_eq!(number(&report, "/stats/recovered"), 4);
                 assert_eq!(text(&report, "/cache/layout"), "modern");
                 assert_eq!(report["index"]["problem"], Value::Null);
                 // The copy is proven, and the page shows these two: the digest of
@@ -69,7 +69,7 @@ fn every_vault_reports_the_condition_it_was_built_for() {
                 // On the host the drive is reachable, which a page has to be
                 // handed — the difference `originals` exists to measure.
                 assert_eq!(number(&report, "/stats/original_present"), 1);
-                assert_eq!(number(&report, "/stats/recoverable"), 1);
+                assert_eq!(number(&report, "/stats/recovered"), 1);
                 assert_eq!(report["roots"][0]["in_reach"], Value::Bool(true));
                 assert!(
                     text(&report, "/roots/0/path").ends_with(['/', std::path::MAIN_SEPARATOR]),

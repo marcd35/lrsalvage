@@ -271,7 +271,7 @@ fn report(
         },
         "stats": {
             "images": stats.images,
-            "recoverable": stats.recoverable,
+            "recovered": stats.recoverable,
             "tiers": lrsalvage_core::report::tiers_json(stats),
             "missing_payload": stats.missing_payload,
             "no_cache_entry": stats.no_cache_entry,

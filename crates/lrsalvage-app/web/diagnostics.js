@@ -148,11 +148,7 @@ export const log = {
   /** The scan's frozen counts, copied member by member and by name. */
   scanCounts(stats) {
     if (!stats) return;
-    // The frozen set calls this count `recovered`; the app's report carries the
-    // plan's own name for the same number. Same fact, published under the name
-    // `specs/modules/report.md` freezes.
-    const source = { ...stats, recovered: stats.recovered ?? stats.recoverable };
-    state.scan = Object.fromEntries(SCAN_COUNTS.map((name) => [name, source[name] ?? null]));
+    state.scan = Object.fromEntries(SCAN_COUNTS.map((name) => [name, stats[name] ?? null]));
   },
 
   /** How many files the batch fixed when it started. */
@@ -254,12 +250,11 @@ export const log = {
 
   /** Put the object on the clipboard, and say so where the page can hear it. */
   async copy(status) {
-    try {
-      await navigator.clipboard.writeText(await log.text());
-      if (status) status.textContent = 'Diagnostics copied. They name no path, no file and no error text.';
-    } catch (error) {
-      if (status) status.textContent = `The clipboard was refused: ${error.message}`;
-    }
+    await log.copyText(
+      await log.text(),
+      status,
+      'Diagnostics copied. They name no path, no file and no error text.',
+    );
   },
 
   /** Copy one short string — the folder's name — for the same reason. */

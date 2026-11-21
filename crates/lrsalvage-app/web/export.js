@@ -42,9 +42,6 @@ const DESCRIPTIONS = {
   'verification.json': 'Path-free scan facts',
 };
 
-const describe = (name) =>
-  DESCRIPTIONS[name.replace(/ \(\d+\)(?=\.[^.]+$)/, '')] ?? 'Report';
-
 async function validateDestination(destination, inputs) {
   for (const { handle } of inputs) {
     if (await handle.resolve(destination) !== null || await destination.resolve(handle) !== null) {
@@ -139,38 +136,50 @@ async function writeReport(destination, name, text) {
  *
  * The link is the bytes the destination holds, opened as a blob: a page has no
  * other way to open a file it wrote, and reading it back is also the check that
- * the file is really there.
+ * the file is really there. The name it landed on comes back from the writer, so
+ * the receipt never re-derives the CLI's numbered-name rule.
  */
-async function writeAndLink(destination, name, text) {
+async function writeAndLink(destination, name, text, description) {
   const path = await writeReport(destination, name, text);
   const file = await (await destination.getFileHandle(path)).getFile();
-  return { name: path, url: URL.createObjectURL(file), description: describe(path) };
+  return { name: path, url: URL.createObjectURL(file), description };
 }
 
 /**
  * What the destination answers when it is listed back.
  *
- * One walk, intersected with the run's committed paths: the count on the receipt
- * is a count of files that exist, not a count of writes that were attempted. A
- * folder that cannot be read says so instead of claiming its files.
+ * One walk, intersected with the run's committed paths: `present` is what the
+ * folder really holds, with the size it holds now, and `missing` is the plan
+ * paths it no longer has. A folder that cannot be read says so instead of
+ * letting the run's own record pass for an observation (`specs/app.md`,
+ * *Receipt, reports and diagnostics*).
  */
 async function reconcile(destination, ledger) {
   const entries = [...ledger.values()];
-  const planned = new Set(entries.map((entry) => entry.path.toLowerCase()));
-  const found = new Set();
+  const planned = new Map(entries.map((entry) => [entry.path.toLowerCase(), entry]));
+  const present = new Map();
   try {
     const walk = async (dir, prefix) => {
       for await (const [name, entry] of dir.entries()) {
         const path = prefix + name;
-        if (entry.kind === 'directory') await walk(entry, path + '/');
-        else if (planned.has(path.toLowerCase())) found.add(path.toLowerCase());
+        if (entry.kind === 'directory') {
+          await walk(entry, path + '/');
+          continue;
+        }
+        const found = planned.get(path.toLowerCase());
+        if (!found) continue;
+        const file = await entry.getFile();
+        present.set(path.toLowerCase(), { id: found.id, path: found.path, bytes: file.size });
       }
     };
     await walk(destination, '');
   } catch (error) {
-    return { ok: false, reason: classify(error) };
+    return { ok: false, reason: classify(error), present: [], missing: [] };
   }
-  return { ok: true, confirmed: found.size, missing: entries.length - found.size };
+  const missing = entries
+    .filter((entry) => !present.has(entry.path.toLowerCase()))
+    .map((entry) => entry.path);
+  return { ok: true, reason: null, present: [...present.values()], missing };
 }
 
 export function mountExport(document) {
@@ -195,7 +204,8 @@ export function mountExport(document) {
       // The run's account: one entry per catalog image this run committed, plus
       // the failures and the reports it wrote. `targets[].saved` caches per
       // destination for the writer; this is what the receipt counts.
-      ledger: new Map(), failures: [], reports: [], categorised: new Set(),
+      ledger: new Map(), failures: [], reportFailures: [], reports: [],
+      categorised: new Set(), reconciled: null,
     };
     section.hidden = false;
     layout.value = 'mirrored';
@@ -220,13 +230,15 @@ export function mountExport(document) {
     receipt.clear();
   }
 
-  /** Show the run's account, and read the destination back when it has settled. */
+  /** Show the run's account, and what the destination last answered for it. */
   function updateReceipt(current) {
     if (run !== current) return;
     receipt.update({
       ledger: current.ledger,
       failures: current.failures,
+      reportFailures: current.reportFailures,
       reports: current.reports,
+      reconciled: current.reconciled,
       destinationNames: [...new Set([...current.ledger.values()].map((entry) => entry.target.handle.name))],
     });
     void receipt.renderVersions();
@@ -348,16 +360,13 @@ export function mountExport(document) {
    */
   function promote(current, row, outcome, target) {
     const previous = current.ledger.get(row.id);
-    const better = !previous || (previous.status === 'skipped' && outcome.status === 'written');
-    if (better) {
-      if (!previous) log.commit(outcome.status);
-      current.ledger.set(row.id, {
-        id: row.id, path: row.path, status: outcome.status, bytes: outcome.bytes, target,
-      });
-    }
+    if (previous && !(previous.status === 'skipped' && outcome.status === 'written')) return;
+    if (!previous) log.commit(outcome.status);
+    current.ledger.set(row.id, {
+      id: row.id, path: row.path, status: outcome.status, bytes: outcome.bytes, target,
+    });
     const at = current.failures.findIndex((entry) => entry.path === row.path);
     if (at >= 0) current.failures.splice(at, 1);
-    return better;
   }
 
   async function write(current, target, flat, row) {
@@ -390,22 +399,38 @@ export function mountExport(document) {
   }
 
   /**
-   * Record one file that will not be in the folder, once per path.
+   * Record one photo that will not be in the folder, once per path.
    *
-   * The receipt lists it, and the diagnostics count its category — never its
+   * The receipt lists it and the diagnostics count its category — never its
    * message, which can name a path — so the count and the list cannot disagree
    * about how many photos are missing.
    */
-  function fail(current, path, message, category) {
+  function failPhoto(current, path, message, category) {
     const at = current.failures.findIndex((entry) => entry.path === path);
-    const entry = { path, note: message };
+    const entry = { path, note: message, category };
     if (at >= 0) current.failures[at] = entry;
     else current.failures.push(entry);
     addError(path, message);
     if (!current.categorised.has(path)) {
       current.categorised.add(path);
       log.failure(category);
+      log.commit('failed');
     }
+  }
+
+  /**
+   * Record a report that could not be written.
+   *
+   * A report is file work and its category is counted, but it is not one of the
+   * photos the receipt is about, so it gets its own list and its own sentence
+   * rather than inflating "N could not be saved".
+   */
+  function failReport(current, name, message, category) {
+    if (!current.reportFailures.some((entry) => entry.name === name)) {
+      current.reportFailures.push({ name, note: message });
+      log.failure(category);
+    }
+    addError(name, message);
   }
 
   async function saveBatch(current) {
@@ -438,7 +463,7 @@ export function mountExport(document) {
       if (outcome.status === 'written' || outcome.status === 'skipped') {
         promote(current, row, outcome, target);
       } else {
-        fail(current, row.path, outcome.note ?? 'The file could not be written.', outcome.category);
+        failPhoto(current, row.path, outcome.note ?? 'The file could not be written.', outcome.category);
       }
     };
 
@@ -457,8 +482,8 @@ export function mountExport(document) {
     if (run !== current) return;
 
     // The destination's own answer, not the writer's recollection of it.
-    const settled = await reconcile(target.handle, current.ledger);
-    log.confirmed(settled.ok ? settled.confirmed : null);
+    current.reconciled = await reconcile(target.handle, current.ledger);
+    log.confirmed(current.reconciled.ok ? current.reconciled.present.length : null);
     if (run !== current) return;
     if (next < pending.length) {
       el('status').textContent += ' · Stopped';
@@ -473,9 +498,9 @@ export function mountExport(document) {
       const written = [];
       for (const [name, text] of Object.entries(reports)) {
         try {
-          written.push(await writeAndLink(target.handle, name, text));
+          written.push(await writeAndLink(target.handle, name, text, DESCRIPTIONS[name] ?? 'Report'));
         } catch (error) {
-          fail(current, name, error.message, classify(error));
+          failReport(current, name, error.message, classify(error));
         }
       }
       current.reports = [
@@ -504,7 +529,11 @@ export function mountExport(document) {
     status.textContent = 'Writing the report…';
     try {
       const { text } = await current.scan.verificationReport();
-      const entry = await writeAndLink(current.target.handle, 'verification.json', text);
+      const entry = await writeAndLink(
+        current.target.handle, 'verification.json', text, DESCRIPTIONS['verification.json']);
+      for (const gone of current.reports.filter((report) => report.name.startsWith('verification'))) {
+        URL.revokeObjectURL(gone.url);
+      }
       current.reports = [
         ...current.reports.filter((report) => !report.name.startsWith('verification')),
         entry,
@@ -564,7 +593,7 @@ export function mountExport(document) {
       const outcome = await write(current, target, current.flat, row);
       if (outcome.status === 'failed') {
         status.textContent = outcome.note;
-        fail(current, row.path, outcome.note, outcome.category);
+        failPhoto(current, row.path, outcome.note, outcome.category);
         updateReceipt(current);
         return;
       }

@@ -291,7 +291,7 @@ async function run(target, seconds) {
   const send = (method, params = {}) =>
     new Promise((resolveSend, rejectSend) => {
       const id = nextId++;
-      pending.set(id, { resolveSend, rejectSend });
+      pending.set(id, { resolveSend, rejectSend, method });
       socket.send(JSON.stringify({ id, method, params }));
     });
 
@@ -302,9 +302,11 @@ async function run(target, seconds) {
   socket.onmessage = (event) => {
     const message = JSON.parse(event.data);
     if (message.id !== undefined && pending.has(message.id)) {
-      const { resolveSend, rejectSend } = pending.get(message.id);
+      const { resolveSend, rejectSend, method } = pending.get(message.id);
       pending.delete(message.id);
-      if (message.error) rejectSend(new Error(message.error.message));
+      // The method belongs in the message: "Invalid parameters" from one of forty
+      // calls is not a diagnosis.
+      if (message.error) rejectSend(new Error(`${method}: ${message.error.message}`));
       else resolveSend(message.result);
       return;
     }
