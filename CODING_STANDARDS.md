@@ -36,6 +36,10 @@ a commit message that says why.
   *new* writer", "apart from the pair that pins…". An unsearched universal reads
   as fact, and it is the claim class reviewers find most often because the tree
   contradicts it in one line.
+- **A value computed and never shown is a claim with no evidence.** When a spec
+  sentence names something a person sees, the diff renders it rather than only
+  deriving it: a `reconcile()` whose result nothing reads is a promise the page
+  breaks silently, and three comments saying otherwise are the bug.
 - **What we chose never becomes what Adobe does.** A fixture pins our behaviour
   in a state; say so in the row and in the prose, because the state is ours until
   a real cache is measured in it.
