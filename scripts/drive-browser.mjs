@@ -26,6 +26,7 @@
 
 import { createServer } from 'node:http';
 import { checkExport } from './check-export.mjs';
+import { checkReceipt } from './check-receipt.mjs';
 import { checkPreviewReview } from './check-preview-review.mjs';
 import { spawn } from 'node:child_process';
 import { readFile, mkdtemp, rm, stat } from 'node:fs/promises';
@@ -66,7 +67,7 @@ const CHROME_CANDIDATES = [
 function usage(message) {
   if (message) console.error(message);
   console.error(
-    `usage: node scripts/drive-browser.mjs <out-dir> [--chrome <path>] [--timeout <s>] [--attach <port>] [--verbose] [--page <path>] [--check-review|--check-export]\n` +
+    `usage: node scripts/drive-browser.mjs <out-dir> [--chrome <path>] [--timeout <s>] [--attach <port>] [--verbose] [--page <path>] [--check-review|--check-export|--check-receipt]\n` +
       `  --page defaults to ${PARITY_PAGE}; the app's page is ${APP_PAGE}`,
   );
   process.exit(2);
@@ -88,6 +89,7 @@ for (let index = 0; index < args.length; index += 1) {
   else if (arg === '--verbose') verbose = true;
   else if (arg === '--check-review') productCheck = checkPreviewReview;
   else if (arg === '--check-export') productCheck = checkExport;
+  else if (arg === '--check-receipt') productCheck = checkReceipt;
   else if (arg === '--page') {
     // A leading slash is optional: `sh` on this machine rewrites an argument that
     // begins with one into a Windows path, so the script passes it without.

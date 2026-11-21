@@ -203,7 +203,7 @@ export async function checkExport(send) {
   return { jpegs: Object.keys(jpegs).length, reports: 2, resumedCli: 3, stoppedAt: 8, continuedTo: 13, lostDestination: 13 };
 }
 
-function pauseCloses() {
+export function pauseCloses() {
   const native = FileSystemFileHandle.prototype.createWritable;
   let release;
   const gate = new Promise((resolve) => { release = resolve; });
