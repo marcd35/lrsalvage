@@ -50,6 +50,9 @@ jobs:
 
   deploy:
     needs: build
+    if: >-
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'push' && github.ref == 'refs/tags/app-0.1.0')
     runs-on: ubuntu-latest
     environment: ${{ github.event_name == 'push' && 'app-production' || 'app-preview' }}
     concurrency:
@@ -90,7 +93,7 @@ jobs:
           fi
           if [[ "$GITHUB_EVENT_NAME" == push && "$GITHUB_REF" == refs/tags/app-0.1.0 ]]; then
             printf '%s\n' 'branch=main' >> "$GITHUB_OUTPUT"
-          elif [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]]; then
+          elif [[ "$GITHUB_EVENT_NAME" == workflow_dispatch && "$GITHUB_REF" == refs/heads/main ]]; then
             printf 'branch=preview-%s\n' "$GITHUB_SHA" >> "$GITHUB_OUTPUT"
           else
             exit 1
@@ -109,5 +112,5 @@ jobs:
         env:
           PAGES_URL: ${{ steps.pages.outputs.deployment-url }}
         run: |
-          python3 scripts/verify-browser-deployment.py "$PAGES_URL" app-static/build.json |
+          python3 scripts/verify-browser-deployment.py "$PAGES_URL" app-static |
             tee -a "$GITHUB_STEP_SUMMARY"

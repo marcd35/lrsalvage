@@ -37,19 +37,23 @@ with `main` as its production branch. Create GitHub deployment environments
 `CLOUDFLARE_PAGES_PROJECT` to the project name and set the secrets
 `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN`. The token needs
 [Cloudflare Pages Edit access scoped to the account](https://developers.cloudflare.com/pages/how-to/use-direct-upload-with-continuous-integration/).
-Restrict the production environment to tag `app-0.1.0` and apply the repository's
-release approval process before making the tag.
+Use selected deployment branches and tags in GitHub. Allow only the protected
+`main` branch to access `app-preview` and only the `app-0.1.0` tag to access
+`app-production`. Keep the token in each deployment environment, since Pages
+Edit applies across the account. Apply the repository's release approval
+process before making the tag.
 
-Dispatch the **browser app** workflow using the candidate branch or tag. A
-dispatch uploads to a preview branch named for the commit. A push of
-`app-0.1.0` takes the tagged production path. The deployment job checks the
-configured project's production branch before uploading.
+Test pull requests in the local Pages emulator. After the candidate merges,
+dispatch the **browser app** workflow from `main`. It uploads to a preview
+branch named for the commit. A push of `app-0.1.0` takes the tagged production
+path. The deployment job checks the configured project's production branch
+before uploading.
 
 The job summary records the verified HTTPS deployment URL and build commit.
 Use that exact URL for release evidence. The automated HTTP check compares both
-cross-origin isolation headers, the build identity, the WebAssembly response,
-and the practice downloads against the staged site. In Windows Chrome and Edge,
-also check `window.isSecureContext && window.crossOriginIsolated` on the landing
+cross-origin isolation headers and compares deployed assets with the staged
+site. It checks the JavaScript and WebAssembly content types. In Windows Chrome
+and Edge, also check `window.isSecureContext && window.crossOriginIsolated` on the landing
 page and the recovery page. Open each practice sample from the guide and compare
 the result with the described outcome. Use a separate folder for the working
 sample's JPEG export, then open the JPEGs and reconcile the receipt with disk.

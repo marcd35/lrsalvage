@@ -1,50 +1,57 @@
-"""Check the identity and isolation headers of a deployed Pages artifact."""
+"""Check a deployed Pages site against the staged app and isolation headers."""
 
 import argparse
 import json
-from urllib.parse import urlparse
+from pathlib import Path
+from urllib.parse import quote, urlparse
 from urllib.request import urlopen
 
 
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("url")
-    parser.add_argument("build", type=argparse.FileType("r"))
-    options = parser.parse_args()
-    root = options.url.rstrip("/")
-    origin = urlparse(root)
-    if origin.scheme != "https" or not origin.hostname or origin.path:
-        parser.error("provide the deployment's HTTPS origin")
-    expected = json.load(options.build)
+ROUTES = {"index.html": "", "recovery.html": "recovery?sample=working"}
+JS_TYPES = {"text/javascript", "application/javascript"}
 
-    def fetch(path):
-        with urlopen(f"{root}/{path}", timeout=20) as response:
+
+def verify(root, static):
+    origin = urlparse(root)
+    if origin.scheme != "https" or not origin.hostname or origin.path or origin.query or origin.fragment:
+        raise SystemExit("provide the deployment's HTTPS origin")
+    expected = json.loads((static / "build.json").read_bytes())
+    if expected["dirty"]:
+        raise SystemExit("the deployment must use a clean build")
+
+    for staged in sorted(path for path in static.rglob("*") if path.is_file()):
+        relative = staged.relative_to(static).as_posix()
+        if relative == "_headers":
+            continue
+        route = ROUTES.get(relative, quote(relative))
+        with urlopen(f"{root}/{route}", timeout=20) as response:
             final = urlparse(response.url)
             if (final.scheme, final.netloc) != (origin.scheme, origin.netloc):
-                raise SystemExit(f"{path} redirected away from the deployment")
+                raise SystemExit(f"{route} redirected away from the deployment")
             for key, value in (
                 ("Cross-Origin-Opener-Policy", "same-origin"),
                 ("Cross-Origin-Embedder-Policy", "require-corp"),
             ):
                 if response.headers.get(key) != value:
-                    raise SystemExit(f"{path or '/'} must return {key}: {value}")
-            return response.headers.get_content_type(), response.read()
+                    raise SystemExit(f"{route or '/'} must return {key}: {value}")
 
-    _, identity = fetch("build.json")
-    if json.loads(identity) != expected or expected["dirty"]:
-        raise SystemExit("the deployment did not serve the expected clean build identity")
-    _, landing = fetch("")
-    _, recovery = fetch("recovery?sample=working")
-    if b"Try a sample" not in landing or b'id="scan"' not in recovery:
-        raise SystemExit("the deployment did not serve both the guide and recovery page")
-    fetch("worker.js")
-    mime, wasm = fetch("pkg/lrsalvage_app_bg.wasm")
-    if mime != "application/wasm" or not wasm.startswith(b"\x00asm"):
-        raise SystemExit("the deployment did not serve WebAssembly with application/wasm")
-    for name in json.loads(fetch("practice/samples.json")[1]):
-        if not fetch(f"practice/{name}.zip")[1].startswith(b"PK\x03\x04"):
-            raise SystemExit(f"the deployment did not serve the archive for {name}")
+            mime = response.headers.get_content_type()
+            if staged.suffix in (".js", ".mjs") and mime not in JS_TYPES:
+                raise SystemExit(f"{relative} must be served as JavaScript, got {mime}")
+            if staged.suffix == ".wasm" and mime != "application/wasm":
+                raise SystemExit(f"{relative} must be served as application/wasm, got {mime}")
+            if response.read() != staged.read_bytes():
+                raise SystemExit(f"{relative} differs from the staged artifact")
+
     print(f"{root} · app {expected['app']} · core {expected['core']} · {expected['commit']}")
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("url")
+    parser.add_argument("static", type=Path, help="staged static directory")
+    options = parser.parse_args()
+    verify(options.url.rstrip("/"), options.static)
 
 
 if __name__ == "__main__":
