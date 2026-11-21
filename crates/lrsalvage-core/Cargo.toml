@@ -64,7 +64,7 @@ sha2.workspace = true
 flate2.workspace = true
 base64 = "0.23"
 serde_json.workspace = true
-jiff = "0.2"
+jiff = "1.0"
 filetime = "0.2"
 png = { version = "0.18", optional = true }
 
