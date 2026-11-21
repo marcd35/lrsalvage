@@ -46,7 +46,7 @@ It is **not** part of the supported seam, with one recorded exception: on
 `wasm32` `crate::fs::wasm` is a public module, because a page has to *install* the
 backend before a run. `install_bridge`, `install_store` (and its
 `start_install`/`poll_install` pair for a host with no async runtime), `mount`,
-`seal`, `reset` and `store_installed` are the crate's browser-facing surface and
+`seal`, `reset`, `store_installed` and `pause_store` are the crate's browser-facing surface and
 the only `fs` API a front end calls. A front-end that never installs one gets
 `Unsupported` from every bridged operation, which is the honest answer for a page
 that wired nothing.
@@ -178,6 +178,9 @@ per root, `install_store` (awaited, or `start_install` then `poll_install` from 
 macrotask for a host that cannot await), `seal`. Mounting is before the install
 because a `scratch_dir` needs a store mount to allocate under, and `seal` is after
 it because a run may only start once SQLite has a VFS. `reset` forgets all of it.
+Once its SQLite connections close, the app worker calls `pause_store` so another
+worker can acquire the pool's sync access handles. The page can still review
+previews through the picked-cache mount and bridge.
 `crates/lrsalvage-app` wraps that for a page and is the worked example — that
 order, in `crates/lrsalvage-app/src/wasm.rs`; `crates/lrsalvage-web` links it and
 re-exports the same three calls for the parity page, so the two pages cannot

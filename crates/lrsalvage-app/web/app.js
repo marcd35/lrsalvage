@@ -134,7 +134,9 @@ function sameStem(cache, catalog) {
  * with.
  *
  * `mounts` is the page's half: a path and the handle that answers for it. The
- * catalog's folder is `/source`; a separately picked cache is `/cache`.
+ * catalog's folder is `/source`; a separately picked cache is `/cache`. With
+ * no picked or detected cache, scan the expected sibling path so the report can
+ * still list the catalog photos whose previews are unavailable.
  */
 export function sourceFrom({
   handle,
@@ -145,7 +147,8 @@ export function sourceFrom({
   mounts = [],
 }) {
   const all = [{ path: '/source', handle }, ...mounts];
-  let cachePath = cache ? `/source/${cache}` : null;
+  const sibling = cache ?? catalog.replace(/\.lrcat$/i, ' Previews.lrdata');
+  let cachePath = `/source/${sibling}`;
   if (cacheHandle) {
     all.push({ path: '/cache', handle: cacheHandle });
     // A picked folder may be the cache itself or the folder holding it, so the
@@ -180,10 +183,10 @@ export function withMount(source, path, handle) {
  * `ui.progress({phase, done, total})` with every report the worker forwards; and
  * `done` resolves with the Rust half's report — `{ok: true, …}`,
  * `{ok: true, stopped: true}`, or `{ok: false, problem: {stage, kind, message}}`.
- * It never rejects for a scan that failed: a failure is a report, so the page has
- * one code path and a person gets a sentence.
+ * Scan failures are reports. Worker failures reject `done`.
+ * In review mode a completed worker answers `preview(id)` until `close()`.
  */
-export function start(source, ui = {}) {
+export function start(source, ui = {}, { review = false } = {}) {
   const answer = new SharedArrayBuffer(SAB_BYTES);
   const stop = new SharedArrayBuffer(4);
   const flag = new Int32Array(stop);
@@ -193,6 +196,19 @@ export function start(source, ui = {}) {
   const host = new FsHost(answer, source.mounts);
 
   const worker = new Worker(new URL('./worker.js', import.meta.url), { type: 'module' });
+
+  const pending = new Map();
+  let nextRequest = 0;
+  let closed = false;
+  let ready = false;
+
+  function close(reason = new Error('This recovery has ended.')) {
+    if (closed) return;
+    closed = true;
+    worker.terminate();
+    for (const { reject } of pending.values()) reject(reason);
+    pending.clear();
+  }
 
   const done = new Promise((resolve, reject) => {
     worker.onmessage = (event) => {
@@ -212,15 +228,29 @@ export function start(source, ui = {}) {
       }
       if (message?.type === 'report') {
         ui.stage?.('report');
+        ready = review && message.report.ok && !message.report.stopped;
+        if (!ready) close();
         resolve(message.report);
         return;
       }
+      if (message?.type === 'preview') {
+        const ask = pending.get(message.request);
+        if (!ask) return;
+        pending.delete(message.request);
+        if (message.problem) ask.reject(message.problem);
+        else ask.resolve(new Blob([message.bytes], { type: 'image/jpeg' }));
+        return;
+      }
       if (message?.type === 'failed') {
-        reject(new Error(message.error));
+        const error = new Error(message.error);
+        close(error);
+        reject(error);
       }
     };
     worker.onerror = (event) => {
-      reject(new Error(event.message || 'the worker failed to start'));
+      const error = new Error(event.message || 'The recovery worker stopped.');
+      close(error);
+      reject(error);
     };
     ui.stage?.('install');
     worker.postMessage({
@@ -235,7 +265,7 @@ export function start(source, ui = {}) {
       cache: source.cache,
       capacity: CAPACITY,
     });
-  }).finally(() => worker.terminate());
+  });
 
   return {
     /** Ask the scan to stop. It stops at the next unit boundary, which is one file. */
@@ -243,5 +273,14 @@ export function start(source, ui = {}) {
       Atomics.store(flag, 0, 1);
     },
     done,
+    preview(id) {
+      if (closed || !ready) return Promise.reject(new Error('This recovery has ended.'));
+      return new Promise((resolve, reject) => {
+        const request = ++nextRequest;
+        pending.set(request, { resolve, reject });
+        worker.postMessage({ type: 'preview', request, id });
+      });
+    },
+    close,
   };
 }

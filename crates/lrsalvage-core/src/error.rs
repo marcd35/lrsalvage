@@ -25,6 +25,18 @@ pub enum Error {
     #[error("preview payload not found: {path}")]
     PayloadMissing { path: PathBuf },
 
+    #[error("the plan names no certified preview")]
+    PreviewUnavailable,
+
+    #[error("{path} no longer carries the certified `{level}` chunk")]
+    PreviewLevelMissing { path: PathBuf, level: String },
+
+    #[error("payload is {}x{} but the plan certified {}x{}", actual.0, actual.1, expected.0, expected.1)]
+    PreviewDimensionsChanged {
+        expected: (u32, u32),
+        actual: (u32, u32),
+    },
+
     #[error("truncated .lrprev at byte {offset}: {detail}")]
     LrprevTruncated { offset: usize, detail: String },
 

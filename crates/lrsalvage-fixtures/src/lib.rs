@@ -4,4 +4,5 @@
 //! every suite asserts against have exactly one implementation, here.
 
 pub mod bytes;
+pub mod review;
 pub mod vault;

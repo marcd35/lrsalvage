@@ -67,8 +67,26 @@ pub fn foreign_output(width: u16, height: u16, software: &str) -> Vec<u8> {
     jpeg_with(width, height, &[exif])
 }
 
+/// A readable SOF and EOI with no scan data, used to test pixel decoding.
+pub fn jpeg_without_scan(width: u16, height: u16) -> Vec<u8> {
+    let mut bytes = vec![0xFF, 0xD8];
+    bytes.extend_from_slice(&frame_header(width, height));
+    bytes.extend_from_slice(&[0xFF, 0xD9]);
+    bytes
+}
+
 /// Everything after the SOI segment: APP0, SOF0, SOS, one entropy byte, EOI.
 fn frame(width: u16, height: u16) -> Vec<u8> {
+    let mut bytes = frame_header(width, height);
+    bytes.extend_from_slice(&[
+        0xFF, 0xDA, 0x00, 0x0C, 0x03, 0x01, 0x00, 0x02, 0x11, 0x03, 0x11, 0x00, 0x3F, 0x00,
+    ]);
+    bytes.extend_from_slice(&[0x00, 0xFF, 0xD9]);
+    bytes
+}
+
+/// The fixture frame header's APP0 and SOF0.
+fn frame_header(width: u16, height: u16) -> Vec<u8> {
     let mut bytes = Vec::new();
     bytes.extend_from_slice(&[0xFF, 0xE0, 0x00, 0x10]);
     bytes.extend_from_slice(b"JFIF\0");
@@ -77,10 +95,6 @@ fn frame(width: u16, height: u16) -> Vec<u8> {
     bytes.extend_from_slice(&height.to_be_bytes());
     bytes.extend_from_slice(&width.to_be_bytes());
     bytes.extend_from_slice(&[0x03, 0x01, 0x11, 0x00, 0x02, 0x11, 0x01, 0x03, 0x11, 0x01]);
-    bytes.extend_from_slice(&[
-        0xFF, 0xDA, 0x00, 0x0C, 0x03, 0x01, 0x00, 0x02, 0x11, 0x03, 0x11, 0x00, 0x3F, 0x00,
-    ]);
-    bytes.extend_from_slice(&[0x00, 0xFF, 0xD9]);
     bytes
 }
 

@@ -41,6 +41,9 @@ fn exit_code_for(error: &Error) -> u8 {
         | Error::NotACatalog { .. }
         | Error::NotAPreviewCache { .. }
         | Error::PayloadMissing { .. }
+        | Error::PreviewUnavailable
+        | Error::PreviewLevelMissing { .. }
+        | Error::PreviewDimensionsChanged { .. }
         | Error::LrprevTruncated { .. }
         | Error::LrprevHeader(_)
         | Error::PyramidHeader(_)

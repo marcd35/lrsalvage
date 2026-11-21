@@ -19,7 +19,7 @@
 // installed before the first call into wasm can happen.
 
 import { installBridge } from './seam/lrsalvage-fs.js';
-import init, { poll_install, scan, start_install } from './pkg/lrsalvage_app.js';
+import init, { pause_store, poll_install, read_preview, scan, start_install } from './pkg/lrsalvage_app.js';
 
 /**
  * Paint at most this often. The Rust half reports every unit — a 100,000-image
@@ -43,6 +43,17 @@ const macrotask = () =>
 
 self.onmessage = async (event) => {
   const message = event.data;
+  if (message?.type === 'preview') {
+    const { request, id } = message;
+    try {
+      const bytes = read_preview(id);
+      self.postMessage({ type: 'preview', request, bytes }, [bytes.buffer]);
+    } catch (error) {
+      const problem = error?.kind === 'changed-size' ? error : { kind: 'unreadable' };
+      self.postMessage({ type: 'preview', request, problem });
+    }
+    return;
+  }
   if (message?.type !== 'scan') return;
   try {
     await run(message);
@@ -94,6 +105,9 @@ async function run({ sab, stop, mounts, catalog, cache, capacity }) {
 
   const began = performance.now();
   const report = JSON.parse(scan(catalog, cache));
+  // Preview reads address the picked cache through the bridge. Release the
+  // SQLite pool before reporting so a restart or recheck can install it again.
+  pause_store();
   log('scan finished in', Math.round(performance.now() - began), 'ms');
   self.postMessage({ type: 'report', report });
 }

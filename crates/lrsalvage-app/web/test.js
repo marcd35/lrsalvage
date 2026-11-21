@@ -295,6 +295,9 @@ function compareReports(name, native, browser, differences) {
       differences.push(`${name}: cache.${key} ${browser.cache?.[key]} vs native ${expected}`);
     }
   }
+  if (JSON.stringify(native.photos) !== JSON.stringify(browser.photos)) {
+    differences.push(`${name}: the browser and the native scan returned different review rows`);
+  }
   const nativeIndex = native.index?.problem ?? null;
   const browserIndex = browser.index?.problem ?? null;
   if (JSON.stringify(nativeIndex) !== JSON.stringify(browserIndex)) {

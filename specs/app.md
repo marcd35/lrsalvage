@@ -4,7 +4,7 @@ type: module-design
 title: "app: the browser page's entry and scan"
 status: draft
 parent: architecture
-depends-on: [catalog, previews-db, plan, snapshot, fs, error]
+depends-on: [catalog, previews-db, plan, snapshot, fs, error, extract, exif, model]
 references: [adr-0012-two-release-lines, browser-spike, glossary]
 ---
 
@@ -128,14 +128,32 @@ reverse — so the seam is registered one way for both pages.
   the browser run asserts the report, so its evidence stays valid either way. The
   prototype itself is in this tree as `docs/prototype/` (#149), so the port has a
   reference a checkout can open.
-- **The page has no test hook in it.** The harness's page (`web/test.html`,
-  `web/test.js`) is a second page that imports the same *functions*, and that is
-  exactly the limit of what it proves: the product page's own markup, its
-  `addEventListener` wiring and `view.js`'s rendering of a report are **not**
-  exercised by it. `index.html` as a document is verified by eye, not by a test —
-  a first-impression surface checked by loading it in a browser and looking.
-  Extracting the renderers so the harness can call them would close it, and is
-  worth doing when the grid slice makes the page's DOM worth asserting on.
+
+## Preview review
+
+- A completed scan retains the catalog-linked plan items in its worker. The
+  page receives one row per catalog image, including photos with no preview.
+  IDs travel as strings so JavaScript preserves the full SQLite integer.
+- Ready and small previews use the plan's default 640 px long-edge floor.
+  The checked set starts with the ready previews. Search, grouping, sorting,
+  collapsing folders and switching views leave that set intact. Bulk inclusion
+  applies to previews visible within the current filters and open groups.
+- Gallery and List share the same rows and selection. The optional Preview pane
+  and enlarged dialog read one photo by its ID. The review allows two
+  thumbnail reads at a time and drops queued tiles when they leave the
+  viewport. A tile action brings the stacked pane into view on narrow screens.
+- The worker calls `extract::read_preview` for the exact level the plan chose.
+  When the payload has no EXIF orientation and the catalog records a rotation,
+  review adds that orientation to a display copy. The compressed bytes and
+  source files stay intact. The page shows the JPEG's raw dimensions and
+  distinguishes index dimension disagreements, size changes since scan, read
+  errors and browser decode errors. Fit contains the image inside the dialog. Actual size shows the
+  decoded pixels at their natural CSS dimensions and makes them scrollable.
+- The worker releases the SQLite pool when the scan closes its connections.
+  Starting over or checking an original folder again ends the old worker's
+  review session. Dismissing the enlarged view restores focus to the same
+  photo or pane control when it can receive focus. Otherwise focus moves to
+  search.
 
 ## Testing
 
@@ -144,16 +162,17 @@ reverse — so the seam is registered one way for both pages.
   counting its payloads. It composes `lrsalvage-fixtures` vaults through
   `src/vault.rs`, so no fixture bytes live in this crate.
 - `scripts/browser-app.sh` is the measurement: the page's own entry in headless
-  Chromium against the same seven vaults, compared field by field with a native
+  Chromium against eight vaults, compared field by field with a native
   run — the digests included — plus a stop, the recheck, a cancelled picker driven
   through a real user gesture, and the capability gate. It is not a gate, and
   `specs/modules/fs.md` (*Where the harness lives*) says why.
 - What the browser run cannot prove, and does not claim: that a human's accepted
   pick returns a handle. The mechanism is the browser's, one `await` deep, and the
   value it returns is the value the test supplies.
-- What is verified by eye and nothing else: the page as a document. It loads,
-  `mount` runs, the capability gate stays hidden, and a real click on the picker
-  produces the cancellation branch — checked once in headless Chromium and
-  recorded here as a check a person repeats, not one a suite holds. The scanning
-  and result views were rendered by nobody before this page shipped its first
-  version, because reaching them needs an accepted pick.
+- The same script drives the actual product page for #167. The test installs
+  an origin-private directory handle at the picker boundary, clicks the app's
+  controls, and compares the visible rows, counts, decoded JPEG dimensions,
+  error messages, keyboard navigation, and focus. The review fixture uses
+  deliberately generated raster patterns and a structural JPEG that Chromium
+  cannot decode. An accepted native dialog, the experience on a physical small
+  laptop and operation with a screen reader remain manual checks.

@@ -161,6 +161,11 @@ pub fn poll_install() -> Result<bool, String> {
     }
 }
 
+/// Release the store's sync access handles after closing its SQLite connections.
+pub fn pause_store() -> io::Result<()> {
+    store()?.pause().map_err(store_error)
+}
+
 /// Register one path prefix, and which storage answers under it.
 ///
 /// `store` marks the pool; everything else is bridged. A nested mount wins over
