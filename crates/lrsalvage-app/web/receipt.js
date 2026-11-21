@@ -101,14 +101,26 @@ export function mountReceipt(document, actions) {
     const parts = [];
     if (skipped.length) parts.push(`${counted(skipped.length)} already recovered`);
     if (state.failures.length) parts.push(`${counted(state.failures.length)} could not be saved`);
-    // The count belongs to a read-back: without one, the headline is the only
-    // claim this receipt makes about how many files there are.
-    if (state.reconciled?.ok) {
-      const found = state.reconciled.present.length;
-      parts.push(`${counted(found)} ${found === 1 ? 'file' : 'files'} ` +
-        'in the folder when it was read back');
+    // The count belongs to a read-back, and a count of nothing says nothing the
+    // failures have not already said better.
+    const found = state.reconciled?.ok ? state.reconciled.present.length : 0;
+    if (found > 0) {
+      parts.push(`${counted(found)} ${found === 1 ? 'file' : 'files'} in the folder`);
     }
     detail.textContent = parts.join(' · ');
+
+    // A listing of nothing is not worth opening, and a run that saved nothing
+    // has no folder to name.
+    const savedCount = written.length + skipped.length;
+    view.hidden = savedCount === 0;
+    if (savedCount === 0 && listed) {
+      listed = false;
+      files.hidden = true;
+      files.replaceChildren();
+      saved.textContent = '';
+      view.setAttribute('aria-expanded', 'false');
+      view.textContent = 'View saved files';
+    }
 
     renderReconciled(state);
 
@@ -120,7 +132,7 @@ export function mountReceipt(document, actions) {
     // more than a button that would pretend.
     where.textContent = chosen.length === 1
       ? `To find it, open File Explorer and paste the folder name into the address bar — ` +
-        `copy it with the button beside this line. Your browser may also list it under recent folders.`
+        `the button below copies it. Your browser may also list it under recent folders.`
       : '';
     copyName.hidden = chosen.length !== 1;
 
@@ -155,7 +167,11 @@ export function mountReceipt(document, actions) {
       return;
     }
     if (settled.missing.length === 0) {
-      reconciled.textContent = 'Every file above was found in the folder when it was read back.';
+      // Nothing was saved, so there is nothing to have been found: the failure
+      // list is the whole account of this run.
+      reconciled.textContent = settled.present.length > 0
+        ? 'Every file above was found in the folder when it was read back.'
+        : '';
       return;
     }
     reconciled.textContent = `${counted(settled.missing.length)} of them ` +

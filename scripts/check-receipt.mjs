@@ -214,7 +214,7 @@ export async function checkReceipt(send) {
     el('#export-start') + '.disabled === false', 'The batch did not commit three JPEGs');
   await until(el('#receipt-section') + '?.hidden === false', 'No receipt appeared after a batch');
   assert.equal(await text('#receipt-headline'), '3 photos saved');
-  assert.match(await text('#receipt-detail'), /3 files in the folder when it was read back/);
+  assert.match(await text('#receipt-detail'), /3 files in the folder/);
   assert.match(await text('#receipt-reconciled'),
     /Every file above was found in the folder when it was read back/,
     'the receipt must say the destination answered, not just that writes resolved');
@@ -407,7 +407,7 @@ export async function checkReceipt(send) {
   assert.equal(resumed.writes.confirmed_on_disk, 12,
     'the destination answered for twelve of the thirteen committed files');
   assert.equal(resumed.writes.failed, 0, 'the continuation wrote everything it believed it had not');
-  assert.match(await text('#receipt-detail'), /12 files in the folder when it was read back/);
+  assert.match(await text('#receipt-detail'), /12 files in the folder/);
   assert(await text('#receipt-reconciled') === `1 of them is not in the folder any more: ${removed}.`,
     'the receipt must name the file the folder no longer holds');
   assert.equal(resumed.events.stopped, 1);
