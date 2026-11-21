@@ -79,14 +79,22 @@ fn main() {
                 })
             });
 
-        reported.push(json!({
+        let mut entry = json!({
             "name": name,
             "compare": compare.as_str(),
             "files": files,
             "catalog": catalog,
             "cache": cache,
             "report": report,
-        }));
+        });
+        if name == "review" {
+            let originals = review::originals().write();
+            entry["originals"] = json!(copy_tree(
+                &originals.dir().join("originals"),
+                &root.join("originals"),
+            ));
+        }
+        reported.push(entry);
     }
 
     let document = json!({

@@ -76,3 +76,12 @@ pub fn vault() -> Vault {
         )
         .pyramid(PyramidRow::new("AAAA0010-1111-4111-8111-000000000010").level(640, 480))
 }
+
+/// The recorded Meadow original, kept separate until the app rechecks it.
+pub fn originals() -> Vault {
+    Vault::modern().image(
+        ImageRow::new(1, "Meadow")
+            .path_from_root("2023/")
+            .original_on_disk(),
+    )
+}

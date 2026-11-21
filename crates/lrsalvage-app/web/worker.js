@@ -49,7 +49,8 @@ self.onmessage = async (event) => {
       const bytes = read_preview(id);
       self.postMessage({ type: 'preview', request, bytes }, [bytes.buffer]);
     } catch (error) {
-      self.postMessage({ type: 'preview', request, error: String(error) });
+      const problem = error?.kind === 'changed-size' ? error : { kind: 'unreadable' };
+      self.postMessage({ type: 'preview', request, problem });
     }
     return;
   }

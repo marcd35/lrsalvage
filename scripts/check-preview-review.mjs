@@ -45,18 +45,46 @@ export async function checkPreviewReview(send) {
 
   await until(lookup('#source') + '?.hidden === false', 'The source screen did not load');
   await evaluate(`(async () => {
-    const { json, mountVault, freshDirectory, writeFile } =
+    const { json, mountVault, writeFile } =
       await import(new URL('./mount.js', location.href));
     const root = await navigator.storage.getDirectory();
     const review = (await json('/native.json')).vaults.find(vault => vault.name === 'review');
     const fixture = await mountVault(root, 'review-test', '/review', review.files);
-    const originals = await freshDirectory(root, 'review-originals');
-    await writeFile(originals, '2023/Meadow.CR2', new Uint8Array([1, 2, 3]));
+    const originals = await mountVault(root, 'review-originals', '/review/originals', review.originals);
     const directory = await fixture.getDirectoryHandle(review.catalog.split('/')[0]);
     const cache = await fixture.getDirectoryHandle(review.cache);
     globalThis.showDirectoryPicker = async ({ id }) => ({
       'lrsalvage-originals': originals, 'lrsalvage-cache': cache,
     }[id] ?? directory);
+    const bridgePayload = review.files.find(path => path.includes('AAAA0002-'));
+    const meadowPayload = review.files.find(path => path.includes('AAAA0001-'));
+    globalThis.replaceBridgePayload = async (replace) => {
+      const path = replace ? meadowPayload : bridgePayload;
+      const response = await fetch('/review/' + path.split('/').map(encodeURIComponent).join('/'));
+      if (!response.ok) throw new Error('Could not fetch review payload: ' + response.status);
+      await writeFile(fixture, bridgePayload, new Uint8Array(await response.arrayBuffer()));
+    };
+    let pending = 0;
+    globalThis.maxBackgroundPreviewReads = 0;
+    const NativeWorker = globalThis.Worker;
+    globalThis.Worker = class extends NativeWorker {
+      constructor(...args) {
+        super(...args);
+        this.addEventListener('message', ({ data }) => {
+          if (data.type === 'preview') pending--;
+        });
+      }
+      postMessage(message, ...args) {
+        if (message.type === 'preview') {
+          pending++;
+          if (!document.getElementById('photo-dialog').open &&
+              document.getElementById('photo-pane').hidden) {
+            globalThis.maxBackgroundPreviewReads = Math.max(pending, globalThis.maxBackgroundPreviewReads);
+          }
+        }
+        super.postMessage(message, ...args);
+      }
+    };
     globalThis.reviewHashes = async () => {
       const hashes = [];
       for (const path of review.files) {
@@ -92,6 +120,17 @@ export async function checkPreviewReview(send) {
   assert.match(await text(element('groups')), /Missing index entry.CR2No entry in the preview index/);
   const bridge = button('Bridge.CR2') + '.querySelector("img")';
   assert.equal(await until(bridge + '?.naturalWidth', 'The 640 px tile did not decode'), 640);
+  const backgroundReads = await evaluate('maxBackgroundPreviewReads');
+  assert.equal(backgroundReads, 2);
+
+  await evaluate('replaceBridgePayload(true)');
+  await click(button('Bridge.CR2'));
+  await until(element('dialog-note') + '.textContent.includes("at scan time")',
+    'The changed cache payload did not report its dimensions');
+  assert.match(await text(element('dialog-note')), /was 640 . 480 px at scan time. It is now 900 . 600 px/);
+  await key('Escape', 27);
+  await until('document.activeElement === ' + button('Bridge.CR2'), 'Focus did not return after preview failure');
+  await evaluate('replaceBridgePayload(false)');
 
   await click(element('group'));
   assert.match(await text(element('groups')), /Unknown folder/);
@@ -151,6 +190,17 @@ export async function checkPreviewReview(send) {
   assert.equal(await text(element('dialog-title')), 'Portrait.CR2');
   await key('Escape', 27);
   await until('document.activeElement === ' + element('enlarge'), 'Focus did not return to the pane opener');
+  await send('Emulation.setDeviceMetricsOverride', {
+    width: 760, height: 680, deviceScaleFactor: 1, mobile: false,
+  });
+  await click(button('Portrait.CR2'));
+  await until(element('pane') + '.getBoundingClientRect().top >= 0 && ' +
+    element('enlarge') + '.getBoundingClientRect().bottom < innerHeight',
+    'The stacked pane was not brought into the narrow viewport');
+  assert.equal(await evaluate('document.activeElement.id'), 'photo-enlarge');
+  await send('Emulation.setDeviceMetricsOverride', {
+    width: 1000, height: 680, deviceScaleFactor: 1, mobile: false,
+  });
   await click(element('pane-toggle'));
 
   await click(button('Broken.CR2'));
@@ -163,6 +213,34 @@ export async function checkPreviewReview(send) {
   await key('Escape', 27);
   await until(element('dialog') + '.open === false', 'The dialog did not close');
 
+  await click(element('selected'));
+  assert.match(await count(), /6 shown . 6 checked/);
+  await click(button('Bridge.CR2'));
+  await key('ArrowRight', 39);
+  assert.equal(await text(element('dialog-title')), 'Broken.CR2');
+  await click(element('dialog-check'));
+  await key('Escape', 27);
+  await until('document.activeElement === ' + button('Bridge.CR2'),
+    'Focus did not return to the replacement of the still-visible opener');
+
+  await set('search', 'Bridge', 'input');
+  await click(element('pane-toggle'));
+  await click(element('enlarge'));
+  await click(element('dialog-check'));
+  assert.equal(await evaluate(element('enlarge') + '.disabled'), true);
+  await key('Escape', 27);
+  await until('document.activeElement === ' + element('search'),
+    'Focus did not fall back to search when the pane opener became disabled');
+
+  await click(element('pane-toggle'));
+  await click(element('selected'));
+  await set('search', '', 'input');
+  await click(element('check-visible'));
+  await set('search', 'Creek', 'input');
+  await click(element('uncheck-visible'));
+  await set('search', 'Island', 'input');
+  await click(element('uncheck-visible'));
+  await set('search', '', 'input');
   await click(element('selected'));
   assert.match(await count(), /6 shown . 6 checked/);
   await click(button('Meadow.CR2'));
@@ -187,5 +265,5 @@ export async function checkPreviewReview(send) {
   assert.match(await text(element('groups')), /Photos without a recoverable preview.*Meadow.CR2/s);
   assert.deepEqual(await evaluate('reviewHashes()'), sourceHashes);
 
-  return { width: 1000, height: 680, portraitFitHeight: fitH, portraitActualHeight: actualH, catalogFilesUnchanged: sourceHashes.length };
+  return { width: 1000, height: 680, stackedWidth: 760, maxThumbnailReads: backgroundReads, portraitFitHeight: fitH, portraitActualHeight: actualH, catalogFilesUnchanged: sourceHashes.length };
 }

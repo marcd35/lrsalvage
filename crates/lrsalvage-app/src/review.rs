@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use lrsalvage_core::model::{CatalogImage, XmpMetadata};
 use lrsalvage_core::plan::{Plan, PlanItem, Status};
-use lrsalvage_core::{exif, extract};
+use lrsalvage_core::{Error, Result, exif, extract};
 use serde_json::{Value, json};
 
 /// The plan's payload choices. Only the opaque catalog IDs cross to the page.
@@ -37,19 +37,19 @@ impl Review {
     ///
     /// The browser applies any embedded EXIF orientation. Add the catalog
     /// fallback as EXIF when needed, without touching the compressed image.
-    pub fn read(&self, id: i64) -> Result<Vec<u8>, String> {
+    pub fn read(&self, id: i64) -> Result<Vec<u8>> {
         let item = self
             .by_id
             .get(&id)
             .map(|&index| &self.items[index])
             .filter(|item| has_preview(item))
-            .ok_or("This photo has no recoverable preview.")?;
-        let preview = extract::read_preview(item).map_err(|error| error.to_string())?;
+            .ok_or(Error::PreviewUnavailable)?;
+        let preview = extract::read_preview(item)?;
         if preview.orientation.is_some() || item.effective_orientation.is_upright() {
             return Ok(preview.bytes);
         }
         let orientation = exif::from_catalog(&XmpMetadata::default(), item.effective_orientation);
-        exif::inject(&preview.bytes, &orientation).map_err(|error| error.to_string())
+        exif::inject(&preview.bytes, &orientation)
     }
 }
 

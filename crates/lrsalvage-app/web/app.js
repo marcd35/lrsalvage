@@ -237,7 +237,7 @@ export function start(source, ui = {}, { review = false } = {}) {
         const ask = pending.get(message.request);
         if (!ask) return;
         pending.delete(message.request);
-        if (message.error) ask.reject(new Error(message.error));
+        if (message.problem) ask.reject(message.problem);
         else ask.resolve(new Blob([message.bytes], { type: 'image/jpeg' }));
         return;
       }

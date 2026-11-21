@@ -30,6 +30,7 @@ thread_local! {
     static REVIEW: RefCell<crate::Review> = RefCell::new(crate::Review::default());
 }
 
+use lrsalvage_core::Error;
 use lrsalvage_core::plan::{Control, Progress};
 
 /// The host's blocking seam call, from `web/seam/lrsalvage-fs.js`.
@@ -45,6 +46,10 @@ unsafe extern "C" {
     /// One progress report. `0` carries on; anything else stops the build.
     #[wasm_bindgen(js_namespace = "lrsalvage", js_name = "scan_progress")]
     fn host_scan_progress(phase: u32, done: f64, total: f64) -> i32;
+
+    #[wasm_bindgen(js_namespace = JSON, js_name = parse)]
+    fn parse_json(text: &str) -> JsValue;
+
 }
 
 /// The three stages of a scan, as the number the page is handed.
@@ -156,13 +161,19 @@ pub fn pause_store() -> Result<(), JsValue> {
 pub fn read_preview(id: &str) -> Result<Vec<u8>, JsValue> {
     let id = id
         .parse()
-        .map_err(|_| JsValue::from_str("Invalid photo ID."))?;
-    REVIEW.with(|review| {
-        review
-            .borrow()
-            .read(id)
-            .map_err(|message| JsValue::from_str(&message))
-    })
+        .map_err(|_| review_problem(Error::PreviewUnavailable))?;
+    REVIEW.with(|review| review.borrow().read(id).map_err(review_problem))
+}
+
+/// Export only details that can be shown without exposing source paths.
+fn review_problem(error: Error) -> JsValue {
+    let problem = match error {
+        Error::PreviewDimensionsChanged { expected, actual } => {
+            json!({ "kind": "changed-size", "expected": expected, "actual": actual })
+        }
+        _ => json!({ "kind": "unreadable" }),
+    };
+    parse_json(&problem.to_string())
 }
 
 /// Register the mounts and begin installing the store. See [`install`].

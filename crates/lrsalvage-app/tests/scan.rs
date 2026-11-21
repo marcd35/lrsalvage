@@ -199,7 +199,11 @@ fn review_reads_only_the_certified_jpeg_for_each_catalog_image() {
         .find(|path| path.to_string_lossy().contains("AAAA0002-"))
         .unwrap();
     std::fs::write(source, lrsalvage_fixtures::bytes::jpeg(800, 600)).unwrap();
-    let changed = scan.review.read(2).unwrap_err();
-    assert!(changed.contains("800x600"));
-    assert!(changed.contains("640x480"));
+    assert!(matches!(
+        scan.review.read(2),
+        Err(lrsalvage_core::Error::PreviewDimensionsChanged {
+            actual: (800, 600),
+            expected: (640, 480),
+        }),
+    ));
 }

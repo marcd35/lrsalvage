@@ -128,6 +128,7 @@ reverse — so the seam is registered one way for both pages.
   the browser run asserts the report, so its evidence stays valid either way. The
   prototype itself is in this tree as `docs/prototype/` (#149), so the port has a
   reference a checkout can open.
+
 ## Preview review
 
 - A completed scan retains the catalog-linked plan items in its worker. The
@@ -138,19 +139,21 @@ reverse — so the seam is registered one way for both pages.
   collapsing folders and switching views leave that set intact. Bulk inclusion
   applies to previews visible within the current filters and open groups.
 - Gallery and List share the same rows and selection. The optional Preview pane
-  and enlarged dialog read one photo by its ID. Offscreen thumbnails defer
-  reads and release their object URLs when the tiles leave the viewport.
+  and enlarged dialog read one photo by its ID. The review allows two
+  thumbnail reads at a time and drops queued tiles when they leave the
+  viewport. A tile action brings the stacked pane into view on narrow screens.
 - The worker calls `extract::read_preview` for the exact level the plan chose.
   When the payload has no EXIF orientation and the catalog records a rotation,
   review adds that orientation to a display copy. The compressed bytes and
   source files stay intact. The page shows the JPEG's raw dimensions and
-  distinguishes index dimension disagreements, read errors and browser decode
-  errors. Fit contains the image inside the dialog. Actual size shows the
+  distinguishes index dimension disagreements, size changes since scan, read
+  errors and browser decode errors. Fit contains the image inside the dialog. Actual size shows the
   decoded pixels at their natural CSS dimensions and makes them scrollable.
 - The worker releases the SQLite pool when the scan closes its connections.
   Starting over or checking an original folder again ends the old worker's
-  review session. Dismissing the enlarged view brings focus back to its opener, or to
-  search if the current filter removed the opener.
+  review session. Dismissing the enlarged view restores focus to the same
+  photo or pane control when it can receive focus. Otherwise focus moves to
+  search.
 
 ## Testing
 
@@ -159,7 +162,7 @@ reverse — so the seam is registered one way for both pages.
   counting its payloads. It composes `lrsalvage-fixtures` vaults through
   `src/vault.rs`, so no fixture bytes live in this crate.
 - `scripts/browser-app.sh` is the measurement: the page's own entry in headless
-  Chromium against the same seven vaults, compared field by field with a native
+  Chromium against eight vaults, compared field by field with a native
   run — the digests included — plus a stop, the recheck, a cancelled picker driven
   through a real user gesture, and the capability gate. It is not a gate, and
   `specs/modules/fs.md` (*Where the harness lives*) says why.

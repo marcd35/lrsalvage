@@ -1,4 +1,6 @@
 // Review owns the choices for one open scan. Visibility and selection are independent.
+const MAX_THUMBNAIL_READS = 2;
+
 export function mountReview(document) {
   const el = (name) => document.getElementById('photo-' + name);
   const section = el('review');
@@ -28,17 +30,37 @@ export function mountReview(document) {
   const inFlight = new Map();
   const tiles = new Map();
   const tileImages = new Map();
+  const thumbnailQueue = new Set();
+  let thumbnailReads = 0;
   const observer = new IntersectionObserver((entries) => {
     for (const entry of entries) {
       const tile = tileImages.get(entry.target);
       if (!tile) continue;
-      if (entry.isIntersecting) tile.clear ??= showImage(tile.photo, entry.target);
-      else {
+      if (entry.isIntersecting) {
+        if (!tile.clear) thumbnailQueue.add(entry.target);
+      } else {
+        thumbnailQueue.delete(entry.target);
         tile.clear?.();
         tile.clear = null;
       }
     }
+    pumpThumbnails();
   }, { rootMargin: '160px' });
+
+  // The worker reads one payload at a time. Never make the pane or dialog
+  // wait behind more than two thumbnail reads, and skip tiles that scrolled away.
+  function pumpThumbnails() {
+    while (thumbnailReads < MAX_THUMBNAIL_READS && thumbnailQueue.size) {
+      const target = thumbnailQueue.values().next().value;
+      thumbnailQueue.delete(target);
+      const tile = tileImages.get(target);
+      thumbnailReads++;
+      tile.clear = showImage(tile.photo, target, null, () => {
+        thumbnailReads--;
+        pumpThumbnails();
+      });
+    }
+  }
 
   const sections = [
     { name: 'Previews', matches: (photo) => photo.preview && photo.checked },
@@ -61,7 +83,7 @@ export function mountReview(document) {
   paneToggle.addEventListener('change', updatePane);
   el('check-visible').addEventListener('click', () => markVisible(true));
   el('uncheck-visible').addEventListener('click', () => markVisible(false));
-  el('enlarge').addEventListener('click', (event) => open(selectedPhoto, event.currentTarget));
+  el('enlarge').addEventListener('click', () => open(selectedPhoto, () => el('enlarge')));
 
   el('fit').addEventListener('click', () => setActual(false));
   el('actual').addEventListener('click', () => setActual(true));
@@ -81,8 +103,10 @@ export function mountReview(document) {
     enlargedPhoto = null;
     dialogOrder = [];
     if (!section.hidden && returnFocus) {
-      const target = returnFocus.isConnected && !returnFocus.closest('details:not([open])')
-        ? returnFocus
+      const opener = returnFocus();
+      const target = opener?.isConnected && !opener.disabled &&
+        !opener.closest('[hidden], details:not([open])')
+        ? opener
         : search;
       target.focus();
     }
@@ -91,6 +115,7 @@ export function mountReview(document) {
 
   function clearTiles() {
     observer.disconnect();
+    thumbnailQueue.clear();
     for (const tile of tileImages.values()) tile.clear?.();
     tileImages.clear();
     tiles.clear();
@@ -212,8 +237,15 @@ export function mountReview(document) {
       button.setAttribute('aria-label', 'Preview ' + photo.name);
       button.addEventListener('click', () => {
         selectedPhoto = photo;
-        if (paneToggle.checked) updatePane();
-        else open(photo, button);
+        if (paneToggle.checked) {
+          updatePane();
+          if (getComputedStyle(groups.parentElement).display !== 'grid') {
+            pane.scrollIntoView({ block: 'start' });
+            el('enlarge').focus({ preventScroll: true });
+          }
+        } else {
+          open(photo, () => tiles.get(photo.id)?.button);
+        }
       });
       const image = element('div', 'review-image thumb');
       button.append(image, element('span', 'review-name', photo.name));
@@ -290,9 +322,9 @@ export function mountReview(document) {
     clearPaneImage = showImage(photo, el('pane-image'), el('pane-note'));
   }
 
-  function open(photo, opener) {
+  function open(photo, resolveOpener) {
     if (!photo) return;
-    returnFocus = opener;
+    returnFocus = resolveOpener;
     dialogOrder = visible().filter((candidate) => candidate.preview);
     setActual(false);
     showLoupe(photo);
@@ -336,7 +368,7 @@ export function mountReview(document) {
     el('next').disabled = !neighbor(1);
   }
 
-  function showImage(photo, destination, note = null) {
+  function showImage(photo, destination, note = null, onRead = null) {
     const notice = element('span', 'review-placeholder', 'Loading preview…');
     destination.replaceChildren(notice);
     let active = true;
@@ -355,12 +387,17 @@ export function mountReview(document) {
       });
       inFlight.set(photo.id, pending);
     }
+    const request = inFlight.get(photo.id);
+    if (onRead) void request.then(onRead, onRead);
     void (async () => {
       let blob;
       try {
-        blob = await inFlight.get(photo.id);
-      } catch {
-        fail('Could not read this preview. The cache may have changed since the scan.');
+        blob = await request;
+      } catch (problem) {
+        fail(problem?.kind === 'changed-size'
+          ? 'The preview was ' + sizeText(problem.expected) + ' at scan time. It is now ' +
+            sizeText(problem.actual) + '. Scan again to review the current file.'
+          : 'Could not read this preview. The cache may have changed since the scan.');
         return;
       }
       if (!active) return;
