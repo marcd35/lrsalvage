@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 
 use lrsalvage_core::model::{CatalogImage, XmpMetadata};
 use lrsalvage_core::plan::{Options, Plan, PlanItem, Status};
+use lrsalvage_core::snapshot::SourceDigests;
 use lrsalvage_core::{Error, Result, VERSION, exif, extract, report};
 use serde_json::{Value, json};
 
@@ -13,12 +14,19 @@ use serde_json::{Value, json};
 #[derive(Default)]
 pub struct Review {
     plan: Plan,
+    /// The knobs this run planned with, kept because a [`Plan`] records what the
+    /// run decided and the verification report echoes what shaped it.
+    options: Options,
+    /// The pair this run's copy proved, or `None` for a snapshot taken without
+    /// the proof. Retained as a value rather than as two strings: the report has
+    /// to be handed the thing that measured it.
+    digests: Option<SourceDigests>,
     layouts: [OnceCell<Vec<Option<PathBuf>>>; 2],
     by_id: HashMap<i64, usize>,
 }
 
 impl Review {
-    pub(crate) fn new(plan: Plan) -> Self {
+    pub(crate) fn new(plan: Plan, options: Options, digests: Option<SourceDigests>) -> Self {
         let by_id = plan
             .items
             .iter()
@@ -27,6 +35,8 @@ impl Review {
             .collect();
         Self {
             plan,
+            options,
+            digests,
             by_id,
             layouts: Default::default(),
         }
@@ -41,7 +51,7 @@ impl Review {
             self.plan.export_paths(
                 Path::new(crate::OUTPUT_ROOT),
                 flat,
-                Options::default().min_long_edge,
+                self.options.min_long_edge,
             )
         })
     }
@@ -95,6 +105,10 @@ impl Review {
     }
 
     /// Use the same report encoders as the CLI, over the batch's fixed selection.
+    ///
+    /// `report.csv` is the scan's own plan, as the CLI's is; `extract.csv` and the
+    /// manifest describe the selection this batch committed. Three files, one
+    /// encoder each — the page writes the text and owns the file names.
     pub fn reports(&self, flat: bool, mut outcomes: Vec<extract::Outcome>, now: u64) -> Value {
         for outcome in &mut outcomes {
             if outcome.output.is_relative() {
@@ -112,9 +126,24 @@ impl Review {
             flat,
         );
         json!({
+            "report.csv": report::csv(&self.plan),
             "extract.csv": extract::outcomes_csv(&outcomes),
             "manifest.json": report::manifest_json(&plan, VERSION, now),
         })
+    }
+
+    /// The path-free verification report, on the host's clock.
+    ///
+    /// The same object `scan --report` writes, from the same three facts: this
+    /// run's plan, the options it applied, and the digest pair its copy proved.
+    pub fn verification(&self, now: u64) -> String {
+        report::verification_json(
+            &self.plan,
+            &self.options,
+            self.digests.as_ref(),
+            VERSION,
+            now,
+        )
     }
 
     /// Read the preview for a catalog image, using its certified payload choice.

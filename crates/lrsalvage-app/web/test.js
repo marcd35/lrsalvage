@@ -276,8 +276,12 @@ function compareReports(name, native, browser, differences) {
   }
   for (const [key, expected] of Object.entries(native.stats ?? {})) {
     const actual = browser.stats?.[key];
-    if (actual !== expected) {
-      differences.push(`${name}: stats.${key} ${actual} vs native ${expected}`);
+    // A stat can be a count or a small object of counts (`tiers`), so the
+    // comparison is by value: `!==` would call two equal tier objects different.
+    if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+      differences.push(
+        `${name}: stats.${key} ${JSON.stringify(actual)} vs native ${JSON.stringify(expected)}`,
+      );
     }
   }
   for (const [key, expected] of Object.entries(native.cache ?? {})) {

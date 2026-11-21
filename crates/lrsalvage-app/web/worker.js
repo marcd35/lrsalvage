@@ -22,6 +22,7 @@ import { installBridge } from './seam/lrsalvage-fs.js';
 import init, {
   pause_store, poll_install, read_preview, scan, start_install,
   export_paths, prepare_export, existing_export, export_reports,
+  verification_report, versions,
 } from './pkg/lrsalvage_app.js';
 
 /**
@@ -57,10 +58,15 @@ self.onmessage = async (event) => {
     }
     return;
   }
-  if (['export-paths', 'export-jpeg', 'export-existing', 'export-reports'].includes(message?.type)) {
+  if ([ 'export-paths', 'export-jpeg', 'export-existing', 'export-reports', 'verification-report' ].includes(message?.type)) {
     const { request, id, flat, outcomes } = message;
     try {
-      if (message.type === 'export-jpeg') {
+      if (message.type === 'verification-report') {
+        // The text, not a re-serialised value: the report's formatting is the
+        // report, and it goes straight into the file the page writes.
+        const text = verification_report(Math.floor(Date.now() / 1000));
+        self.postMessage({ type: 'export', request, value: { text } });
+      } else if (message.type === 'export-jpeg') {
         const jpeg = prepare_export(id, flat);
         try {
           const bytes = jpeg.take_bytes();
@@ -100,6 +106,9 @@ async function run({ sab, stop, mounts, catalog, cache, capacity }) {
   const started = performance.now();
   const exports = await init();
   log('wasm instantiated in', Math.round(performance.now() - started), 'ms');
+  // The two release numbers, from the module that will do the work. Sent before
+  // the store is installed so a run that fails there still has them.
+  self.postMessage({ type: 'versions', versions: JSON.parse(versions()) });
 
   const flag = new Int32Array(stop);
   let lastPaint = 0;

@@ -217,6 +217,12 @@ export function start(source, ui = {}, { review = false } = {}) {
         void host.serve(message);
         return;
       }
+      if (message?.type === 'versions') {
+        // The compiled pair, which is why the page does not have to trust a
+        // `build.json` a development tree never wrote.
+        ui.versions?.(message.versions);
+        return;
+      }
       if (message?.type === 'stage') {
         ui.stage?.(message.stage);
         return;
@@ -288,6 +294,7 @@ export function start(source, ui = {}, { review = false } = {}) {
     exportJpeg: (id, flat) => ask('export-jpeg', { id, flat }),
     existingExport: (id, flat, bytes) => ask('export-existing', { id, flat, bytes }, [bytes.buffer]),
     exportReports: (flat, outcomes) => ask('export-reports', { flat, outcomes }),
+    verificationReport: () => ask('verification-report', {}),
     close,
   };
 }

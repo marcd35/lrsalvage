@@ -303,3 +303,77 @@ main:has(#photo-review:not([hidden])) {
   max-width: none;
   max-height: none;
 }
+
+/* The receipt: a run's account, and the evidence behind its counts. */
+#receipt-section {
+  margin-top: 1.75rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--line);
+}
+
+#receipt-headline {
+  font-size: 1.15rem;
+  font-weight: 600;
+  margin: 0 0 0.25rem;
+}
+
+#receipt-detail,
+#receipt-destination,
+#receipt-versions {
+  margin: 0 0 0.5rem;
+  color: var(--muted);
+}
+
+#receipt-where {
+  margin: 0 0 0.75rem;
+}
+
+#receipt-files {
+  margin: 0.75rem 0;
+}
+
+#receipt-files h4 {
+  font-size: 0.95rem;
+  margin: 0.75rem 0 0.25rem;
+  overflow-wrap: anywhere;
+}
+
+#receipt-files ul,
+#receipt-failures,
+#receipt-report-list {
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
+#receipt-files li,
+#receipt-failures li,
+#receipt-report-list li {
+  overflow-wrap: anywhere;
+  margin-bottom: 0.15rem;
+}
+
+#receipt-reports {
+  margin: 1rem 0;
+}
+
+#receipt-reports summary {
+  cursor: pointer;
+}
+
+#receipt-report-list a {
+  color: var(--accent);
+}
+
+.receipt-footer {
+  margin-top: 1rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--line);
+}
+
+.receipt-footer p {
+  margin: 0 0 0.35rem;
+}
+
+#receipt-support a {
+  color: var(--accent);
+}

@@ -193,10 +193,10 @@ run that saved one photo ends with the same account a batch does, and a stopped
 batch shows its receipt with the continuation beside it. It leads with the count
 of catalog images the run **saved** — one per image, however many times a one-off
 save and a batch reached it — and names beneath it the images already recovered
-at their planned paths, the images it could not save, and the number of files the
-destination holds. The count is taken from commits: a file counts when its write
-has closed, never when it was planned. Both version numbers a bug report quotes
-sit on the receipt, in ADR 0012 D2's form.
+at their planned paths, the images it could not save, and how many files those
+photos put in the folder. The count is taken from commits: a file counts when its
+write has closed, never when it was planned. Both version numbers a bug report
+quotes sit on the receipt, in ADR 0012 D2's form.
 
 Reconciliation reads the destination instead of trusting the run. When a batch
 settles the page lists the destination back through the same handle and compares
@@ -234,16 +234,22 @@ the catalog copy shareable. The object is:
 ```json
 { "schema": "lrsalvage.diagnostics",
   "versions": {"app": "0.1.0", "core": "0.4.0", "build": "4606440a1b2c",
-               "browser": "Chrome 133.0.6943.99", "platform": "Windows", "platform_version": "15.0.0"},
+               "browser": "Google Chrome 133.0.6943.99", "platform": "Windows", "platform_version": "15.0.0"},
   "timings": {"storage_setup_ms": 812, "catalog_copy_ms": 2140, "scan_ms": 9100,
               "first_thumbnail_ms": 9310, "first_saved_jpeg_ms": 12300,
               "longest_write_gap_ms": 74, "elapsed_ms": 15600},
-  "scan": { "images": 5000, "recovered": 4998, "suspect": 0, "missing_payload": 2 },
+  "scan": {"images": 5000, "recovered": 4998, "suspect": 0, "missing_payload": 2,
+           "no_cache_entry": 0, "unmapped": 0, "failed": 0, "original_present": 0,
+           "below_floor": 2, "above_cap": 0, "bytes": 918273645, "levels": 5002,
+           "selected_items": 120, "selected_images": 120,
+           "tiers": {"full": 120, "large": 3800, "standard": 1078, "small": 2, "thumbnail": 0},
+           "superseded": 0, "deleted": 0, "unrecognised": 0},
   "writes": {"planned": 120, "written": 118, "already_recovered": 2, "failed": 0,
              "confirmed_on_disk": 120},
   "events": {"stopped": 1, "settled": 1, "continued": 1},
   "failures": {"destination_gone": 0, "permission": 0, "out_of_room": 0,
-               "occupied_foreign": 1, "source_unreadable": 0, "write_failed": 0, "other": 0} }
+               "occupied_foreign": 1, "source_unreadable": 0, "write_failed": 0, "other": 0},
+  "failure": null }
 ```
 
 The field list is frozen here. `versions` carries the two release numbers, the
@@ -254,10 +260,13 @@ absolute timestamp: the object describes a run's shape, not when its author was 
 their desk. `scan` carries exactly the eighteen `stats` members
 `specs/modules/report.md` freezes, so no second vocabulary is invented for a count
 the reports already name. `longest_write_gap_ms` measures consecutive commits
-across the whole run, so a stop appears in `events` and never as a slow write. A
-failure view contributes its stage and one of the entry's own kinds, never the
-error's message, which can name a path. A fact the run did not measure is `null`,
-never `""` and never absent, so the same members are on every copy.
+across the whole run, so a stop appears in `events` and never as a slow write.
+`catalog_copy_ms` covers the copy, the open and the index copy, because one
+synchronous wasm frame owns all three and no clock runs inside it; it ends at the
+first unit the plan reports, and `scan_ms` starts there. `failure` is a stage and
+one of the entry's own kinds — never the error's message, which can name a path —
+and is `null` for a run that got as far as a file. A fact the run did not measure
+is `null`, never `""` and never absent, so the same members are on every copy.
 
 The list is curated at its source rather than filtered afterwards: the serializer
 has no field a path, filename, identifier or message could occupy, which is what
@@ -306,8 +315,18 @@ the deployed candidate.
   laptop and operation with a screen reader remain manual checks.
 
 - The browser gate also drives one-off and batch saves through the product,
+  exercising path collisions, selection independence, stop and continuation,
+  directory loss, and overlap with input trees. It compares the default mirrored
   export against the CLI on identical fixture bytes. The JPEG tree and each JPEG
   byte must agree. In reports the check maps the sandbox output and cache roots
   to their browser mount paths and ignores the generation timestamp. The embedded
   core version is the same in both builds, so the JPEG marker, hash and manifest
   version are compared exactly.
+- `scripts/check-receipt.mjs` is the receipt's own phase of that script. It
+drives the product through a batch that is stopped and continued with a one-off
+save overlapping it, then lists the destination back and compares the three
+report files and the offered verification report with the CLI's on the same
+vault. It reads the clipboard after granting clipboard permission over DevTools
+and asserts the exact field list of the copied diagnostics plus the absence of
+every synthetic path, filename and uuid in it — once from the receipt and once
+from a failure that happened before any receipt existed.

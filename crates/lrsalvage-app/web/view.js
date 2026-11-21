@@ -19,6 +19,7 @@ import {
   withMount,
 } from './app.js';
 import { loadPractice } from './practice.js';
+import { log } from './diagnostics.js';
 
 import { mountReview } from './review.js';
 import { mountExport } from './export.js';
@@ -265,6 +266,9 @@ export function mount(document) {
     if (exports.busy()) return;
     state.source = chosen;
     pickerError.hidden = true;
+    // A run's diagnostics start here: a failure at the copy has no receipt to
+    // attach them to, and it is the one somebody wants to hand over.
+    log.run();
     clearReview();
     showOnly(scanning);
     bar.removeAttribute('value');
@@ -274,7 +278,11 @@ export function mount(document) {
     stopButton.hidden = false;
 
     const ui = {
+      versions(versions) {
+        log.versions(versions);
+      },
       stage(name) {
+        log.stage(name);
         if (name === 'install') stage.textContent = 'Preparing this browser’s storage…';
         if (name === 'copy') {
           // One call, no unit inside it: named, not pretended to move.
@@ -324,6 +332,7 @@ export function mount(document) {
     render(report, chosen);
     showOnly(result);
     if (report.ok) {
+      log.scanCounts(report.stats);
       completed = scan;
       if (report.photos.some((photo) => photo.preview)) exports.open(scan, chosen.mounts);
       review.show(report.photos, scan.preview);
@@ -342,6 +351,7 @@ export function mount(document) {
     resultTitle.textContent = report.ok ? '3. Review previews' : 'The scan could not finish';
     el('scan-details').hidden = !report.ok;
     if (!report.ok) {
+      log.viewFailure(report.problem.stage, report.problem.kind);
       headline.append(
         document.createTextNode(failureSentence(report.problem.stage, report.problem.kind)),
       );
@@ -351,7 +361,18 @@ export function mount(document) {
       const body = document.createElement('pre');
       body.textContent = `${report.problem.stage}: ${report.problem.message}`;
       detail.append(summary, body);
-      causes.append(detail);
+      // The copy is curated and the details are local: the raw message may name a
+      // path, and it stays here.
+      const status = document.createElement('p');
+      status.setAttribute('role', 'status');
+      status.className = 'review-note';
+      const copy = document.createElement('button');
+      copy.type = 'button';
+      copy.textContent = 'Copy diagnostics';
+      copy.addEventListener('click', () => void log.copy(status));
+      const item = document.createElement('li');
+      item.append(detail, copy, status);
+      causes.append(item);
       rootsSection.hidden = true;
       return;
     }
