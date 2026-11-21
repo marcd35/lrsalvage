@@ -44,10 +44,11 @@ For an on-disk synthetic catalog, generate the cases into a fresh directory:
 cargo run --locked -p lrsalvage-app --bin vault-app -- target/app-fixtures
 ```
 
-Use the ten-photo `review` case. Read its `catalog` and `cache` paths in
-`target/app-fixtures/native.json` and select the catalog's containing folder and
-the separate cache in the app. The review case includes a deliberately
-undecodable preview. Keep generated catalogs in scratch or `target`.
+Use the ten-photo `review` case. Find its `catalog` and `cache` paths in
+`target/app-fixtures/native.json`. Both paths are relative to
+`target/app-fixtures/review`. In the app, select the catalog's containing folder
+and the separate cache. The review case includes a deliberately undecodable
+preview. Keep generated catalogs in scratch or `target`.
 
 ## Configure Pages
 
