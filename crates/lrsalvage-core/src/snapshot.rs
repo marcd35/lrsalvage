@@ -121,7 +121,7 @@ impl CatalogSnapshot {
 /// copy the rest of the run queried. A verified acquisition never hands out a
 /// pair whose halves disagree — that is [`Error::SourceChanged`] instead — so a
 /// report carrying both members is a proof rather than a claim.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SourceDigests {
     source: String,
     snapshot: String,

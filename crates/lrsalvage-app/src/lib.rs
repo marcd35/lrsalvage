@@ -37,6 +37,14 @@ mod review;
 
 pub use review::Review;
 
+/// The app line's version, compiled in rather than read from a file.
+///
+/// ADR 0012 D2 puts this number and the core's on the receipt and in the About
+/// panel, so the page has to read both from the module it loaded: a `build.json`
+/// is a deployment artefact, and a tree that never ran the static builder has
+/// none (`specs/app.md`, *Receipt, reports and diagnostics*).
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+
 #[cfg(not(target_arch = "wasm32"))]
 pub mod vault;
 #[cfg(target_arch = "wasm32")]
@@ -157,8 +165,13 @@ pub fn scan_for_review(
     //    why the page names this stage instead of drawing a bar for it.
     let snapshot = CatalogSnapshot::capture_verified(catalog)
         .map_err(|error| Failure::of(Stage::Copy, &error))?;
-    let digests = snapshot
-        .digests()
+    // The pair is retained as a value, not only as two strings for the report:
+    // the verification report has to hand `report` the digests this copy proved,
+    // and `SourceDigests` is the only thing that can say "a verified acquisition
+    // produced these" (`specs/modules/report.md`).
+    let digests = snapshot.digests().cloned();
+    let digest_strings = digests
+        .as_ref()
         .map(|digests| (digests.source().to_string(), digests.snapshot().to_string()));
 
     // 2. The private copy, read-only and immutable now that its WAL is folded in.
@@ -187,13 +200,16 @@ pub fn scan_for_review(
     let opened = previews_db::open(&index_copy);
 
     // 4. The build. `None` is a stop, and a stop goes back to source selection
-    //    rather than presenting a plan about the images it did not reach.
+    //    rather than presenting a plan about the images it did not reach. The
+    //    options are a value this crate keeps, because the verification report
+    //    echoes the knobs a run applied and a plan does not record them.
+    let options = Options::default();
     let built = Plan::build_reported(
         &catalog_db,
         &opened.index,
         cache,
         Path::new(OUTPUT_ROOT),
-        &Options::default(),
+        &options,
         progress,
     )
     .map_err(|error| Failure::of(Stage::Scan, &error))?;
@@ -204,8 +220,14 @@ pub fn scan_for_review(
             review: Review::default(),
         });
     };
-    let mut report = report(&plan, &opened.problem, index_present, digests, &catalog_db);
-    let review = Review::new(plan);
+    let mut report = report(
+        &plan,
+        &opened.problem,
+        index_present,
+        digest_strings,
+        &catalog_db,
+    );
+    let review = Review::new(plan, options, digests);
     report["photos"] = review.rows();
     Ok(ScanResult { report, review })
 }
@@ -249,7 +271,8 @@ fn report(
         },
         "stats": {
             "images": stats.images,
-            "recoverable": stats.recoverable,
+            "recovered": stats.recoverable,
+            "tiers": lrsalvage_core::report::tiers_json(stats),
             "missing_payload": stats.missing_payload,
             "no_cache_entry": stats.no_cache_entry,
             "unmapped": stats.unmapped,

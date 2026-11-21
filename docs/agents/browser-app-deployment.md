@@ -36,7 +36,9 @@ The Pages emulator resolves `/recovery` and applies the site's `_headers` file.
 Review the credential-free **browser app** build and its artifact checks.
 Run the product and CLI parity checks locally with `sh scripts/check.sh browser`. On Windows,
 use Git's shell. The script lists its tool prerequisites and runs the same
-shared synthetic cases as CI.
+shared synthetic cases as CI: the page's entry against the native one, the
+review flow, the export flow held to the CLI on identical bytes, and the receipt
+with its reports and clipboard diagnostics.
 
 For an on-disk synthetic catalog, generate the cases into a fresh directory:
 

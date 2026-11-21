@@ -37,7 +37,10 @@ CLI and browser each apply the numbered-name rule in their destination writer. I
 no metadata. The digest pair a verified run proved is a value handed to it, not a
 fact it measures: no module here opens the catalog.
 The manifest encoder accepts the host timestamp so the browser and the CLI
-can generate the same schema through their own destination writers.
+can generate the same schema through their own destination writers. `csv` and
+`verification_json` are the same encoders `write_csv` and `write_verification`
+write: a host that commits whole files itself has no path to hand this module,
+and a second renderer for a published file would be a second dialect of it.
 
 The verification report is the one artifact here that leaves the machine, so it is
 built from a struct of its own — the curated fields below — rather than from a
@@ -46,6 +49,15 @@ struct a path.
 
 ## Decisions
 
+- **One encoder per published file, whatever writes it.** `report.csv` and the
+  verification report are published formats, so their text and their file are the
+  same bytes: `csv` and `verification_json` build them, and `write_csv` and
+  `write_verification` write exactly what those return. The browser commits whole
+  files through the page's writer, which has no path to give this module, and the
+  verification report's `generated_unix` comes from the host for the same reason
+  the manifest's does — a `wasm32` page has no clock here. The alternative, a
+  second renderer per artifact, is two grammars for one file
+  (`specs/app.md`, *Receipt, reports and diagnostics*).
 - **A degraded run says what it saw, in one hint.** Every line that talks about a
   payload the run could not name is a fact about this run — counts filled from the
   plan, never hard-coded — and no line calls an unclaimed payload recovered,

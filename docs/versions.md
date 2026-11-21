@@ -101,7 +101,7 @@ the artifact is the page — and not a claim about a released artifact.*
 | Machine-readable output | [`--json`](../README.md#quick-start), `report.csv`, `extract.csv`, `manifest.json` | not planned |
 | An exit code a script can branch on | yes, [six of them](../README.md#exit-codes) | not applicable |
 | Prove the catalog was not touched | [`--verify-source`](../README.md#quick-start) | intended: the copy the app makes *is* the snapshot, and the same two digests are reported |
-| A receipt with counts, failures and report links | the terminal summary and the reports it writes | intended, plus **Open folder** |
+| A receipt with counts, failures and report links | the terminal summary and the reports it writes | intended, with the saved files listed back from the destination |
 | Stop a long operation and continue it | no — rerun it; a verified destination is skipped | intended, stopping at a file boundary |
 | Turn a preview cache into a contact sheet | [`--contact-sheet`](../README.md#quick-start) | a follow-up |
 | Export AI masks | `lrsalvage masks` | not planned |

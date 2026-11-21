@@ -41,8 +41,10 @@ pending.
       Limit the support claim to the combinations that passed.
 - [ ] Record the [maintainer recovery result](https://github.com/marcd35/lrsalvage/issues/173)
       on the same candidate. The recovery ends in usable JPEGs and a receipt
-      reconciled with disk after a batch stop and continuation. Share
-      path-free diagnostics manually. Reverify a failed recovery after its fix.
+      reconciled with disk after a batch stop and continuation, listing the
+      reports it wrote and offering the verification report. Share path-free
+      diagnostics manually and check that the copied text names no path.
+      Reverify a failed recovery after its fix.
 
 ## Tag
 

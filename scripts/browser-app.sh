@@ -17,6 +17,9 @@
 #      DevTools Protocol and reports every difference.
 #   4. The review case drives index.html after supplying the accepted directory
 #      handle at the picker boundary, including browser-native Escape and focus.
+#   5. The export case holds the page to the CLI on identical bytes, and the
+#      receipt case reads the clipboard back: the frozen diagnostics field list,
+#      the path-free copy, and the report files the page wrote.
 #
 # What the run proves, and what it cannot: the File System Access *dialog* cannot
 # be answered by any automation we have (measured on Chrome 157.0.8103.79,
@@ -154,4 +157,17 @@ if [ -n "$chrome" ]; then
 else
     # shellcheck disable=SC2086
     node scripts/drive-browser.mjs "$work" --check-export $driver_args
+fi
+
+printf '%s\n' '== receipt, reports and local diagnostics'
+# The verification report the page offers is the CLI's own object, so the run
+# needs one to compare against. `scan` writes nothing but the file it is given.
+cargo run -q -p lrsalvage-cli -- scan --catalog "$catalog" --previews "$cache" \
+    --report "$work/cli-verification.json" --verify-source
+if [ -n "$chrome" ]; then
+    # shellcheck disable=SC2086
+    node scripts/drive-browser.mjs "$work" --chrome "$chrome" --check-receipt $driver_args
+else
+    # shellcheck disable=SC2086
+    node scripts/drive-browser.mjs "$work" --check-receipt $driver_args
 fi

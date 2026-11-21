@@ -318,6 +318,44 @@
       <p id="export-status" role="status"></p>
       <ul id="export-errors" aria-label="Save errors"></ul>
     </section>
+    <section id="receipt-section" aria-labelledby="receipt-title" hidden>
+      <h3 id="receipt-title" tabindex="-1">Recovery receipt</h3>
+      <p id="receipt-headline" role="status"></p>
+      <p id="receipt-detail"></p>
+      <p id="receipt-reconciled" class="review-note"></p>
+      <p id="receipt-destination"></p>
+      <p id="receipt-where" class="review-note"></p>
+      <div class="review-tools">
+        <button id="receipt-view" type="button" aria-expanded="false">View saved files</button>
+        <button id="receipt-copy-name" type="button" hidden>Copy folder name</button>
+      </div>
+      <div id="receipt-files" hidden></div>
+      <p id="receipt-saved" class="review-note" role="status"></p>
+      <ul id="receipt-failures" aria-label="Photos that could not be saved"></ul>
+      <details id="receipt-reports" hidden>
+        <summary>Recovery reports</summary>
+        <p>These files are in the folder you chose. Each opens here from the file itself.</p>
+        <p id="receipt-report-note" class="review-note" hidden>
+          No report files were written in this run.
+        </p>
+        <ul id="receipt-report-list"></ul>
+        <ul id="receipt-report-failures" aria-label="Reports that could not be written"></ul>
+        <button id="receipt-verification" type="button">Save verification report</button>
+        <p id="receipt-report-status" class="review-note" role="status"></p>
+      </details>
+      <div class="receipt-footer">
+        <p id="receipt-versions" data-receipt-versions></p>
+        <div class="review-tools">
+          <button id="receipt-diagnostics" type="button">Copy diagnostics</button>
+        </div>
+        <p id="receipt-diagnostics-status" class="review-note" role="status"></p>
+        <p id="receipt-support" hidden>
+          If lrsalvage helped: <a href="https://github.com/marcd35/lrsalvage">star it on GitHub</a>,
+          or <a href="https://github.com/marcd35/lrsalvage/issues/new/choose">ask a question</a>.
+          Both links are optional.
+        </p>
+      </div>
+    </section>
     <details id="scan-details">
       <summary>What was checked</summary>
       <dl id="checked"></dl>

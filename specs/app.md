@@ -55,8 +55,9 @@ capture_verified ─► from_snapshot ─► index copy + open ─► build_repo
 
 `src/wasm.rs` is the only file that mentions JavaScript: it declares the two host
 calls (the seam's `fs_call` and `scan_progress`) and exports `start_install`,
-`poll_install` and `scan`. `web/` holds the page and the seam's page-side
-JavaScript. `src/vault.rs` and `src/bin/vault-app.rs` are native-only and compose
+`poll_install`, `scan`, and the review, export and report calls the page makes.
+`web/` holds the page and the seam's page-side JavaScript. `src/vault.rs` and
+`src/bin/vault-app.rs` are native-only and compose
 the vaults the browser run needs, from `lrsalvage-fixtures`.
 
 `crates/lrsalvage-web` links this crate — harness depends on app, never the
@@ -181,8 +182,101 @@ The batch fixes its layout, selected paths and destination when started. It
 schedules at most eight files at a time. Stop leaves pending work unscheduled and
 allows in-flight writes to settle. Continue uses the same batch and committed
 paths. The page surfaces exceptions by relative output path and keeps successful
-writes in the open run. A finished batch writes the shared extraction CSV and
-manifest into its destination. An occupied report name gets the next free number.
+writes in the open run. A finished batch writes the reports the next section
+lists into its destination. An occupied report name gets the next free number.
+
+## Receipt, reports and diagnostics
+
+The receipt is a section of the result screen rather than a stage of its own: it
+appears when the first file commits and stays until another recovery starts, so a
+run that saved one photo ends with the same account a batch does, and a stopped
+batch shows its receipt with the continuation beside it. It leads with the count
+of catalog images the run **saved** — one per image, however many times a one-off
+save and a batch reached it — and names beneath it the images already recovered
+at their planned paths, the images it could not save, and how many files the
+folder answered for when it was read back. The count is taken from commits: a
+file counts when its write has closed, never when it was planned. Both version
+numbers a bug report quotes sit on the receipt, in ADR 0012 D2's form. When a
+batch finishes the receipt's heading takes focus, and it keeps the page's focus
+ring instead of suppressing it: the result title behaves the same way, a
+programmatic target with no indicator is worse than a firm one, and changing both
+is one piece of work rather than half of it (#169, test drive).
+
+Reconciliation reads the destination instead of trusting the run. When a batch
+settles the page lists the destination back through the same handle and compares
+the committed paths with what is there, naming a planned path that is missing and
+a foreign file where a plan expected one; a read that cannot be finished — a
+disconnected folder, a lost grant — says so instead of claiming the files.
+**View saved files** shows that listing: the files this run saved or found
+already recovered, grouped by the catalog folder they came from, with names and
+byte sizes. A directory handle carries a name and nothing else, so the page
+cannot learn a folder's path or open one in Explorer; the receipt names the
+chosen folder, offers the name for copying, and explains how to find it there.
+The prototype's *Open folder* has no page equivalent and the page does not claim
+one.
+
+The destination receives the CLI's three report files — `report.csv` from the
+plan, `extract.csv` from the file outcomes, `manifest.json` from both — and each
+takes the next free number when its name is occupied. The receipt links the files
+it actually wrote, opening each from the bytes read back through the handle, and
+reports one that failed to write as a failure rather than as a link. The
+path-free verification report is offered separately, because it is the artifact a
+person chooses to share: **Save verification report** writes `verification.json`
+from the plan, the options the run applied and the copy's two digests — the field
+set `specs/modules/report.md` freezes for `scan --report`. Its arguments have to
+be true rather than convenient, so the entry retains the `Options` it planned
+with and the digests `capture_verified` measured, instead of the copy's strings
+alone. The plan CSV rides the report export a batch already calls; the
+verification report and the compiled version pair are the two new worker exports
+this needs.
+
+Diagnostics are kept in memory for the current run, never written into a
+destination, never uploaded, and copied only by a click. One serializer produces
+them for the receipt and for a failure view, so a copy is available before any
+receipt exists — the log starts at page load, which is what makes a failure at
+the catalog copy shareable. The object is:
+
+```json
+{ "schema": "lrsalvage.diagnostics",
+  "versions": {"app": "0.1.0", "core": "0.4.0", "build": "4606440a1b2c",
+               "browser": "Google Chrome 133.0.6943.99", "platform": "Windows", "platform_version": "15.0.0"},
+  "timings": {"storage_setup_ms": 812, "catalog_copy_ms": 2140, "scan_ms": 9100,
+              "first_thumbnail_ms": 9310, "first_saved_jpeg_ms": 12300,
+              "longest_write_gap_ms": 74, "elapsed_ms": 15600},
+  "scan": {"images": 5000, "recovered": 4998, "suspect": 0, "missing_payload": 2,
+           "no_cache_entry": 0, "unmapped": 0, "failed": 0, "original_present": 0,
+           "below_floor": 2, "above_cap": 0, "bytes": 918273645, "levels": 5002,
+           "selected_items": 120, "selected_images": 120,
+           "tiers": {"full": 120, "large": 3800, "standard": 1078, "small": 2, "thumbnail": 0},
+           "superseded": 0, "deleted": 0, "unrecognised": 0},
+  "writes": {"planned": 120, "written": 118, "already_recovered": 2, "failed": 0,
+             "confirmed_on_disk": 120},
+  "events": {"stopped": 1, "settled": 1, "continued": 1},
+  "failures": {"destination_gone": 0, "permission": 0, "out_of_room": 0,
+               "occupied_foreign": 1, "source_unreadable": 0, "write_failed": 0, "other": 0},
+  "failure": null }
+```
+
+The field list is frozen here. `versions` carries the two release numbers, the
+checkout identity when a built page has one, and the browser and platform as the
+browser states them — a table mapping a platform version to a marketing name is a
+table that rots. `timings` are milliseconds since the page loaded and there is no
+absolute timestamp: the object describes a run's shape, not when its author was at
+their desk. `scan` carries exactly the eighteen `stats` members
+`specs/modules/report.md` freezes, so no second vocabulary is invented for a count
+the reports already name. `longest_write_gap_ms` measures consecutive commits
+across the whole run, so a stop appears in `events` and never as a slow write.
+`catalog_copy_ms` covers the copy, the open and the index copy, because one
+synchronous wasm frame owns all three and no clock runs inside it; it ends at the
+first unit the plan reports, and `scan_ms` starts there. `failure` is a stage and
+one of the entry's own kinds — never the error's message, which can name a path —
+and is `null` for a run that got as far as a file. A fact the run did not measure
+is `null`, never `""` and never absent, so the same members are on every copy.
+
+The list is curated at its source rather than filtered afterwards: the serializer
+has no field a path, filename, identifier or message could occupy, which is what
+leaves the page nothing to redact and nobody to remember what to remove — ADR
+0007's discipline applied to the second artifact that leaves a user's machine.
 
 ## Practice and distribution
 
@@ -233,3 +327,11 @@ the deployed candidate.
   to their browser mount paths and ignores the generation timestamp. The embedded
   core version is the same in both builds, so the JPEG marker, hash and manifest
   version are compared exactly.
+- `scripts/check-receipt.mjs` is the receipt's own phase of that script. It
+drives the product through a batch that is stopped and continued with a one-off
+save overlapping it, then lists the destination back and compares the three
+report files and the offered verification report with the CLI's on the same
+vault. It reads the clipboard after granting clipboard permission over DevTools
+and asserts the exact field list of the copied diagnostics plus the absence of
+every synthetic path, filename and uuid in it — once from the receipt and once
+from a failure that happened before any receipt existed.

@@ -154,6 +154,13 @@ _Avoid_: ceiling, maximum, limit, filter
 A JPEG now exists at the planned output path for the image.
 _Avoid_: restored, rescued
 
+**Saved**:
+A JPEG a run committed itself at the image's planned output path, counted once per
+catalog image however many times a one-off and a batch reach it. A JPEG that was
+already there and matched is recovered, not saved — the distinction is what stops
+a count growing when nothing new was written.
+_Avoid_: written, exported, recovered
+
 **Restored**:
 The original file exists again at its catalogued path, in its original format.
 lrsalvage never does this, and no preview can lead to it.
@@ -188,6 +195,27 @@ _Avoid_: embedded profile, colour space
 An additional catalog image that shares one original but has its own edits and
 its own cached preview.
 _Avoid_: duplicate, version, copy
+
+## The page
+
+**Receipt**:
+A run's account at the end: how many catalog images it saved, what it could not
+save, the folder it saved into, and the reports it wrote there. A run that saved
+one photo has one, and a batch that was stopped has one beside its continuation.
+_Avoid_: summary, results screen, report
+
+**Saved files**:
+What the destination folder itself answers when it is listed back through the
+browser's handle: each image the run saved or found already recovered, by folder
+and name. Evidence read from the disk rather than a second telling of the plan.
+_Avoid_: output list, export list, folder contents
+
+**Diagnostics**:
+A curated account of one run that a person may copy by hand and choose to share:
+versions, timings, counts and failure categories. It names no path, filename,
+identifier, error message or stack, so there is nothing to redact and nothing for
+anyone to remember to remove.
+_Avoid_: log, telemetry, debug dump, crash report
 
 ## Promises
 

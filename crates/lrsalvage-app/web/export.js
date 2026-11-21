@@ -1,8 +1,46 @@
 import { pickFolder } from './app.js';
 import { readDestination, rememberDestination } from './destination.js';
 import { commitFile } from './seam/commit-file.js';
+import { log } from './diagnostics.js';
+import { mountReceipt } from './receipt.js';
 
 const MAX_WRITES = 8;
+
+/**
+ * One word for why a write did not land, from the error a browser handed us.
+ *
+ * The categories are `specs/app.md`'s frozen list and they are aimed at a person:
+ * "it ran out of room" and "the folder went away" lead to different next steps,
+ * while the platform's seven filesystem kinds do not. The message itself never
+ * leaves the page (`web/diagnostics.js`).
+ */
+function classify(error) {
+  if (error instanceof OccupiedPath) return 'occupied_foreign';
+  switch (error?.name) {
+    case 'NotFoundError': return 'destination_gone';
+    case 'NotAllowedError':
+    case 'SecurityError':
+    case 'NoModificationAllowedError': return 'permission';
+    case 'QuotaExceededError': return 'out_of_room';
+    case 'TypeMismatchError': return 'occupied_foreign';
+    case 'InvalidStateError':
+    case 'NotSupportedError': return 'write_failed';
+    default: break;
+  }
+  // A preview the core could not prepare reads as text rather than as a
+  // `DOMException`; that is the source going away, not the destination.
+  return /unavailable|changed|could no longer be read/i.test(error?.message ?? '')
+    ? 'source_unreadable'
+    : 'other';
+}
+
+/** What a report file is for, in the receipt's list. */
+const DESCRIPTIONS = {
+  'report.csv': 'Photos and scan outcomes',
+  'extract.csv': 'Save outcomes',
+  'manifest.json': 'Recovery data for tools',
+  'verification.json': 'Path-free scan facts',
+};
 
 async function validateDestination(destination, inputs) {
   for (const { handle } of inputs) {
@@ -86,11 +124,62 @@ async function writeReport(destination, name, text) {
     const path = number === 1 ? name : name.slice(0, dot) + ' (' + number + ')' + name.slice(dot);
     try {
       await writeNew(destination, path, () => ({ bytes }));
-      return;
+      return path;
     } catch (error) {
       if (!(error instanceof OccupiedPath)) throw error;
     }
   }
+}
+
+/**
+ * Write one report and read it back, so the receipt links the file that exists.
+ *
+ * The link is the bytes the destination holds, opened as a blob: a page has no
+ * other way to open a file it wrote, and reading it back is also the check that
+ * the file is really there. The name it landed on comes back from the writer, so
+ * the receipt never re-derives the CLI's numbered-name rule.
+ */
+async function writeAndLink(destination, name, text, description) {
+  const path = await writeReport(destination, name, text);
+  const file = await (await destination.getFileHandle(path)).getFile();
+  return { name: path, url: URL.createObjectURL(file), description };
+}
+
+/**
+ * What the destination answers when it is listed back.
+ *
+ * One walk, intersected with the run's committed paths: `present` is what the
+ * folder really holds, with the size it holds now, and `missing` is the plan
+ * paths it no longer has. A folder that cannot be read says so instead of
+ * letting the run's own record pass for an observation (`specs/app.md`,
+ * *Receipt, reports and diagnostics*).
+ */
+async function reconcile(destination, ledger) {
+  const entries = [...ledger.values()];
+  const planned = new Map(entries.map((entry) => [entry.path.toLowerCase(), entry]));
+  const present = new Map();
+  try {
+    const walk = async (dir, prefix) => {
+      for await (const [name, entry] of dir.entries()) {
+        const path = prefix + name;
+        if (entry.kind === 'directory') {
+          await walk(entry, path + '/');
+          continue;
+        }
+        const found = planned.get(path.toLowerCase());
+        if (!found) continue;
+        const file = await entry.getFile();
+        present.set(path.toLowerCase(), { id: found.id, path: found.path, bytes: file.size });
+      }
+    };
+    await walk(destination, '');
+  } catch (error) {
+    return { ok: false, reason: classify(error), present: [], missing: [] };
+  }
+  const missing = entries
+    .filter((entry) => !present.has(entry.path.toLowerCase()))
+    .map((entry) => entry.path);
+  return { ok: true, reason: null, present: [...present.values()], missing };
 }
 
 export function mountExport(document) {
@@ -104,6 +193,7 @@ export function mountExport(document) {
   const end = el('end');
   const save = el('one');
   const details = el('paths');
+  const receipt = mountReceipt(document, { saveVerification });
   let run;
 
   function open(scan, inputs) {
@@ -111,6 +201,11 @@ export function mountExport(document) {
     run = {
       scan, inputs, checked: new Set(), layouts: new Map(), targets: [],
       flat: false, target: null, suggestion: null, batch: null, busy: false, photo: null,
+      // The run's account: one entry per catalog image this run committed, plus
+      // the failures and the reports it wrote. `targets[].saved` caches per
+      // destination for the writer; this is what the receipt counts.
+      ledger: new Map(), failures: [], reportFailures: [], reports: [],
+      categorised: new Set(), reconciled: null,
     };
     section.hidden = false;
     layout.value = 'mirrored';
@@ -132,6 +227,21 @@ export function mountExport(document) {
     el('status').textContent = '';
     el('errors').replaceChildren();
     el('one-status').textContent = '';
+    receipt.clear();
+  }
+
+  /** Show the run's account, and what the destination last answered for it. */
+  function updateReceipt(current) {
+    if (run !== current) return;
+    receipt.update({
+      ledger: current.ledger,
+      failures: current.failures,
+      reportFailures: current.reportFailures,
+      reports: current.reports,
+      reconciled: current.reconciled,
+      destinationNames: [...new Set([...current.ledger.values()].map((entry) => entry.target.handle.name))],
+    });
+    void receipt.renderVersions();
   }
 
   async function loadLayout(current, flat) {
@@ -232,8 +342,31 @@ export function mountExport(document) {
       if (run === current) status.textContent = error.message;
     } finally {
       current.busy = false;
-      if (run === current) render();
+      if (run === current) {
+        render();
+        // The receipt is outside this module's panel, and it must learn that the
+        // run is no longer busy as well as what the run committed.
+        updateReceipt(current);
+      }
     }
+  }
+
+  /**
+   * Record one catalog image this run saved, once.
+   *
+   * A photo a one-off and a batch both reached is one photo on the receipt: an
+   * entry that already exists is never demoted to `already recovered`, because
+   * this run did write it.
+   */
+  function promote(current, row, outcome, target) {
+    const previous = current.ledger.get(row.id);
+    if (previous && !(previous.status === 'skipped' && outcome.status === 'written')) return;
+    if (!previous) log.commit(outcome.status);
+    current.ledger.set(row.id, {
+      id: row.id, path: row.path, status: outcome.status, bytes: outcome.bytes, target,
+    });
+    const at = current.failures.findIndex((entry) => entry.path === row.path);
+    if (at >= 0) current.failures.splice(at, 1);
   }
 
   async function write(current, target, flat, row) {
@@ -254,7 +387,7 @@ export function mountExport(document) {
     } catch (error) {
       return {
         status: 'failed', bytes: 0, sha256: null, output: row.path,
-        note: error.message,
+        note: error.message, category: classify(error),
       };
     }
   }
@@ -265,10 +398,47 @@ export function mountExport(document) {
     el('errors').append(entry);
   }
 
+  /**
+   * Record one photo that will not be in the folder, once per path.
+   *
+   * The receipt lists it and the diagnostics count its category — never its
+   * message, which can name a path — so the count and the list cannot disagree
+   * about how many photos are missing.
+   */
+  function failPhoto(current, path, message, category) {
+    const at = current.failures.findIndex((entry) => entry.path === path);
+    const entry = { path, note: message, category };
+    if (at >= 0) current.failures[at] = entry;
+    else current.failures.push(entry);
+    addError(path, message);
+    if (!current.categorised.has(path)) {
+      current.categorised.add(path);
+      log.failure(category);
+      log.commit('failed');
+    }
+  }
+
+  /**
+   * Record a report that could not be written.
+   *
+   * A report is file work and its category is counted, but it is not one of the
+   * photos the receipt is about, so it gets its own list and its own sentence
+   * rather than inflating "N could not be saved".
+   */
+  function failReport(current, name, message, category) {
+    if (!current.reportFailures.some((entry) => entry.name === name)) {
+      current.reportFailures.push({ name, note: message });
+      log.failure(category);
+    }
+    addError(name, message);
+  }
+
   async function saveBatch(current) {
     const target = current.target;
     await validateDestination(target.handle, current.inputs);
+    if (current.batch) log.continued();
     const batch = current.batch ??= { rows: selected(current), outcomes: new Map() };
+    if (batch.outcomes.size === 0) log.planned(batch.rows.length);
     batch.stopping = false;
     render();
     const totals = { written: 0, skipped: 0, failed: 0 };
@@ -286,6 +456,17 @@ export function mountExport(document) {
         (totals.failed ? ' · ' + totals.failed + ' failed' : '');
     };
     paint();
+
+    // One entry per catalog image, so a photo a one-off and a batch both reached
+    // is one photo on the receipt.
+    const record = (row, outcome) => {
+      if (outcome.status === 'written' || outcome.status === 'skipped') {
+        promote(current, row, outcome, target);
+      } else {
+        failPhoto(current, row.path, outcome.note ?? 'The file could not be written.', outcome.category);
+      }
+    };
+
     await Promise.all(Array.from({ length: Math.min(MAX_WRITES, pending.length) }, async () => {
       while (!batch.stopping && next < pending.length) {
         const row = pending[next++];
@@ -293,13 +474,20 @@ export function mountExport(document) {
         batch.outcomes.set(row.id, outcome);
         if (run !== current) continue;
         totals[outcome.status]++;
-        if (outcome.status === 'failed') addError(row.path, outcome.note);
+        record(row, outcome);
         paint();
       }
     }));
+    log.settled();
+    if (run !== current) return;
+
+    // The destination's own answer, not the writer's recollection of it.
+    current.reconciled = await reconcile(target.handle, current.ledger);
+    log.confirmed(current.reconciled.ok ? current.reconciled.present.length : null);
     if (run !== current) return;
     if (next < pending.length) {
       el('status').textContent += ' · Stopped';
+      updateReceipt(current);
       return;
     }
 
@@ -307,15 +495,59 @@ export function mountExport(document) {
     render();
     try {
       const reports = await current.scan.exportReports(current.flat, batch.rows.map(({ id }) => batch.outcomes.get(id)));
+      const written = [];
       for (const [name, text] of Object.entries(reports)) {
         try {
-          await writeReport(target.handle, name, text);
+          written.push(await writeAndLink(target.handle, name, text, DESCRIPTIONS[name] ?? 'Report'));
         } catch (error) {
-          addError(name, error.message);
+          failReport(current, name, error.message, classify(error));
         }
       }
+      current.reports = [
+        ...written,
+        ...current.reports.filter((report) => report.name.startsWith('verification')),
+      ];
     } finally {
       current.batch = null;
+    }
+    updateReceipt(current);
+    receipt.focus();
+  }
+
+  /**
+   * Write the path-free verification report on request, and list it with the rest.
+   *
+   * It is offered rather than written unasked because it is the artifact a person
+   * chooses to share (#117, user story 6), and because the folder holds the
+   * photos, not our paperwork.
+   */
+  async function saveVerification(status) {
+    const current = run;
+    if (!current || !current.target || current.busy) return;
+    current.busy = true;
+    render();
+    status.textContent = 'Writing the report…';
+    try {
+      const { text } = await current.scan.verificationReport();
+      const entry = await writeAndLink(
+        current.target.handle, 'verification.json', text, DESCRIPTIONS['verification.json']);
+      for (const gone of current.reports.filter((report) => report.name.startsWith('verification'))) {
+        URL.revokeObjectURL(gone.url);
+      }
+      current.reports = [
+        ...current.reports.filter((report) => !report.name.startsWith('verification')),
+        entry,
+      ];
+      status.textContent = `Saved ${entry.name} into the folder you chose.`;
+    } catch (error) {
+      status.textContent = error.message;
+      log.failure(classify(error));
+    } finally {
+      current.busy = false;
+      if (run === current) {
+        render();
+        updateReceipt(current);
+      }
     }
   }
 
@@ -361,13 +593,18 @@ export function mountExport(document) {
       const outcome = await write(current, target, current.flat, row);
       if (outcome.status === 'failed') {
         status.textContent = outcome.note;
-        addError(row.path, outcome.note);
+        failPhoto(current, row.path, outcome.note, outcome.category);
+        updateReceipt(current);
         return;
       }
       current.suggestion = target.handle;
       if (!current.target) current.target = target;
       status.textContent = (outcome.status === 'skipped' ? 'Already recovered · ' : 'Saved · ') + row.path;
       el('status').textContent = status.textContent;
+      // The receipt counts this run's photos, so a one-off save is a photo saved
+      // even when no batch ever runs (`#117`, user story 27).
+      promote(current, row, outcome, target);
+      updateReceipt(current);
     }, status);
   });
   start.addEventListener('click', () => {
@@ -376,6 +613,7 @@ export function mountExport(document) {
   stop.addEventListener('click', () => {
     if (!run?.batch || run.batch.reporting) return;
     run.batch.stopping = true;
+    log.stopped();
     stop.disabled = true;
     el('status').textContent += ' · Stopping after current writes';
   });

@@ -231,6 +231,29 @@ pub fn export_reports(flat: bool, outcomes: &str, now: f64) -> Result<String, Js
     }))
 }
 
+/// The path-free verification report, as the JSON the page writes to a file.
+///
+/// The page's clock rather than the module's, for the same reason the manifest
+/// takes one: a browser has a `Date` and this target has no trustworthy
+/// `SystemTime` (`specs/modules/report.md`).
+#[wasm_bindgen]
+pub fn verification_report(now: f64) -> String {
+    REVIEW.with(|review| review.borrow().verification(now as u64))
+}
+
+/// The two release numbers ADR 0012 D2 puts on the receipt.
+///
+/// Compiled constants, so the page reads them from the module it loaded instead
+/// of from a `build.json` a development tree does not have.
+#[wasm_bindgen]
+pub fn versions() -> String {
+    json!({
+        "app": crate::VERSION,
+        "core": lrsalvage_core::VERSION,
+    })
+    .to_string()
+}
+
 /// Export only details that can be shown without exposing source paths.
 fn review_problem(error: Error) -> JsValue {
     let problem = match error {

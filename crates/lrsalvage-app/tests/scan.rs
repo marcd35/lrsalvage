@@ -54,7 +54,7 @@ fn every_vault_reports_the_condition_it_was_built_for() {
             "working" => {
                 assert_eq!(report["ok"], Value::Bool(true), "{name}: {report}");
                 assert_eq!(number(&report, "/stats/images"), 4);
-                assert_eq!(number(&report, "/stats/recoverable"), 4);
+                assert_eq!(number(&report, "/stats/recovered"), 4);
                 assert_eq!(text(&report, "/cache/layout"), "modern");
                 assert_eq!(report["index"]["problem"], Value::Null);
                 // The copy is proven, and the page shows these two: the digest of
@@ -69,7 +69,7 @@ fn every_vault_reports_the_condition_it_was_built_for() {
                 // On the host the drive is reachable, which a page has to be
                 // handed — the difference `originals` exists to measure.
                 assert_eq!(number(&report, "/stats/original_present"), 1);
-                assert_eq!(number(&report, "/stats/recoverable"), 1);
+                assert_eq!(number(&report, "/stats/recovered"), 1);
                 assert_eq!(report["roots"][0]["in_reach"], Value::Bool(true));
                 assert!(
                     text(&report, "/roots/0/path").ends_with(['/', std::path::MAIN_SEPARATOR]),
@@ -139,6 +139,60 @@ fn a_stopped_scan_reports_a_stop_and_no_plan() {
         None,
         "a stopped scan must not present a plan"
     );
+}
+
+#[test]
+fn the_review_publishes_the_three_reports_and_the_path_free_verification() {
+    // The CLI writes `report.csv`, `extract.csv`, `manifest.json` and, on request,
+    // the verification report. The page writes the same four out of the same
+    // encoders; what this asserts is that the run's own plan and the digests its
+    // copy proved reach them — the two arguments the browser used to throw away.
+    let vault = working().write();
+    let scan = lrsalvage_app::scan_for_review(vault.catalog(), vault.previews(), &mut |_| {
+        Control::Continue
+    })
+    .expect("scan the working vault");
+
+    let reports = scan.review.reports(false, Vec::new(), 1_700_000_000);
+    let mut names: Vec<&String> = reports.as_object().expect("reports").keys().collect();
+    names.sort();
+    assert_eq!(names, ["extract.csv", "manifest.json", "report.csv"]);
+
+    let csv = reports["report.csv"].as_str().expect("report.csv is text");
+    let items = scan.report["stats"]["images"].as_u64().expect("images") as usize;
+    assert_eq!(
+        csv.split("\r\n").count(),
+        items + 2,
+        "a header, one row per plan item and a trailing newline:\n{csv}"
+    );
+    assert!(
+        csv.starts_with("status,tier,width,height,long_edge,"),
+        "the CLI's column order, unchanged"
+    );
+
+    let verification: Value =
+        serde_json::from_str(&scan.review.verification(1_700_000_000)).expect("verified json");
+    assert_eq!(verification["schema"], "lrsalvage.verification");
+    assert_eq!(verification["generated_unix"], 1_700_000_000_u64);
+    assert_eq!(
+        verification["options"]["verify_source"],
+        Value::Bool(true),
+        "the page's copy is always verified, so the echo is a fact rather than a default"
+    );
+    assert_eq!(verification["options"]["min_long_edge"], 640_u64);
+    assert_eq!(
+        verification["source_sha256"], verification["snapshot_sha256"],
+        "the pair is the copy's own proof"
+    );
+
+    // The reason the artifact exists: a stranger can hold it and learn nothing
+    // about where this vault was.
+    let text = verification.to_string();
+    for path in vault.level_files() {
+        let path = path.to_string_lossy().to_string();
+        assert!(!text.contains(&path), "the report names a payload: {path}");
+    }
+    assert!(!text.contains(&vault.catalog().to_string_lossy().to_string()));
 }
 
 #[test]

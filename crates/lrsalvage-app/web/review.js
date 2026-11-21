@@ -1,6 +1,8 @@
 // Review owns the choices for one open scan. Visibility and selection are independent.
 const MAX_THUMBNAIL_READS = 2;
 
+import { log } from './diagnostics.js';
+
 export function mountReview(document, exports) {
   const el = (name) => document.getElementById('photo-' + name);
   const section = el('review');
@@ -414,6 +416,9 @@ export function mountReview(document, exports) {
         fail('This browser could not decode the preview JPEG.');
         return;
       }
+      // The first decoded preview is when review became usable; the diagnostics
+      // report that once, however many tiles follow it.
+      log.thumbnail();
       if (!active) return;
       const expected = photo.rotation % 180 === 90 ? [...photo.size].reverse() : photo.size;
       const actual = [image.naturalWidth, image.naturalHeight];
