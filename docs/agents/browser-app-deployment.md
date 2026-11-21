@@ -52,6 +52,48 @@ Use the ten-photo `review` case. Find its `catalog` and `cache` paths in
 and the separate cache. The review case includes a deliberately undecodable
 preview. Keep generated catalogs in scratch or `target`.
 
+## Writing a browser check
+
+A check is one module, `scripts/check-<name>.mjs`, exporting `async (send) => numbers`:
+`send` is the DevTools call, and the object it returns is printed as the phase's
+result. `scripts/drive-browser.mjs` gives it a `--check-<name>` flag and
+`scripts/browser-app.sh` runs it as a phase; that script's header names the
+phases it already has.
+
+Iterate against a fixture directory rather than a rebuild:
+
+```sh
+sh scripts/browser-app.sh --work <dir> --only receipt
+```
+
+`--work` reuses a directory — the native run, the vaults and the CLI's own files
+are made only when missing — and `--only` runs one phase. Both leave the
+directory in place on success, which is what turns a failing assertion into a
+rerun instead of a twelve-minute rebuild. Where a check can, hold the page to the
+CLI over one vault: `check-export.mjs` and `check-receipt.mjs` both compare the
+files the page wrote with the CLI's own runs on the same bytes.
+
+Three facts about headless Chromium cost a debugging session each the first
+time, and the platform does not say any of them out loud:
+
+- `Browser.grantPermissions` with the legacy `clipboardReadWrite` /
+  `clipboardSanitizedWrite` names is rejected as `Invalid parameters` on Chrome
+  157. Ask with `Browser.setPermission` and the descriptor form instead:
+  `{ name: 'clipboard-read', allowWithoutSanitization: true }`, and the same for
+  `'clipboard-write'`.
+- `navigator.clipboard.readText()` refuses an unfocused document with
+  `NotAllowedError: Document is not focused`, and a headless tab is never focused.
+  `Emulation.setFocusEmulationEnabled` plus `Page.bringToFront` is what makes a
+  copy readable.
+- `FileSystemDirectoryHandle.removeEntry` throws `NoModificationAllowedError`
+  while a writable stream is open anywhere below it, so a test cannot delete a
+  folder out from under in-flight writes. Fail the write instead: a
+  `createWritable` that throws `QuotaExceededError` is the same observation from
+  the other side.
+
+No check can answer a native picker — the accepted folder is supplied as the value
+a pick returns, which is the measurement `#149`'s *Testing Decisions* records.
+
 ## Configure Pages
 
 Set up a [Cloudflare Pages Direct Upload project](https://developers.cloudflare.com/pages/get-started/direct-upload/)

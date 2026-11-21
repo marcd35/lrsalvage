@@ -11,6 +11,11 @@ lrsalvage-report-*
 # Local real-catalog paths for the #[ignore]d tests; see .env.example.
 .env
 
+# Test-drive and PR evidence. `test-drive-and-fix` writes captures here and
+# `pr-screenshots` reads them, so the directory needs to exist without being
+# committed: an evidence folder in the tree is a folder somebody eventually adds.
+/.agent/
+
 # OS noise
 .DS_Store
 Thumbs.db

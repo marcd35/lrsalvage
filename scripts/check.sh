@@ -29,7 +29,11 @@
 # They run in seconds, and `doc` is the one a new public item breaks — a doc
 # comment that links a private item fails `-D warnings`. `doc` sits after `test`
 # in the full list, so a list run pays a test run to learn it and then starts
-# over; the four by name cost less than one of those restarts.
+# over; the five by name cost less than one of those restarts.
+#
+# `js` joins them because the page and the harness are the one language here that
+# `cargo` never parses: a broken string in `web/*.js` otherwise waits for the
+# twelve-minute browser run, or for a user.
 #
 # A missing tool is a failure, never a skip: a green run must mean CI's green.
 #
@@ -135,6 +139,20 @@ gate_shell() {
                 ;;
         esac
     done
+}
+
+# The page and the harness are JavaScript, and nothing else here parses them:
+# `cargo` never sees `web/*.js`, and the `shell` gate stops at `sh -n`. So a
+# broken string in a page module waits for the twelve-minute browser run or for a
+# user. Parsing a module needs no dependency and takes a second; `check-js.mjs`
+# carries the rest of its contract, including what it cannot see.
+gate_js() {
+    printf '%s\n' '== js'
+    if ! command -v node >/dev/null 2>&1; then
+        printf '%s\n' 'missing node: nodejs.org' >&2
+        exit 1
+    fi
+    node --no-warnings --experimental-vm-modules scripts/check-js.mjs
 }
 
 gate_clippy() {
@@ -470,7 +488,7 @@ gate_real_discard() {
     cargo test -p lrsalvage-cli --test discard -- --ignored
 }
 
-all_gates='fmt shell clippy test doc wasm build completions package typos deny msrv'
+all_gates='fmt shell js clippy test doc wasm build completions package typos deny msrv'
 
 if [ "$#" -eq 0 ]; then
     set -- $all_gates
@@ -505,7 +523,7 @@ for gate in "$@"; do
         real-render) gate_real_render ;;
         real-1to1) gate_real_1to1 ;;
         real-discard) gate_real_discard ;;
-        fmt | shell | clippy | test | doc | wasm | build | completions | package | typos | deny | msrv | real) "gate_$gate" ;;
+        fmt | shell | js | clippy | test | doc | wasm | build | completions | package | typos | deny | msrv | real) "gate_$gate" ;;
         *)
             # A usage error, not a gate that ran and failed.
             gate_in_flight=''
