@@ -291,6 +291,33 @@
         </aside>
       </div>
     </section>
+    <section id="export-section" aria-labelledby="export-title" hidden>
+      <h3 id="export-title">Save JPEGs</h3>
+      <div class="review-tools">
+        <label>Folder layout
+          <select id="export-layout">
+            <option value="mirrored">Mirror original folders</option>
+            <option value="flat">All JPEGs in one folder</option>
+          </select>
+        </label>
+        <button id="export-pick" type="button">Choose destination…</button>
+        <button id="export-suggestion" type="button" hidden></button>
+      </div>
+      <p id="export-destination"></p>
+      <p id="export-total"></p>
+      <p>Free space on the destination is unavailable to the browser. Browser storage estimates describe this site’s private storage. The selected byte total is measured before adding metadata.</p>
+      <details id="export-paths">
+        <summary>Planned paths</summary>
+        <ul id="export-path-list"></ul>
+      </details>
+      <div class="review-tools">
+        <button id="export-start" type="button" disabled>Save selected JPEGs</button>
+        <button id="export-stop" type="button" hidden>Stop saving</button>
+        <button id="export-end" type="button" hidden>End batch</button>
+      </div>
+      <p id="export-status" role="status"></p>
+      <ul id="export-errors" aria-label="Save errors"></ul>
+    </section>
     <details id="scan-details">
       <summary>What was checked</summary>
       <dl id="checked"></dl>
@@ -328,6 +355,11 @@
   <div id="photo-dialog-image" class="review-image loupe" role="region"
        aria-label="Enlarged image" tabindex="0"></div>
   <p id="photo-dialog-note" class="review-note" hidden></p>
+  <div class="review-tools">
+    <button id="export-one" type="button" disabled>Save JPEG as…</button>
+    <span id="export-one-path"></span>
+  </div>
+  <p id="export-one-status" role="status"></p>
   <div class="dialog-footer">
     <label><input id="photo-dialog-check" type="checkbox"> Include photo</label>
     <div class="review-tools">

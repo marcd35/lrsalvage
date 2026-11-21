@@ -1,7 +1,7 @@
 // Review owns the choices for one open scan. Visibility and selection are independent.
 const MAX_THUMBNAIL_READS = 2;
 
-export function mountReview(document) {
+export function mountReview(document, exports) {
   const el = (name) => document.getElementById('photo-' + name);
   const section = el('review');
   const search = el('search');
@@ -147,6 +147,7 @@ export function mountReview(document) {
     photos = rows;
     read = readPreview;
     checked = new Set(photos.filter((photo) => photo.checked).map((photo) => photo.id));
+    exports.select(checked);
     search.value = '';
     selectedOnly.checked = false;
     section.hidden = false;
@@ -295,6 +296,7 @@ export function mountReview(document) {
       const tile = tiles.get(photo.id);
       if (tile) tile.checkbox.checked = include;
     }
+    exports.select(checked);
     if (enlargedPhoto) dialogCheck.checked = checked.has(enlargedPhoto.id);
     if (selectedOnly.checked) renderRows();
     else updateCounts();
@@ -333,6 +335,7 @@ export function mountReview(document) {
 
   function showLoupe(photo) {
     enlargedPhoto = photo;
+    exports.photo(photo.id);
     el('dialog-title').textContent = photo.name;
     el('dialog-size').textContent = dimensions(photo);
     dialogCheck.checked = checked.has(photo.id);

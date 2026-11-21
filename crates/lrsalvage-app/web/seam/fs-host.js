@@ -10,6 +10,8 @@
 // `protocol.js`, shared with the worker's half; their authority is
 // `crates/lrsalvage-core/src/fs/bridge.rs` and `src/fs/mounts.rs`.
 
+import { commitFile } from './commit-file.js';
+
 import {
   CTRL_WORDS,
   KIND_EXISTS,
@@ -170,9 +172,7 @@ export class FsHost {
         const handle = await this.file(mount.handle, segments, true);
         // One `createWritable` … `close` per file: the platform's own atomic
         // commit, which is why the seam's `write_atomic` needs no staging here.
-        const stream = await handle.createWritable();
-        await stream.write(bytes);
-        await stream.close();
+        await commitFile(handle, bytes);
         return {};
       }
       case OP_CREATE_NEW: {

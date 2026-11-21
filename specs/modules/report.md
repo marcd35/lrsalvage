@@ -33,9 +33,11 @@ sheet, and the path-free verification report `scan --report` writes.
 Reads a plan and, for the contact sheet, the payload files it needs — both
 through `fs`, and `report.csv` as one whole-file write rather than a stream.
 Writes to the path its caller named and invents no path of its own; the
-numbered-name rule for report files belongs to `cli`. It decides nothing and adds
+CLI and browser each apply the numbered-name rule in their destination writer. It decides nothing and adds
 no metadata. The digest pair a verified run proved is a value handed to it, not a
 fact it measures: no module here opens the catalog.
+The manifest encoder accepts the host timestamp so the browser and the CLI
+can generate the same schema through their own destination writers.
 
 The verification report is the one artifact here that leaves the machine, so it is
 built from a struct of its own — the curated fields below — rather than from a

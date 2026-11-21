@@ -142,3 +142,16 @@ else
     # shellcheck disable=SC2086
     node scripts/drive-browser.mjs "$work" --check-review $driver_args
 fi
+
+printf '%s\n' '== D12 product export and CLI parity'
+catalog=$(find "$work/working" -name '*.lrcat')
+cache=$(find "$work/working" -name '*.lrdata' -type d)
+cargo run -q -p lrsalvage-cli -- extract --catalog "$catalog" --previews "$cache" \
+    --out "$work/cli-extract" --no-timestamps
+if [ -n "$chrome" ]; then
+    # shellcheck disable=SC2086
+    node scripts/drive-browser.mjs "$work" --chrome "$chrome" --check-export $driver_args
+else
+    # shellcheck disable=SC2086
+    node scripts/drive-browser.mjs "$work" --check-export $driver_args
+fi

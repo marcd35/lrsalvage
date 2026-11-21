@@ -6,14 +6,15 @@
 # than it is enforced — which is exactly how `cargo clippy -- -D warnings` drifted
 # from CI's `--all-targets` and stopped linting test code.
 #
-#   scripts/check.sh              every gate, in order
+#   scripts/check.sh              every default gate, in order
 #   scripts/check.sh clippy fmt   only those, in the order given
 #   scripts/check.sh real         the #[ignore]d tests, against real catalogs
 #   scripts/check.sh real-render  the #[ignore]d tests, against a rendered cache
 #   scripts/check.sh real-1to1     the #[ignore]d tests, against a 1:1 cache
 #   scripts/check.sh real-discard  the #[ignore]d tests, against a discarded cache
+#   scripts/check.sh browser      Chromium app and CLI output parity
 #
-# Those last four are four evidence families, not one: a machine can hold a
+# The four real gates are separate evidence families: a machine can hold a
 # converted cache without a rendered one, a rendered one without a 1:1 build, or
 # no copy of a discard at all, and each gate fails rather than skipping when its
 # own pair is unset. Each runs only its own tests, so adding a family cannot reach
@@ -498,6 +499,9 @@ trap on_exit EXIT
 for gate in "$@"; do
     gate_in_flight=$gate
     case "$gate" in
+        browser)
+            sh scripts/browser-app.sh
+            ;;
         real-render) gate_real_render ;;
         real-1to1) gate_real_1to1 ;;
         real-discard) gate_real_discard ;;
@@ -505,7 +509,7 @@ for gate in "$@"; do
         *)
             # A usage error, not a gate that ran and failed.
             gate_in_flight=''
-            printf 'unknown gate: %s (one of: %s real real-render real-1to1 real-discard)\n' "$gate" "$all_gates" >&2
+            printf 'unknown gate: %s (one of: %s real real-render real-1to1 real-discard browser)\n' "$gate" "$all_gates" >&2
             exit 1
             ;;
     esac

@@ -19,7 +19,10 @@
 // installed before the first call into wasm can happen.
 
 import { installBridge } from './seam/lrsalvage-fs.js';
-import init, { pause_store, poll_install, read_preview, scan, start_install } from './pkg/lrsalvage_app.js';
+import init, {
+  pause_store, poll_install, read_preview, scan, start_install,
+  export_paths, prepare_export, existing_export, export_reports,
+} from './pkg/lrsalvage_app.js';
 
 /**
  * Paint at most this often. The Rust half reports every unit — a 100,000-image
@@ -51,6 +54,34 @@ self.onmessage = async (event) => {
     } catch (error) {
       const problem = error?.kind === 'changed-size' ? error : { kind: 'unreadable' };
       self.postMessage({ type: 'preview', request, problem });
+    }
+    return;
+  }
+  if (['export-paths', 'export-jpeg', 'export-existing', 'export-reports'].includes(message?.type)) {
+    const { request, id, flat, outcomes } = message;
+    try {
+      if (message.type === 'export-jpeg') {
+        const jpeg = prepare_export(id, flat);
+        try {
+          const bytes = jpeg.take_bytes();
+          const outcome = JSON.parse(jpeg.outcome());
+          self.postMessage({ type: 'export', request, value: { bytes, outcome } }, [bytes.buffer]);
+        } finally {
+          jpeg.free();
+        }
+      } else {
+        let value;
+        switch (message.type) {
+          case 'export-paths': value = export_paths(flat); break;
+          case 'export-existing': value = existing_export(id, flat, message.bytes); break;
+          case 'export-reports':
+            value = export_reports(flat, JSON.stringify(outcomes), Math.floor(Date.now() / 1000));
+            break;
+        }
+        self.postMessage({ type: 'export', request, value: JSON.parse(value) });
+      }
+    } catch (error) {
+      self.postMessage({ type: 'export', request, problem: String(error?.message ?? error) });
     }
     return;
   }

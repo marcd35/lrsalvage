@@ -1,10 +1,10 @@
 ---
 id: app
 type: module-design
-title: "app: the browser page's entry and scan"
+title: "app: browser scan, review and export"
 status: draft
 parent: architecture
-depends-on: [catalog, previews-db, plan, snapshot, fs, error, extract, exif, model]
+depends-on: [catalog, previews-db, plan, snapshot, fs, error, extract, exif, model, report]
 references: [adr-0012-two-release-lines, browser-spike, glossary]
 ---
 
@@ -47,10 +47,9 @@ capture_verified ─► from_snapshot ─► index copy + open ─► build_repo
   this target, so `previews.db` is copied into the pool like the catalog is; an
   absent index is *not* copied, and `previews_db::open` answers `Missing`, which
   is a mode rather than a failure (`adr-0006-degrade-without-guessing`).
-- **No destination, and therefore no write.** The build is given a placeholder
-  output root that no mount answers for, because `plan` needs one to number
-  output paths and this slice writes nothing. A picked destination is the save
-  slice's, and it re-plans.
+- **The scan has no writable destination.** A virtual output root gives the
+  planner a namespace. The save flow validates the real destination handle
+  separately and commits only the planner's relative paths.
 - **The scan reports and stops** through `plan::Progress` and `plan::Control`
   (`specs/modules/plan.md`, *Decisions*). The page never re-derives a count.
 
@@ -132,7 +131,7 @@ reverse — so the seam is registered one way for both pages.
 
 ## Preview review
 
-- A completed scan retains the catalog-linked plan items in its worker. The
+- A completed scan retains the plan in its worker. The
   page receives one row per catalog image, including photos with no preview.
   IDs travel as strings so JavaScript preserves the full SQLite integer.
 - Ready and small previews use the plan's default 640 px long-edge floor.
@@ -155,6 +154,35 @@ reverse — so the seam is registered one way for both pages.
   review session. Dismissing the enlarged view restores focus to the same
   photo or pane control when it can receive focus. Otherwise focus moves to
   search.
+
+## JPEG export
+
+The shared planner reserves case-insensitive paths in catalog order before the
+page projects its checked set. Both layouts keep paths stable across selections.
+Mirrored folders are the default. Flat layout uses only the planned filename.
+Previews below the default floor carry an _small suffix. Their ordinary names
+stay reserved so the default mirrored batch retains the CLI paths. The planned byte total
+measures the selected payloads before metadata injection. Origin storage estimates
+describe browser storage and cannot measure the destination's disk space.
+
+The page checks a picked destination against the source handles in both
+directions. This excludes destinations inside or containing the catalog, preview
+cache, or other mounted inputs. The worker uses the shared extraction preparation
+for every JPEG. The page commits the bytes through a writable file stream and
+records success after close. The app verifies existing JPEGs with the same marker and dimensions check as
+native extraction. It reports matching files as already recovered. The app refuses foreign files it
+finds at a planned path. The browser lock coordinates tabs of the app. Other
+applications can change the destination independently. A one-off
+save uses the active layout and leaves the checked set alone. Its destination
+is suggested for the batch. A remembered handle requires another permission
+request from a user gesture when reopened.
+
+The batch fixes its layout, selected paths and destination when started. It
+schedules at most eight files at a time. Stop leaves pending work unscheduled and
+allows in-flight writes to settle. Continue uses the same batch and committed
+paths. The page surfaces exceptions by relative output path and keeps successful
+writes in the open run. A finished batch writes the shared extraction CSV and
+manifest into its destination. An occupied report name gets the next free number.
 
 ## Practice and distribution
 
@@ -196,3 +224,12 @@ the deployed candidate.
   deliberately generated raster patterns and a structural JPEG that Chromium
   cannot decode. An accepted native dialog, the experience on a physical small
   laptop and operation with a screen reader remain manual checks.
+
+- The browser gate also drives one-off and batch saves through the product,
+  exercising path collisions, selection independence, stop and continuation,
+  directory loss, and overlap with input trees. It compares the default mirrored
+  export against the CLI on identical fixture bytes. The JPEG tree and each JPEG
+  byte must agree. In reports the check maps the sandbox output and cache roots
+  to their browser mount paths and ignores the generation timestamp. The embedded
+  core version is the same in both builds, so the JPEG marker, hash and manifest
+  version are compared exactly.

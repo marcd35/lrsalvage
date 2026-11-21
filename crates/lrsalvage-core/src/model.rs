@@ -98,13 +98,35 @@ pub fn sanitize_component(raw: &str) -> Option<String> {
     Some(truncate_chars(cleaned, MAX_COMPONENT_CHARS))
 }
 
+const JPEG_EXTENSION: &str = ".jpg";
+
 /// `<stem><suffix>.jpg`, with the stem shortened so the suffix and extension
 /// always survive.
-fn output_file_name(stem: &str, suffix: &str) -> String {
-    const EXTENSION: &str = ".jpg";
-    let tail = char_count(suffix) + EXTENSION.len();
-    let budget = MAX_COMPONENT_CHARS.saturating_sub(tail);
-    format!("{}{suffix}{EXTENSION}", truncate_chars(stem, budget))
+fn output_file_name(stem: &str, suffix: &str, limit: usize) -> String {
+    let tail = char_count(suffix) + JPEG_EXTENSION.len();
+    let budget = limit.saturating_sub(tail);
+    format!("{}{suffix}{JPEG_EXTENSION}", truncate_chars(stem, budget))
+}
+
+/// Add a planner-generated suffix to a sanitized relative JPEG path. Keep
+/// the parent if there is room for the suffix and at least one stem character.
+pub(crate) fn suffixed_jpeg_path(relative: &Path, retained: &str, suffix: &str) -> PathBuf {
+    let stem = relative.file_stem().unwrap_or_default().to_string_lossy();
+    let stem = stem.strip_suffix(retained).unwrap_or(&stem);
+    let suffix = format!("{retained}{suffix}");
+    let mut parent = relative.parent().unwrap_or(Path::new(""));
+    let minimum = char_count(&suffix) + JPEG_EXTENSION.len() + 1;
+    loop {
+        let parent_text = parent.to_string_lossy();
+        let parent_cost = char_count(&parent_text) + usize::from(!parent_text.is_empty());
+        let limit = MAX_RELATIVE_PATH_CHARS
+            .saturating_sub(parent_cost)
+            .min(MAX_COMPONENT_CHARS);
+        if limit >= minimum || parent.as_os_str().is_empty() {
+            return parent.join(output_file_name(stem, &suffix, limit));
+        }
+        parent = parent.parent().unwrap_or(Path::new(""));
+    }
 }
 
 /// Shrink the longest directories until their text fits `budget`, never below
@@ -280,7 +302,7 @@ impl CatalogImage {
             }
         }
 
-        let file = output_file_name(&self.output_stem(), suffix);
+        let file = output_file_name(&self.output_stem(), suffix, MAX_COMPONENT_CHARS);
 
         // The file name is fixed; the folder tree makes room for it. Each
         // separator costs one character too.
@@ -506,6 +528,28 @@ mod tests {
         assert_eq!(
             dotted.relative_output_path().file_name().unwrap(),
             "photo.jpg"
+        );
+    }
+
+    #[test]
+    fn a_planned_suffix_preserves_the_parent_when_the_leaf_can_be_shortened() {
+        let mut long = image(1, &"b".repeat(112));
+        long.root_folder = "X:/R/".into();
+        long.path_from_root = format!("{}/", "a".repeat(120));
+        let ordinary = long.relative_output_path();
+        let suffixed = suffixed_jpeg_path(&ordinary, "", "_small");
+        assert_eq!(suffixed.parent(), ordinary.parent());
+        assert!(suffixed.to_string_lossy().ends_with("_small.jpg"));
+        let numbered = suffixed_jpeg_path(&suffixed, "_small", " (2)");
+        assert_eq!(numbered.parent(), ordinary.parent());
+        assert!(numbered.to_string_lossy().ends_with("_small (2).jpg"));
+        assert_eq!(
+            numbered.to_string_lossy().chars().count(),
+            MAX_RELATIVE_PATH_CHARS
+        );
+        assert_eq!(
+            suffixed.to_string_lossy().chars().count(),
+            MAX_RELATIVE_PATH_CHARS
         );
     }
 

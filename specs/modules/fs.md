@@ -194,13 +194,12 @@ register the seam differently.
   different mechanism rather than weakened (`docs/browser-spike.md` §3). A
   **store** destination is weaker: the pool publishes a whole image or none, but
   the name is removed before the new one is imported, so a failed import leaves
-  neither. That is honest about a store and unreachable in a run — `extract` and
-  `report` write to a picked folder, and the store's own writers are `snapshot`'s
-  copies, which are `copy` and not `write_atomic`.
-- **One `write_atomic` call is one stream, awaited.** The 8–16-streams-in-flight
-  writer `#117` measured is that slice's work: the seam has one whole-file write
-  and no batching operation, and inventing one here would be a signature the
-  native side does not need.
+  neither. The scan uses copies into scratch slots rather than atomic writes
+  into the store.
+- **One bridged write is one stream, awaited.** The browser export scheduler
+  owns the picked destination handle and uses the same stream commit helper.
+  It starts up to eight asynchronous commits without going through the blocking
+  scan bridge. The shared extractor prepares each JPEG before a commit.
 - **`copy` onto a store name whose `-wal` companion exists is refused**, with
   `io::ErrorKind::Other` and the pool's own message, because no `ErrorKind` says
   "a pending WAL describes this image". Natively a copy would overwrite the main

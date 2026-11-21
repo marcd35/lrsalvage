@@ -25,6 +25,7 @@
 // vault. The exit status is 0 only when every comparison passed.
 
 import { createServer } from 'node:http';
+import { checkExport } from './check-export.mjs';
 import { checkPreviewReview } from './check-preview-review.mjs';
 import { spawn } from 'node:child_process';
 import { readFile, mkdtemp, rm, stat } from 'node:fs/promises';
@@ -65,7 +66,7 @@ const CHROME_CANDIDATES = [
 function usage(message) {
   if (message) console.error(message);
   console.error(
-    `usage: node scripts/drive-browser.mjs <out-dir> [--chrome <path>] [--timeout <s>] [--attach <port>] [--verbose] [--page <path>] [--check-review]\n` +
+    `usage: node scripts/drive-browser.mjs <out-dir> [--chrome <path>] [--timeout <s>] [--attach <port>] [--verbose] [--page <path>] [--check-review|--check-export]\n` +
       `  --page defaults to ${PARITY_PAGE}; the app's page is ${APP_PAGE}`,
   );
   process.exit(2);
@@ -78,14 +79,15 @@ let timeoutSeconds = 240;
 let attachPort = 0;
 let verbose = false;
 let pagePath = PARITY_PAGE;
-let review = false;
+let productCheck = null;
 for (let index = 0; index < args.length; index += 1) {
   const arg = args[index];
   if (arg === '--chrome') chromePath = args[++index];
   else if (arg === '--timeout') timeoutSeconds = Number(args[++index]);
   else if (arg === '--attach') attachPort = Number(args[++index]);
   else if (arg === '--verbose') verbose = true;
-  else if (arg === '--check-review') review = true;
+  else if (arg === '--check-review') productCheck = checkPreviewReview;
+  else if (arg === '--check-export') productCheck = checkExport;
   else if (arg === '--page') {
     // A leading slash is optional: `sh` on this machine rewrites an argument that
     // begins with one into a Windows path, so the script passes it without.
@@ -95,7 +97,7 @@ for (let index = 0; index < args.length; index += 1) {
   else usage(`unexpected argument: ${arg}`);
 }
 if (out === null) usage();
-if (review) pagePath = APP_PAGE;
+if (productCheck) pagePath = APP_PAGE;
 
 const chrome = chromePath ?? CHROME_CANDIDATES.find((candidate) => existsSync(candidate));
 if (!chrome) usage(`no Chrome found; set CHROME to one, or pass --chrome <path>`);
@@ -317,18 +319,18 @@ async function run(target, seconds) {
 
   await send('Runtime.enable');
   await send('Page.enable');
-  if (review) {
+  if (productCheck) {
     await send('Emulation.setDeviceMetricsOverride', {
       width: 1000, height: 680, deviceScaleFactor: 1, mobile: false,
     });
   }
   await send('Page.navigate', { url: target.url });
 
-  if (review) {
+  if (productCheck) {
     try {
       await send('Page.bringToFront');
-      const numbers = await checkPreviewReview(send);
-      console.log('preview review:', JSON.stringify(numbers));
+      const numbers = await productCheck(send);
+      console.log(productCheck.name + ':', JSON.stringify(numbers));
       if (exceptions.length) throw new Error(exceptions.join('\n'));
       return 0;
     } finally {

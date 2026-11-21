@@ -233,11 +233,12 @@ export function start(source, ui = {}, { review = false } = {}) {
         resolve(message.report);
         return;
       }
-      if (message?.type === 'preview') {
+      if (message?.type === 'preview' || message?.type === 'export') {
         const ask = pending.get(message.request);
         if (!ask) return;
         pending.delete(message.request);
-        if (message.problem) ask.reject(message.problem);
+        if (message.problem) ask.reject(message.type === 'export' ? new Error(message.problem) : message.problem);
+        else if (message.type === 'export') ask.resolve(message.value);
         else ask.resolve(new Blob([message.bytes], { type: 'image/jpeg' }));
         return;
       }
@@ -267,20 +268,26 @@ export function start(source, ui = {}, { review = false } = {}) {
     });
   });
 
+  function ask(type, details, transfer = []) {
+    if (closed || !ready) return Promise.reject(new Error('This recovery has ended.'));
+    return new Promise((resolve, reject) => {
+      const request = ++nextRequest;
+      pending.set(request, { resolve, reject });
+      worker.postMessage({ type, request, ...details }, transfer);
+    });
+  }
+
   return {
     /** Ask the scan to stop. It stops at the next unit boundary, which is one file. */
     stop() {
       Atomics.store(flag, 0, 1);
     },
     done,
-    preview(id) {
-      if (closed || !ready) return Promise.reject(new Error('This recovery has ended.'));
-      return new Promise((resolve, reject) => {
-        const request = ++nextRequest;
-        pending.set(request, { resolve, reject });
-        worker.postMessage({ type: 'preview', request, id });
-      });
-    },
+    preview: (id) => ask('preview', { id }),
+    exportPaths: (flat) => ask('export-paths', { flat }),
+    exportJpeg: (id, flat) => ask('export-jpeg', { id, flat }),
+    existingExport: (id, flat, bytes) => ask('export-existing', { id, flat, bytes }, [bytes.buffer]),
+    exportReports: (flat, outcomes) => ask('export-reports', { flat, outcomes }),
     close,
   };
 }

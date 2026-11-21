@@ -400,6 +400,15 @@ same vault, extracted through the app and through the CLI with the same options,
 yields byte-identical trees, an identical `extract.csv` and an identical
 `manifest.json` modulo the `Software` marker's version.
 
+The export gate uses the same catalog, cache and default mirrored JPEG options.
+It compares paths relative to the chosen output root, with forward slashes.
+Report comparisons normalize the native sandbox's output and cache roots to the
+browser mount paths and ignore the manifest's generation time. Builds from the
+same checkout have the same core version, so the gate compares the marker and
+all other JPEG bytes exactly. Native capture timestamps are disabled for this
+comparison. The browser always folds filename case. Native CLI plans use the
+host case policy, so this gate uses matched naming options on both hosts.
+
 Rules out: "the app is never a second implementation" as prose; a GUI that grows
 its own naming or metadata rule quietly; and a parity claim tested by hand once.
 

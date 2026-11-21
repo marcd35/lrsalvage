@@ -32,7 +32,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use lrsalvage_app::vault::{Compare, copy_tree, vaults};
+use lrsalvage_app::vault::{Compare, copy_tree, export, vaults};
 use lrsalvage_fixtures::review;
 use serde_json::json;
 
@@ -49,6 +49,7 @@ fn main() {
     let mut reported = Vec::new();
     let mut cases = vaults();
     cases.push(("review", Compare::Full, review::vault));
+    cases.push(("export", Compare::Full, export));
     for (name, compare, build) in cases {
         let root = out.join(name);
         let _ = fs::remove_dir_all(&root);

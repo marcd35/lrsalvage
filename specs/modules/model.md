@@ -39,6 +39,9 @@ is what lets every other module depend on it freely.
 - **Over-long paths lose their shallowest folders, not their deepest.** When the
   budget runs out, the folders nearest the photo are the ones worth keeping, and
   the file name itself is never truncated.
+- **Planner suffixes and collision numbers fit the same budgets.** They shorten
+  the filename first. If the suffix still needs more room, the path uses the
+  nearest ancestor that can fit the filename.
 - **An unusable base name falls back to `image-<id_local>`**, so an image with no
   file row still gets a name that identifies the catalog row rather than a blank
   or a uuid.

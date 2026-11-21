@@ -138,12 +138,8 @@ pub struct PlanItem {
     /// The smallest level of a level-file pyramid, for the contact sheet. `None`
     /// for a container item, whose sheet walks its own chunks.
     pub smallest_level: Option<PathBuf>,
-    /// The payload bytes this item would write: a level file's own length, or the
-    /// container chunk that was certified. `0` for an item that writes nothing.
-    ///
-    /// `Stats::bytes` sums this over the selected items. `extract` sums it over the
-    /// ones a resume has left to write, which is why the plan publishes it per
-    /// item rather than only as a total.
+    /// Certified payload length, including levels outside the selection bounds.
+    /// Zero for an unwritable payload. The plan sums this over selected levels.
     pub bytes: u64,
     /// False when the level falls below the configured floor.
     pub selected: bool,
@@ -365,6 +361,7 @@ impl Plan {
             thumbnail_pyramids: 0,
         };
         let mut items = Vec::new();
+        let mut retained_suffixes = HashMap::new();
         let mut stats = Stats {
             images: total_images,
             // An unrecognised file is never planned, so its count has no item
@@ -372,7 +369,6 @@ impl Plan {
             unrecognised: sweep.unrecognised.len() as u64,
             ..Stats::default()
         };
-        let mut used: HashMap<String, u32> = HashMap::new();
         let mut done = 0u64;
 
         // Seed the claim set from rows that resolve to a real image only. A
@@ -569,11 +565,15 @@ impl Plan {
                 &mut Tally {
                     output_root,
                     options,
-                    used: &mut used,
                     stats: &mut stats,
                 },
             );
-            items.extend(image_items);
+            for (item, suffix) in image_items {
+                if !suffix.is_empty() {
+                    retained_suffixes.insert(items.len(), suffix);
+                }
+                items.push(item);
+            }
 
             match image_status {
                 Some(Status::Recoverable) => stats.recoverable += 1,
@@ -643,6 +643,24 @@ impl Plan {
             }
         }
 
+        let paths = items
+            .iter_mut()
+            .enumerate()
+            .map(|(index, item)| {
+                item.output.take().map(|path| OutputCandidate {
+                    path,
+                    suffix: retained_suffixes.remove(&index).unwrap_or_default(),
+                })
+            })
+            .collect();
+        for (item, path) in
+            items
+                .iter_mut()
+                .zip(unique_output_paths(paths, output_root, cfg!(windows)))
+        {
+            item.output = path;
+        }
+
         stats.selected_items = items.iter().filter(|item| item.selected).count() as u64;
         stats.selected_images = distinct_selected_images(&items) as u64;
 
@@ -658,6 +676,88 @@ impl Plan {
             stats,
             cache,
         }))
+    }
+
+    /// Stable interactive export names. Assign paths before filtering selection
+    /// so checking another photo cannot rename a previously planned output.
+    pub fn export_paths(&self, root: &Path, flat: bool, floor: u32) -> Vec<Option<PathBuf>> {
+        let candidate = |item: &PlanItem| {
+            let image = item.image.as_ref()?;
+            item.output.as_ref()?;
+            let relative = image.relative_output_path();
+            let relative = if flat {
+                Path::new(relative.file_name()?)
+            } else {
+                &relative
+            };
+            confined_output(root, relative)
+                .ok()
+                .map(|path| OutputCandidate {
+                    path,
+                    suffix: String::new(),
+                })
+        };
+
+        // Keep the ordinary names in CLI order even when a below-floor
+        // candidate will use a suffixed name in the browser.
+        let mut paths: Vec<_> = self.items.iter().map(candidate).collect();
+        let small: Vec<_> = self
+            .items
+            .iter()
+            .zip(&paths)
+            .enumerate()
+            .filter_map(|(index, (item, path))| {
+                if item.width.is_none() || item.long_edge() >= floor {
+                    return None;
+                }
+                let relative = path.as_ref()?.path.strip_prefix(root).ok()?;
+                let suffix = "_small";
+                Some((
+                    index,
+                    OutputCandidate {
+                        path: root.join(crate::model::suffixed_jpeg_path(relative, "", suffix)),
+                        suffix: suffix.into(),
+                    },
+                ))
+            })
+            .collect();
+        let mut small_indices = Vec::with_capacity(small.len());
+        for (index, path) in small {
+            paths.push(Some(path));
+            small_indices.push(index);
+        }
+
+        let mut paths = unique_output_paths(paths, root, true);
+        let small_paths = paths.split_off(self.items.len());
+        for (index, path) in small_indices.into_iter().zip(small_paths) {
+            paths[index] = path;
+        }
+        paths
+    }
+
+    /// Project the batch's selected paths onto the original scan for reporting.
+    /// Keep the scan's default mirrored name for unselected previews.
+    pub fn export_report(
+        &self,
+        root: &Path,
+        paths: &[Option<PathBuf>],
+        selected: &HashSet<&Path>,
+        flat: bool,
+    ) -> Self {
+        let mut plan = self.clone();
+        let mirrored = (!flat).then(|| self.export_paths(root, false, 0));
+        for (index, (item, path)) in plan.items.iter_mut().zip(paths).enumerate() {
+            item.selected = path.as_deref().is_some_and(|path| selected.contains(path));
+            let reported = match &mirrored {
+                Some(mirrored) if !item.selected => &mirrored[index],
+                _ => path,
+            };
+            item.output.clone_from(reported);
+        }
+        plan.stats.bytes = plan.selected().map(|item| item.bytes).sum();
+        plan.stats.selected_items = plan.selected().count() as u64;
+        plan.stats.selected_images = plan.selected_images() as u64;
+        plan
     }
 
     /// Every item the extractor evaluates: an item neither bound excluded,
@@ -935,7 +1035,6 @@ struct FoundLevel {
 struct Tally<'a> {
     output_root: &'a Path,
     options: &'a Options,
-    used: &'a mut HashMap<String, u32>,
     stats: &'a mut Stats,
 }
 
@@ -1187,7 +1286,7 @@ fn decide_levels(
     // Where the payload came from, when it is not the pyramid the entry names.
     rescued_from: Option<&str>,
     tally: &mut Tally<'_>,
-) -> (Vec<PlanItem>, Option<Status>) {
+) -> (Vec<(PlanItem, String)>, Option<Status>) {
     let mut levels = levels;
     // The level that owns the plain output name is marked by the rank, not by its
     // position: a cap can choose one that is not the last candidate.
@@ -1265,16 +1364,17 @@ fn decide_levels(
 
         // Only the extra levels `--all-levels` adds carry a size suffix; the
         // pyramid's largest level keeps the plain `<stem>.jpg` name.
-        let relative = if tally.options.all_levels && !level.winner {
+        let suffix = if tally.options.all_levels && !level.winner {
             let (width, height) = level.dimensions.unwrap_or_default();
-            image.relative_output_path_with_suffix(&format!(" - {width}x{height}"))
+            format!(" - {width}x{height}")
         } else {
-            image.relative_output_path()
+            String::new()
         };
+        let relative = image.relative_output_path_with_suffix(&suffix);
 
         let mut output = None;
         match confined_output(tally.output_root, &relative) {
-            Ok(path) => output = Some(unique_path(tally.used, path)),
+            Ok(path) => output = Some(path),
             Err(escape) => {
                 status = Status::Failed;
                 notes.clear();
@@ -1324,50 +1424,108 @@ fn decide_levels(
             *tally.stats.tiers.entry(tier.as_str()).or_insert(0) += 1;
         }
 
-        items.push(PlanItem {
-            status,
-            image: Some(image.clone()),
-            payload: Some(level.payload),
-            output,
-            width: level.dimensions.map(|(width, _)| width),
-            height: level.dimensions.map(|(_, height)| height),
-            color_profile: pyramid.map(|p| p.color_profile.clone()),
-            quality: pyramid.map(|p| p.quality.clone()),
-            orientation: image.orientation,
-            effective_orientation,
-            payload_metadata: level.metadata,
-            tier,
-            declared: level.declared,
-            smallest_level: smallest_level.clone(),
-            bytes: if writes { level.bytes as u64 } else { 0 },
-            selected: !below_floor && !above_cap,
-            note,
-        });
+        items.push((
+            PlanItem {
+                status,
+                image: Some(image.clone()),
+                payload: Some(level.payload),
+                output,
+                width: level.dimensions.map(|(width, _)| width),
+                height: level.dimensions.map(|(_, height)| height),
+                color_profile: pyramid.map(|p| p.color_profile.clone()),
+                quality: pyramid.map(|p| p.quality.clone()),
+                orientation: image.orientation,
+                effective_orientation,
+                payload_metadata: level.metadata,
+                tier,
+                declared: level.declared,
+                smallest_level: smallest_level.clone(),
+                bytes: if writable { level.bytes as u64 } else { 0 },
+                selected: !below_floor && !above_cap,
+                note,
+            },
+            suffix,
+        ));
     }
 
     (items, image_status)
 }
 
-/// Append ` (2)`, ` (3)` … when two images resolve to the same output path.
-///
-/// The key is case-folded on Windows, where `IMG.jpg` and `img.jpg` are one
-/// file and the second copy would otherwise overwrite the first.
-fn unique_path(used: &mut HashMap<String, u32>, path: PathBuf) -> PathBuf {
-    let key = if cfg!(windows) {
-        path.to_string_lossy().to_lowercase()
-    } else {
-        path.to_string_lossy().into_owned()
-    };
-    let count = used.entry(key).or_insert(0);
-    *count += 1;
-    if *count == 1 {
-        return path;
+struct OutputCandidate {
+    path: PathBuf,
+    suffix: String,
+}
+
+fn unique_output_paths(
+    paths: Vec<Option<OutputCandidate>>,
+    root: &Path,
+    case_insensitive: bool,
+) -> Vec<Option<PathBuf>> {
+    let mut names = OutputNames::new(root, case_insensitive);
+    for candidate in paths.iter().flatten() {
+        for parent in candidate.path.ancestors().skip(1) {
+            names.used.insert(names.key(parent));
+        }
     }
-    let stem = path
-        .file_stem()
-        .map(|s| s.to_string_lossy().into_owned())
-        .unwrap_or_default();
-    path.with_file_name(format!("{stem} ({}).jpg", *count))
+    paths
+        .into_iter()
+        .map(|candidate| candidate.map(|candidate| names.claim(candidate.path, &candidate.suffix)))
+        .collect()
+}
+
+/// Tracks both base names and the numbered paths assigned to earlier items.
+struct OutputNames<'a> {
+    root: &'a Path,
+    case_insensitive: bool,
+    used: HashSet<String>,
+    next: HashMap<String, u32>,
+}
+
+impl<'a> OutputNames<'a> {
+    fn new(root: &'a Path, case_insensitive: bool) -> Self {
+        Self {
+            root,
+            case_insensitive,
+            used: HashSet::new(),
+            next: HashMap::new(),
+        }
+    }
+
+    fn key(&self, path: &Path) -> String {
+        output_key(path, self.case_insensitive)
+    }
+
+    fn claim(&mut self, path: PathBuf, retained_suffix: &str) -> PathBuf {
+        let base = self.key(&path);
+        if self.used.insert(base.clone()) {
+            return path;
+        }
+        let relative = path.strip_prefix(self.root).expect("a confined path");
+        let next = self.next.entry(base).or_insert(2);
+        loop {
+            let candidate = self.root.join(crate::model::suffixed_jpeg_path(
+                relative,
+                retained_suffix,
+                &format!(" ({next})"),
+            ));
+            *next += 1;
+            if self
+                .used
+                .insert(output_key(&candidate, self.case_insensitive))
+            {
+                return candidate;
+            }
+        }
+    }
+}
+
+fn output_key(path: &Path, case_insensitive: bool) -> String {
+    let name = path.to_string_lossy();
+    if case_insensitive {
+        name.to_lowercase()
+    } else {
+        name.into_owned()
+    }
 }
 
 /// Join `relative` onto `output_root`, refusing anything that lands outside it.
@@ -1422,12 +1580,12 @@ mod tests {
 
     #[test]
     fn unique_path_treats_case_variants_as_one_file_on_windows() {
-        let mut used: HashMap<String, u32> = HashMap::new();
+        let mut used = OutputNames::new(Path::new("out"), cfg!(windows));
         assert_eq!(
-            unique_path(&mut used, PathBuf::from("out/IMG_0001.jpg")),
+            used.claim(PathBuf::from("out/IMG_0001.jpg"), ""),
             PathBuf::from("out/IMG_0001.jpg")
         );
-        let second = unique_path(&mut used, PathBuf::from("out/img_0001.jpg"));
+        let second = used.claim(PathBuf::from("out/img_0001.jpg"), "");
         if cfg!(windows) {
             assert_eq!(
                 second,

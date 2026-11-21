@@ -39,3 +39,6 @@ pub mod snapshot;
 pub use error::{Error, Result};
 pub use model::{CacheEntry, CatalogImage, Orientation, Pyramid, PyramidLevel, XmpMetadata};
 pub use plan::{Payload, Plan, PlanItem, Status};
+
+/// Version recorded by the shared writer and reports.
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");

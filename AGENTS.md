@@ -38,8 +38,8 @@ segments.
 - `model` — plain data, plus the sanitising of catalog text into output path
   components. No I/O.
 - `plan` — decisions only: statuses, tiers, selection, stats. It never writes.
-- `extract` — the per-image writer: destination checks, atomic temp-and-rename,
-  resume verification, `--force` policy.
+- `extract` — shared JPEG preparation and resume verification, plus native
+  destination checks, atomic temp-and-rename, and `--force` policy.
 - `exif` — inserts EXIF, XMP and ICC segments around the untouched payload. ICC
   profiles are reconstructed from the catalog's profile name, never copied from a
   source file; a payload that already carries one keeps it, and an unknown name
@@ -60,6 +60,7 @@ segments.
 - `masks` — decodes `.lrcat-data` AI mask layers to PNG.
 - `error` — the single error type and its I/O path context.
 - `cli` — arguments and presentation; no format knowledge.
+- Browser handle checks and asynchronous commits are documented in [the app spec](specs/app.md).
 
 Format knowledge stays in the module named after the format. Nothing else parses
 bytes, and `plan` never learns a byte offset.

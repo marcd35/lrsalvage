@@ -21,8 +21,8 @@
 //!    `adr-0006-degrade-without-guessing`).
 //! 4. **Scan**: one reported build, stoppable at a unit boundary.
 //!
-//! Nothing is written outside the pool, which is why this slice has no
-//! destination: review calls only the shared payload reader in `extract`.
+//! The scan writes only to the pool. Review retains the plan for preview reads
+//! and for export through the shared core.
 
 use std::path::{Path, PathBuf};
 
@@ -42,15 +42,8 @@ pub mod vault;
 #[cfg(target_arch = "wasm32")]
 pub mod wasm;
 
-/// Where the plan numbers its output paths, until a destination is picked.
-///
-/// The scan decides *which* images are worth writing and how their names
-/// collide, and it needs an output root to do either: `plan` resolves every
-/// item's path against one. No mount answers for this path on purpose — a
-/// placeholder that resolved would be a destination the user never chose, and
-/// this slice writes nothing. The save slice replaces it with the picked folder
-/// and re-plans, which is where #117's `showDirectoryPicker({mode: 'readwrite'})`
-/// arrives.
+/// Virtual output root. The browser commits only relative paths against a
+/// validated destination handle. No scan mount answers for this root.
 const OUTPUT_ROOT: &str = "/destination";
 
 /// The step a failure happened in, so a page can say which one.
@@ -153,7 +146,7 @@ pub struct ScanResult {
     pub review: Review,
 }
 
-/// Run the same scan and retain its preview choices for read-only review.
+/// Run the same scan and retain its preview choices for review and export.
 pub fn scan_for_review(
     catalog: &Path,
     cache: &Path,

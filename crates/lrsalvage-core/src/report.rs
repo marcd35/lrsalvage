@@ -398,11 +398,17 @@ pub fn tiers_json(stats: &Stats) -> Value {
 
 /// Versioned JSON manifest, the stable contract for downstream tools.
 pub fn write_json(plan: &Plan, path: &Path, version: &str) -> Result<()> {
+    fs::write(path, manifest_json(plan, version, unix_now()).as_bytes()).at(path)?;
+    Ok(())
+}
+
+/// Render the shared manifest with a timestamp supplied by the host.
+pub fn manifest_json(plan: &Plan, version: &str, generated_unix: u64) -> String {
     let items: Vec<Value> = plan.items.iter().map(item_json).collect();
     let manifest = json!({
         "schema": "lrsalvage.manifest",
         "version": version,
-        "generated_unix": unix_now(),
+        "generated_unix": generated_unix,
         "layout": plan.cache.layout.as_str(),
         "db_version": plan.cache.db_version,
         "crs_version": plan.cache.crs_version,
@@ -419,14 +425,9 @@ pub fn write_json(plan: &Plan, path: &Path, version: &str) -> Result<()> {
         "items": items,
     });
 
-    let mut text =
-        serde_json::to_string_pretty(&manifest).map_err(|error| crate::error::Error::Io {
-            path: path.to_path_buf(),
-            source: std::io::Error::other(format!("manifest serialisation failed: {error}")),
-        })?;
+    let mut text = serde_json::to_string_pretty(&manifest).expect("a JSON value can be serialized");
     text.push('\n');
-    fs::write(path, text.as_bytes()).at(path)?;
-    Ok(())
+    text
 }
 
 fn item_json(item: &PlanItem) -> Value {
