@@ -165,6 +165,72 @@ pub fn read_preview(id: &str) -> Result<Vec<u8>, JsValue> {
     REVIEW.with(|review| review.borrow().read(id).map_err(review_problem))
 }
 
+/// Return the planned relative paths in catalog order.
+#[wasm_bindgen]
+pub fn export_paths(flat: bool) -> String {
+    REVIEW.with(|review| review.borrow().export_paths(flat).to_string())
+}
+
+/// A JPEG and its prospective outcome. The page records it after close.
+#[wasm_bindgen]
+pub struct ExportJpeg {
+    bytes: Vec<u8>,
+    outcome: String,
+}
+
+#[wasm_bindgen]
+impl ExportJpeg {
+    pub fn take_bytes(&mut self) -> Vec<u8> {
+        std::mem::take(&mut self.bytes)
+    }
+
+    pub fn outcome(&self) -> String {
+        self.outcome.clone()
+    }
+}
+
+#[wasm_bindgen]
+pub fn prepare_export(id: &str, flat: bool) -> Result<ExportJpeg, JsValue> {
+    let id = id
+        .parse()
+        .map_err(|_| JsValue::from_str("This preview is unavailable."))?;
+    REVIEW.with(|review| {
+        let review = review.borrow();
+        let (jpeg, output) = review
+            .prepare(id, flat)
+            .map_err(|error| JsValue::from_str(&error))?;
+        let outcome = serde_json::to_string(&jpeg.written(output))
+            .map_err(|error| JsValue::from_str(&error.to_string()))?;
+        Ok(ExportJpeg {
+            bytes: jpeg.bytes,
+            outcome,
+        })
+    })
+}
+
+#[wasm_bindgen]
+pub fn existing_export(id: &str, flat: bool, bytes: &[u8]) -> Result<String, JsValue> {
+    let id = id
+        .parse()
+        .map_err(|_| JsValue::from_str("This preview is unavailable."))?;
+    REVIEW.with(|review| {
+        serde_json::to_string(&review.borrow().existing(id, flat, bytes))
+            .map_err(|error| JsValue::from_str(&error.to_string()))
+    })
+}
+
+#[wasm_bindgen]
+pub fn export_reports(flat: bool, outcomes: &str, now: f64) -> Result<String, JsValue> {
+    let outcomes: Vec<lrsalvage_core::extract::Outcome> =
+        serde_json::from_str(outcomes).map_err(|error| JsValue::from_str(&error.to_string()))?;
+    Ok(REVIEW.with(|review| {
+        review
+            .borrow()
+            .reports(flat, outcomes, now as u64)
+            .to_string()
+    }))
+}
+
 /// Export only details that can be shown without exposing source paths.
 fn review_problem(error: Error) -> JsValue {
     let problem = match error {

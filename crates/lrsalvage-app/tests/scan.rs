@@ -53,8 +53,8 @@ fn every_vault_reports_the_condition_it_was_built_for() {
         match name {
             "working" => {
                 assert_eq!(report["ok"], Value::Bool(true), "{name}: {report}");
-                assert_eq!(number(&report, "/stats/images"), 3);
-                assert_eq!(number(&report, "/stats/recoverable"), 3);
+                assert_eq!(number(&report, "/stats/images"), 4);
+                assert_eq!(number(&report, "/stats/recoverable"), 4);
                 assert_eq!(text(&report, "/cache/layout"), "modern");
                 assert_eq!(report["index"]["problem"], Value::Null);
                 // The copy is proven, and the page shows these two: the digest of

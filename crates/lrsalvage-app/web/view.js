@@ -21,6 +21,7 @@ import {
 import { loadPractice } from './practice.js';
 
 import { mountReview } from './review.js';
+import { mountExport } from './export.js';
 
 const NO_PICKER =
   'This browser cannot open folders for recovery. Use Chrome or Edge on Windows, ' +
@@ -64,7 +65,8 @@ export function mount(document) {
   const rootsSection = el('roots-section');
   const restart = el('restart');
   const resultTitle = el('result-title');
-  const review = mountReview(document);
+  const exports = mountExport(document);
+  const review = mountReview(document, exports);
 
   let state = {
     handle: null,
@@ -78,6 +80,7 @@ export function mount(document) {
   let completed = null;
 
   function clearReview() {
+    exports.clear();
     review.clear();
     completed?.close();
     completed = null;
@@ -118,6 +121,7 @@ export function mount(document) {
     bar.removeAttribute('value');
   });
   restart.addEventListener('click', () => {
+    if (exports.busy()) return;
     clearReview();
     state = {
       handle: null,
@@ -258,6 +262,7 @@ export function mount(document) {
   // -- scanning -----------------------------------------------------------
 
   async function runScan(chosen) {
+    if (exports.busy()) return;
     state.source = chosen;
     pickerError.hidden = true;
     clearReview();
@@ -320,6 +325,7 @@ export function mount(document) {
     showOnly(result);
     if (report.ok) {
       completed = scan;
+      if (report.photos.some((photo) => photo.preview)) exports.open(scan, chosen.mounts);
       review.show(report.photos, scan.preview);
     }
     resultTitle.focus();
@@ -486,6 +492,7 @@ export function mount(document) {
   }
 
   async function recheck(rootPath) {
+    if (exports.busy()) return;
     const answer = await pickFolder({ id: 'lrsalvage-originals', mode: 'read' });
     if (answer.cancelled) {
       say(pickerError, 'Nothing was chosen, so the catalog still cannot see that folder.');

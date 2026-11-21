@@ -34,7 +34,7 @@ The Pages emulator resolves `/recovery` and applies the site's `_headers` file.
 ## Verify app pull requests
 
 Review the credential-free **browser app** build and its artifact checks.
-Run the product check locally with `sh scripts/browser-app.sh`. On Windows,
+Run the product and CLI parity checks locally with `sh scripts/check.sh browser`. On Windows,
 use Git's shell. The script lists its tool prerequisites and runs the same
 shared synthetic cases as CI.
 

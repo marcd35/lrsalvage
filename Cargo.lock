@@ -696,6 +696,7 @@ dependencies = [
  "proptest",
  "rsqlite-vfs",
  "rusqlite",
+ "serde",
  "serde_json",
  "sha2",
  "sqlite-wasm-rs",

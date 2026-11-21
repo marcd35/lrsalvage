@@ -91,12 +91,17 @@ const ONE: &str = "AAAA0001-1111-4111-8111-000000000001";
 const TWO: &str = "AAAA0002-1111-4111-8111-000000000002";
 const THREE: &str = "AAAA0003-1111-4111-8111-000000000003";
 
-/// Three images with a preview each, and neither original on disk.
+/// Three default previews and one below the floor, with no originals on disk.
 pub fn working() -> Vault {
+    let small = "AAAA0004-1111-4111-8111-000000000004";
     Vault::modern()
         .image(
             ImageRow::new(1, "IMG_0001")
                 .path_from_root("2023/")
+                .orientation("BC")
+                .xmp(
+                    r#"<rdf:Description xmlns:xmp="http://ns.adobe.com/xap/1.0/" xmp:Rating="4"/>"#,
+                )
                 .cache(ONE),
         )
         .image(
@@ -109,12 +114,57 @@ pub fn working() -> Vault {
                 .path_from_root("2024/")
                 .cache(THREE),
         )
+        .image(
+            ImageRow::new(0, "IMG_0001")
+                .path_from_root("2023/")
+                .cache(small),
+        )
+        .pyramid(PyramidRow::new(small).level(320, 220))
+        .level_file(Level::sized(small, 320, 220))
         .pyramid(PyramidRow::new(ONE).level(1616, 1077))
         .pyramid(PyramidRow::new(TWO).level(1440, 960))
         .pyramid(PyramidRow::new(THREE).level(1616, 1077))
         .level_file(Level::sized(ONE, 1616, 1077))
         .level_file(Level::sized(TWO, 1440, 960))
         .level_file(Level::sized(THREE, 1616, 1077))
+}
+
+/// Enough outputs to stop mid-batch, with case-only and numbered name collisions.
+pub fn export() -> Vault {
+    let mut vault = Vault::modern().root_folder("X:/Synthetic export/");
+    let names = [
+        ("IMG", "2023"),
+        ("IMG (2)", "2023"),
+        ("img", "2023"),
+        ("IMG", "2024"),
+        ("Small", "2024"),
+        ("A", "2024"),
+        ("B", "2024"),
+        ("C", "2024"),
+        ("D", "2024"),
+        ("E", "2024"),
+        ("F", "2024"),
+        ("G", "2024"),
+        ("H", "2024/A.jpg"),
+    ];
+    for (index, (name, folder)) in names.into_iter().enumerate() {
+        let id = index as i64 + 1;
+        let uuid = format!("AAAA{id:04}-1111-4111-8111-{id:012}");
+        let (width, height) = if name == "Small" {
+            (639, 426)
+        } else {
+            (640, 480)
+        };
+        vault = vault
+            .image(
+                ImageRow::new(id, name)
+                    .path_from_root(&format!("{folder}/"))
+                    .cache(&uuid),
+            )
+            .pyramid(PyramidRow::new(&uuid).level(width, height))
+            .level_file(Level::sized(&uuid, width, height));
+    }
+    vault.preoccupied_destination("IMG.jpg", b"outside the recovery")
 }
 
 /// One image whose original is still where the catalog says, and one whose is

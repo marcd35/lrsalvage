@@ -29,11 +29,12 @@ reader without a destination.
 
 ## Boundary
 
-The only module that writes user-visible output, and the only one that refuses a
-destination. Every read and write it performs is an `fs` operation, so the
-staging name, the `fsync` and the `rename` are one call this module cannot
-half-perform. It decides nothing about which image deserves recovery — that is
-`plan` — and knows no format grammar beyond asking `lrprev` / `jpeg` / `exif`.
+The module owns JPEG preparation, native destination policy and extraction
+outcomes. The native path delegates atomic replacement to the filesystem seam.
+The browser calls the same JPEG preparation and commits its bytes through the
+picked handle, with its own asynchronous destination checks. The extraction CSV
+uses the same encoder for both callers. The plan owns image and path selection.
+The format modules own the byte grammar.
 
 ## Decisions
 
@@ -52,7 +53,7 @@ half-perform. It decides nothing about which image deserves recovery — that is
   loudly instead of writing something no plan ever approved. `read_preview`
   returns the certified bytes and their EXIF orientation to both the writer
   and browser review.
-- **An existing destination is replaced only when it proves it is ours**: its
+- **An existing destination is skipped when it proves it is ours**: its
   EXIF carries our `Software` marker (`lrsalvage <version>`), the file is a
   complete JPEG, and its `SOF` dimensions match the planned item. Anything else —
   a foreign same-size JPEG, a file from another tool, output written before the

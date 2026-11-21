@@ -55,7 +55,8 @@ impl Default for ExtractOptions {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub enum OutcomeStatus {
     Written,
     /// An earlier run already produced a valid file; left alone.
@@ -76,7 +77,7 @@ impl OutcomeStatus {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Outcome {
     pub output: PathBuf,
     pub status: OutcomeStatus,
@@ -471,6 +472,17 @@ fn verifies_as_ours(bytes: &[u8], expected: (u32, u32)) -> bool {
             .is_some_and(|software| software.starts_with(exif::SOFTWARE_PREFIX))
 }
 
+/// Recognize an existing destination the same way for native and browser saves.
+pub fn existing_outcome(output: &Path, bytes: &[u8], expected: (u32, u32)) -> Option<Outcome> {
+    verifies_as_ours(bytes, expected).then(|| Outcome {
+        output: output.to_path_buf(),
+        status: OutcomeStatus::Skipped,
+        bytes: bytes.len() as u64,
+        sha256: None,
+        note: Some("already recovered and verified".into()),
+    })
+}
+
 /// The certified preview JPEG and the orientation its own EXIF records.
 pub struct Preview {
     pub bytes: Vec<u8>,
@@ -536,25 +548,80 @@ fn extract_one(item: &PlanItem, options: &ExtractOptions) -> Outcome {
     if fs::exists(output).unwrap_or(false) {
         if options.write_metadata
             && let Ok(existing) = fs::read(output)
-            && verifies_as_ours(&existing, expected)
+            && let Some(outcome) = existing_outcome(output, &existing, expected)
         {
-            return Outcome {
-                output: output.clone(),
-                status: OutcomeStatus::Skipped,
-                bytes: existing.len() as u64,
-                sha256: None,
-                note: Some("already recovered and verified".into()),
-            };
+            return outcome;
         }
         if !options.force {
             return failed(output.clone(), DESTINATION_NOT_OURS);
         }
     }
 
-    let mut bytes = match read_preview(item) {
-        Ok(preview) => preview.bytes,
-        Err(error) => return failed(output.clone(), error.to_string()),
+    let prepared = match prepare_jpeg(item, options) {
+        Ok(prepared) => prepared,
+        Err(note) => return failed(output.clone(), note),
     };
+
+    if options.dry_run {
+        return Outcome {
+            output: output.clone(),
+            status: OutcomeStatus::DryRun,
+            bytes: prepared.bytes.len() as u64,
+            sha256: None,
+            note: Some(match &prepared.note {
+                Some(note) => format!("dry run; nothing written; {note}"),
+                None => "dry run; nothing written".into(),
+            }),
+        };
+    }
+
+    if let Some(parent) = output.parent()
+        && !parent.as_os_str().is_empty()
+        && let Err(e) = fs::create_dir_all(parent)
+    {
+        return failed(output.clone(), format!("cannot create {parent:?}: {e}"));
+    }
+
+    // Staged under a unique name, flushed, then renamed into place, so a reader
+    // sees the file that was there or the whole new one and never a mixture.
+    if let Err(e) = fs::write_atomic(output, &prepared.bytes) {
+        return failed(output.clone(), format!("cannot write {output:?}: {e}"));
+    }
+
+    if options.set_timestamps {
+        set_capture_time(output, item);
+    }
+
+    prepared.written(output)
+}
+
+/// A certified JPEG, with the same metadata and marker for every front end.
+pub struct PreparedJpeg {
+    pub bytes: Vec<u8>,
+    note: Option<String>,
+}
+
+impl PreparedJpeg {
+    /// Build the outcome that a front end publishes after committing the bytes.
+    pub fn written(&self, output: &Path) -> Outcome {
+        let digest = Sha256::digest(&self.bytes);
+        Outcome {
+            output: output.to_path_buf(),
+            status: OutcomeStatus::Written,
+            bytes: self.bytes.len() as u64,
+            sha256: Some(digest.iter().map(|byte| format!("{byte:02x}")).collect()),
+            note: self.note.clone(),
+        }
+    }
+}
+
+/// Prepare exactly what the shared writer would commit. The caller supplies
+/// destination checks and atomic commit when it owns an asynchronous sink.
+pub fn prepare_jpeg(
+    item: &PlanItem,
+    options: &ExtractOptions,
+) -> std::result::Result<PreparedJpeg, String> {
+    let mut bytes = read_preview(item).map_err(|error| error.to_string())?.bytes;
     let mut notes: Vec<String> = Vec::new();
     if options.write_metadata {
         let xmp = item
@@ -572,64 +639,20 @@ fn extract_one(item: &PlanItem, options: &ExtractOptions) -> Outcome {
         // this input never empty, so metadata is written whenever it is asked
         // for — a segment always exists, if only to say who wrote the file.
         let meta = exif::from_catalog_with_profile(&xmp, orientation, item.color_profile.clone())
-            .with_marker(env!("CARGO_PKG_VERSION"));
+            .with_marker(crate::VERSION);
         match exif::inject_full(&bytes, &meta) {
             Ok(injection) => {
                 bytes = injection.jpeg;
                 notes.extend(injection.notes);
             }
-            Err(e) => return failed(output.clone(), format!("exif injection failed: {e}")),
+            Err(e) => return Err(format!("exif injection failed: {e}")),
         }
     }
 
-    if options.dry_run {
-        return Outcome {
-            output: output.clone(),
-            status: OutcomeStatus::DryRun,
-            bytes: bytes.len() as u64,
-            sha256: None,
-            note: Some(if notes.is_empty() {
-                "dry run; nothing written".to_string()
-            } else {
-                format!("dry run; nothing written; {}", notes.join("; "))
-            }),
-        };
-    }
-
-    if let Some(parent) = output.parent()
-        && !parent.as_os_str().is_empty()
-        && let Err(e) = fs::create_dir_all(parent)
-    {
-        return failed(output.clone(), format!("cannot create {parent:?}: {e}"));
-    }
-
-    // Staged under a unique name, flushed, then renamed into place, so a reader
-    // sees the file that was there or the whole new one and never a mixture.
-    if let Err(e) = fs::write_atomic(output, &bytes) {
-        return failed(output.clone(), format!("cannot write {output:?}: {e}"));
-    }
-
-    if options.set_timestamps {
-        set_capture_time(output, item);
-    }
-
-    let digest = Sha256::digest(&bytes);
-    let sha256 = digest
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect::<String>();
-
-    Outcome {
-        output: output.clone(),
-        status: OutcomeStatus::Written,
-        bytes: bytes.len() as u64,
-        sha256: Some(sha256),
-        note: if notes.is_empty() {
-            None
-        } else {
-            Some(notes.join("; "))
-        },
-    }
+    Ok(PreparedJpeg {
+        bytes,
+        note: (!notes.is_empty()).then(|| notes.join("; ")),
+    })
 }
 
 /// One line describing a finished run, e.g. `78 evaluated, 0 written (dry run)`.
@@ -705,6 +728,12 @@ fn apply_capture_time(output: &Path, raw: &str, zone: &TimeZone) {
 
 /// `report.csv` next to the extracted files, so a run is auditable.
 pub fn write_outcomes_csv(outcomes: &[Outcome], path: &Path) -> Result<()> {
+    fs::write(path, outcomes_csv(outcomes).as_bytes()).at(path)?;
+    Ok(())
+}
+
+/// Render the shared extraction outcomes without writing to a filesystem.
+pub fn outcomes_csv(outcomes: &[Outcome]) -> String {
     let mut text = String::with_capacity(outcomes.len() * 96);
     text.push_str("status,bytes,sha256,output,note\r\n");
     for o in outcomes {
@@ -721,8 +750,7 @@ pub fn write_outcomes_csv(outcomes: &[Outcome], path: &Path) -> Result<()> {
         text.push_str(&report::escape_csv(o.note.as_deref().unwrap_or("")));
         text.push_str("\r\n");
     }
-    fs::write(path, text.as_bytes()).at(path)?;
-    Ok(())
+    text
 }
 
 fn failed(output: PathBuf, note: impl Into<String>) -> Outcome {

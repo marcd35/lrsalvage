@@ -10,11 +10,14 @@ on:
       - "LICENSE-*"
       - "crates/lrsalvage-app/**"
       - "crates/lrsalvage-core/**"
+      - "crates/lrsalvage-cli/**"
       - "crates/lrsalvage-fixtures/**"
       - "scripts/build-browser-app.py"
       - "scripts/check-browser-artifact.py"
       - "scripts/verify-browser-deployment.py"
+      - "scripts/check.sh"
       - "scripts/browser-app.sh"
+      - "scripts/check-export.mjs"
       - "scripts/drive-browser.mjs"
       - "scripts/check-preview-review.mjs"
   workflow_dispatch:
@@ -63,7 +66,7 @@ jobs:
         if: github.event_name == 'pull_request'
         run: |
           google-chrome --version
-          sh scripts/browser-app.sh --chrome "$(command -v google-chrome)"
+          CHROME="$(command -v google-chrome)" sh scripts/check.sh browser
       - uses: actions/upload-artifact@v7
         with:
           name: browser-app-static

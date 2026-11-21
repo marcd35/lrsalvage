@@ -265,7 +265,8 @@ one. The layout word and the version strings are observations, never gates
   whose bytes leave the machine.
 - **The item carries its own payload size, so a caller can add up what is left.**
   `PlanItem::bytes` is a level file's own length or the certified container
-  chunk's, `0` for an item that writes nothing, and `Stats::bytes` is that same
+  chunk's, including a level outside the selection bounds. It is zero for an
+  unwritable level. The plan's `Stats::bytes` is that same
   number summed over the selected items — one measurement, published at two
   granularities rather than counted twice. What the *destination* already holds is
   not this module's question (it stats nothing there), so `extract` takes the
@@ -292,3 +293,14 @@ one. The layout word and the version strings are observations, never gates
 - **The output path is re-validated here.** Even though `model` sanitises every
   component, the join to the output root refuses anything that is not ordinary
   relative components: `starts_with` alone would accept `out/../escaped`.
+
+## Interactive output paths
+
+The app projects the scan into mirrored or flat paths without re-reading the
+catalog or the previews. The original catalog path is sanitized through the same
+model routine as CLI extraction. The app's reserved names are case-insensitive
+on every host so its plan also works on a case-insensitive destination. A name
+that already has a number and a name assigned by the collision rule both occupy
+their resulting path. Required parent directories reserve their paths first.
+All candidates reserve their names before selection so a
+change to the checked set leaves earlier paths intact.
