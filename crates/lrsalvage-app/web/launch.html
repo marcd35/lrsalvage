@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Recover JPEG previews from a Lightroom Classic catalog and preview cache in your browser.">
+  <title>lrsalvage · Lightroom Classic preview recovery</title>
+  <link rel="stylesheet" href="./launch.css">
+  <script type="module" src="./launch.js"></script>
+  <script type="module" src="./build-identity.js"></script>
+</head>
+<body>
+  <header class="masthead">
+    <a href="./" aria-current="page">lrsalvage</a>
+    <nav aria-label="On this page">
+      <a href="#samples">Samples</a>
+      <a href="#guide">Recovery guide</a>
+      <a href="#requirements">Requirements</a>
+    </nav>
+  </header>
+  <main>
+    <section class="intro" aria-labelledby="title">
+      <div>
+        <h1 id="title">Recover the previews Lightroom kept</h1>
+        <p class="summary">
+          If you lost your originals but still have your Lightroom Classic catalog and preview cache,
+          lrsalvage can recover those previews as JPEGs. It processes your files in your browser.
+        </p>
+        <div class="actions">
+          <a class="primary" href="./recovery?sample=working">Try a sample</a>
+          <a class="secondary" href="./recovery">Open a backup</a>
+        </div>
+        <p class="fine">The sample opens with six recoverable previews and needs no files from you.</p>
+        <p id="browser-warning" role="status" hidden></p>
+      </div>
+      <figure class="example">
+        <img src="./practice/preview.jpg" width="960" height="640" alt="The Colorado River winding through the Grand Canyon, photographed from orbit">
+        <figcaption>A 960 × 640 JPEG from the working sample. <a href="./practice/credits.txt">Photo credits</a></figcaption>
+      </figure>
+    </section>
+
+    <section id="samples" aria-labelledby="sample-title">
+      <h2 id="sample-title">Practice with a sample catalog</h2>
+      <p>Open a sample here, or download its ZIP to try the folder picker. Extract the ZIP and choose the folder that directly contains <code>Practice.lrcat</code> and <code>Practice Previews.lrdata</code>.</p>
+      <ul class="samples">
+        <li>
+          <h3>Working</h3>
+          <p>Six recoverable JPEGs, including portrait previews and a virtual copy.</p>
+          <div class="sample-actions">
+            <a href="./recovery?sample=working">Open working sample</a>
+            <a href="./practice/working.zip" download aria-label="Download working sample ZIP">ZIP</a>
+          </div>
+        </li>
+        <li>
+          <h3>Mixed results</h3>
+          <p>Four previews selected by default, two small previews you can choose, and two photos with missing previews.</p>
+          <div class="sample-actions">
+            <a href="./recovery?sample=mixed">Open mixed sample</a>
+            <a href="./practice/mixed.zip" download aria-label="Download mixed sample ZIP">ZIP</a>
+          </div>
+        </li>
+        <li>
+          <h3>Unreadable catalog</h3>
+          <p>The app reports that it could not open the catalog. Try another copy of the catalog if you see this with your own files.</p>
+          <div class="sample-actions">
+            <a href="./recovery?sample=unreadable-catalog">Open unreadable catalog sample</a>
+            <a href="./practice/unreadable-catalog.zip" download aria-label="Download unreadable catalog sample ZIP">ZIP</a>
+          </div>
+        </li>
+        <li>
+          <h3>Unrecognized preview layout</h3>
+          <p>The app finds a preview file in a layout it cannot read and offers no JPEGs to save.</p>
+          <div class="sample-actions">
+            <a href="./recovery?sample=unrecognized-layout">Open unrecognized layout sample</a>
+            <a href="./practice/unrecognized-layout.zip" download aria-label="Download unrecognized layout sample ZIP">ZIP</a>
+          </div>
+        </li>
+      </ul>
+      <p class="fine">The catalogs and metadata are synthetic. <a href="./practice/credits.txt">Sample photo credits</a>.</p>
+    </section>
+
+    <section id="guide" aria-labelledby="guide-title">
+      <h2 id="guide-title">Recovery guide</h2>
+      <ol class="steps">
+        <li>
+          <h3>Find the catalog and its preview cache</h3>
+          <p>
+            Close Lightroom Classic before working from a backup. Keep any catalog
+            <code>-wal</code> and <code>-shm</code> files beside the catalog if your backup has them.
+          </p>
+          <figure class="folder">
+            <figcaption>Here is what to look for in the folder you choose</figcaption>
+            <ul>
+              <li><strong>Lightroom backup</strong><span>Choose this folder</span>
+                <ul>
+                  <li><code>Travel.lrcat</code><span>Lightroom Classic catalog</span></li>
+                  <li><code>Travel Previews.lrdata</code><span>Preview cache with <code>previews.db</code> and the preview files</span></li>
+                </ul>
+              </li>
+            </ul>
+          </figure>
+        </li>
+        <li>
+          <h3>Choose the folder and scan</h3>
+          <p>
+            Open the recovery page and choose the folder that holds your catalog. The app looks
+            for a nearby preview cache. If your cache lives elsewhere, choose it separately.
+            Select <strong>Scan this catalog</strong>.
+          </p>
+          <figure class="guide-shot">
+            <img src="./guide/choose-folder.png" width="723" height="331" loading="lazy" alt="Recovery source screen with a Choose folder button above Scan this catalog">
+            <figcaption>The source screen before choosing a folder.</figcaption>
+          </figure>
+        </li>
+        <li>
+          <h3>Review the previews</h3>
+          <p>
+            Preview quality depends on what Lightroom built and what the cache still holds.
+            A larger preview can be more useful, and some photos may have only a small preview
+            or no preview at all. Small previews start unchecked. A recovered JPEG cannot recover
+            original raw data or detail that never made it into the preview.
+          </p>
+          <figure class="guide-shot">
+            <img src="./guide/unrecognized-layout.png" width="673" height="272" loading="lazy" alt="Scan details showing that the preview index was read, the cache layout is unknown, and one file matched no known layout">
+            <figcaption>Scan details from the unrecognized layout sample.</figcaption>
+          </figure>
+        </li>
+        <li>
+          <h3>Save to a separate folder</h3>
+          <p>
+            Check the photos you want and choose an empty destination outside your backup.
+            Review the proposed filenames before saving. After the save, use the receipt or
+            File Explorer to find the JPEGs and reports that were written.
+          </p>
+        </li>
+      </ol>
+    </section>
+
+    <section id="requirements" aria-labelledby="requirements-title">
+      <h2 id="requirements-title">Windows and browser requirements</h2>
+      <p>
+        Use the HTTPS page in Chrome or Edge on Windows. The app needs the browser’s local
+        folder picker and origin-private storage. Your browser may ask for permission
+        to read the backup and to write to the destination.
+      </p>
+      <p>
+        If the browser cannot open folders or you prefer to work offline,
+        <a href="https://github.com/marcd35/lrsalvage#quick-start">use the lrsalvage CLI</a>.
+      </p>
+    </section>
+
+    <section id="troubleshooting" aria-labelledby="troubleshooting-title">
+      <h2 id="troubleshooting-title">Troubleshooting</h2>
+      <dl>
+        <dt>The catalog cannot be read</dt>
+        <dd>Try another intact backup. Check whether the original backup includes catalog sidecars.</dd>
+        <dt>The cache is missing or unreadable</dt>
+        <dd>Choose the matching <code>Previews.lrdata</code> folder. Check for <code>previews.db</code> inside it.</dd>
+        <dt>There are fewer previews than photos</dt>
+        <dd>Check the scan details for missing files or an unfamiliar cache layout. If you have another backup, try its catalog and matching cache.</dd>
+      </dl>
+      <h3>Check a Lightroom Classic version</h3>
+      <p>
+        Use a fresh scratch catalog and redistributable test photos you still have. Record the exact
+        Lightroom Classic build. Choose a standard preview size and quality in Catalog Settings,
+        import with <strong>Build Previews: Standard</strong>, and wait for rendering to finish.
+        Close Lightroom and scan that scratch catalog and its matching cache. Record the recovered
+        previews and their dimensions alongside the app build. Repeat in a new catalog for a 1:1 check.
+        <a href="https://github.com/marcd35/lrsalvage/blob/main/docs/agents/rendering-a-test-cache.md">Full Adobe-rendered cache recipe</a>.
+      </p>
+    </section>
+  </main>
+  <footer>
+    <p data-build-identity aria-label="Build versions">Build versions loading…</p>
+    <p><a href="https://github.com/marcd35/lrsalvage">lrsalvage on GitHub</a></p>
+  </footer>
+</body>
+</html>

@@ -3,6 +3,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>lrsalvage — recover the previews Lightroom kept</title>
+<script type="module" src="./build-identity.js"></script>
 <!--
   The app's page (`0.1.0`, ADR 0012 D10). It must be served with
   `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy:
@@ -180,6 +181,14 @@
     cursor: pointer;
     color: var(--muted);
   }
+  footer {
+    margin-top: 2rem;
+    color: var(--muted);
+    font-size: 0.875rem;
+  }
+  main a {
+    color: var(--accent);
+  }
 </style>
 
 <link rel="stylesheet" href="./review.css">
@@ -198,6 +207,7 @@
   <section id="gate" class="step" hidden>
     <h2>This browser cannot run a recovery</h2>
     <p id="gate-message"></p>
+    <p><a href="https://github.com/marcd35/lrsalvage#quick-start">Use the lrsalvage CLI</a></p>
   </section>
 
   <section id="source" class="step" hidden>
@@ -299,6 +309,10 @@
       <button id="restart" type="button">Start over</button>
     </div>
   </section>
+  <footer>
+    <p><a href="./">Recovery guide and samples</a></p>
+    <p data-build-identity aria-label="Build versions">Build versions loading…</p>
+  </footer>
 </main>
 
 <dialog id="photo-dialog" aria-labelledby="photo-dialog-title" aria-describedby="photo-dialog-size">

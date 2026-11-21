@@ -18,13 +18,13 @@ import {
   start,
   withMount,
 } from './app.js';
+import { loadPractice } from './practice.js';
 
 import { mountReview } from './review.js';
 
 const NO_PICKER =
-  'This browser cannot open a folder. The recovery path needs the File System ' +
-  'Access API, which Firefox and Safari do not ship. The command-line tool does ' +
-  'the same job and runs anywhere: see the README’s “Recover from the terminal”.';
+  'This browser cannot open folders for recovery. Use Chrome or Edge on Windows, ' +
+  'or use the command-line tool.';
 
 const NO_ISOLATION =
   'This page is not served the way it has to be. It needs Cross-Origin-Opener-Policy ' +
@@ -93,7 +93,9 @@ export function mount(document) {
   }
 
   showOnly(source);
-  scanButton.addEventListener('click', () => {
+  scanButton.addEventListener('click', scanChosenCatalog);
+
+  function scanChosenCatalog() {
     const chosen = chosenCatalog();
     if (!chosen) return;
     state.catalog = chosen;
@@ -105,7 +107,7 @@ export function mount(document) {
       cache: state.cache,
     });
     void runScan(state.source);
-  });
+  }
   pickCatalogue.addEventListener('click', () => void chooseCatalogue());
   pickCache.addEventListener('click', () => void chooseCache());
   stopButton.addEventListener('click', () => {
@@ -134,7 +136,25 @@ export function mount(document) {
     pickCatalogue.focus();
   });
 
+  const practice = new URL(document.URL).searchParams.get('sample');
+  if (practice !== null) void openPractice(practice);
+
   // -- picking ------------------------------------------------------------
+
+  async function openPractice(name) {
+    showOnly(scanning);
+    stage.textContent = 'Loading the practice catalog…';
+    stopButton.hidden = true;
+    try {
+      const handle = await loadPractice(name);
+      await acceptCatalogue(handle);
+      if (!chosenCatalog()) throw new Error('The practice folder has no catalog.');
+      scanChosenCatalog();
+    } catch (error) {
+      showOnly(source);
+      say(pickerError, `The practice catalog could not open. ${error.message}`);
+    }
+  }
 
   async function chooseCatalogue() {
     pickerError.hidden = true;
@@ -147,8 +167,11 @@ export function mount(document) {
       say(pickerError, `This browser refused the folder: ${answer.refused.message}`);
       return;
     }
+    await acceptCatalogue(answer.handle);
+  }
 
-    const found = await folderSource(answer.handle);
+  async function acceptCatalogue(handle) {
+    const found = await folderSource(handle);
     if (found.catalogs.length === 0) {
       say(
         pickerError,
@@ -158,7 +181,7 @@ export function mount(document) {
       return;
     }
 
-    state.handle = answer.handle;
+    state.handle = handle;
     state.cacheHandle = null;
     state.catalog = found.catalog;
     state.cache = found.cache;
@@ -361,8 +384,8 @@ export function mount(document) {
     if (report.cache.layout === 'unknown') {
       reasons.push(
         `The preview folder holds ${counted(stats.unrecognised)} files that look like ` +
-          'previews and match no layout this tool knows. That is a Lightroom version ' +
-          'whose cache shape changed, and it is worth reporting.',
+        'previews and match no layout this tool knows. Check that you chose the ' +
+          'matching preview folder. If it matches your catalog, you can report the layout.',
       );
     }
     if (stats.images === 0) {

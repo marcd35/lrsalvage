@@ -21,3 +21,6 @@ desktop.ini
 # `scripts/browser-app.sh`).
 /crates/lrsalvage-web/web/pkg/
 /crates/lrsalvage-app/web/pkg/
+
+# Wrangler's local Pages state
+/.wrangler/

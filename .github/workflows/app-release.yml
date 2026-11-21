@@ -1,0 +1,116 @@
+name: browser app
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["app-0.1.0"]
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.100.0
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - name: Install wasm-bindgen
+        run: |
+          version=$(python3 -c 'import tomllib; print(next(p["version"] for p in tomllib.load(open("Cargo.lock", "rb"))["package"] if p["name"] == "wasm-bindgen"))')
+          cargo install --locked wasm-bindgen-cli --version "$version"
+      - name: Build the static artifact
+        env:
+          APP_RELEASE_TAG: ${{ github.event_name == 'push' && github.ref_name || '' }}
+        run: |
+          args=()
+          if [ -n "$APP_RELEASE_TAG" ]; then
+            args+=(--tag "$APP_RELEASE_TAG")
+          fi
+          python3 scripts/build-browser-app.py --out target/app-static "${args[@]}"
+          name=$(python3 -c 'import json; b=json.load(open("target/app-static/build.json")); print(f"lrsalvage-app-{b['"'"'app'"'"']}-{b['"'"'commit'"'"'][:12]}")')
+          mkdir -p target/app-archive
+          (cd target/app-static && zip -q -r "../app-archive/$name.zip" .)
+          (cd target/app-archive && sha256sum "$name.zip" > SHA256SUMS)
+      - uses: actions/upload-artifact@v7
+        with:
+          name: browser-app-static
+          path: target/app-archive/
+          if-no-files-found: error
+          retention-days: 90
+
+  deploy:
+    needs: build
+    if: >-
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'push' && github.ref == 'refs/tags/app-0.1.0')
+    runs-on: ubuntu-latest
+    environment: ${{ github.event_name == 'push' && 'app-production' || 'app-preview' }}
+    concurrency:
+      group: ${{ github.event_name == 'push' && 'browser-app-production' || format('browser-app-preview-{0}', github.sha) }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v8
+        with:
+          name: browser-app-static
+          path: artifact
+      - name: Unpack the exact archived site
+        run: |
+          cd artifact
+          sha256sum --check --strict SHA256SUMS
+          unzip -q ./*.zip -d ../app-static
+      - name: Confirm the Pages project and deployment branch
+        id: target
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          PAGES_PROJECT: ${{ vars.CLOUDFLARE_PAGES_PROJECT }}
+        run: |
+          if [[ ! "$CLOUDFLARE_ACCOUNT_ID" =~ ^[0-9a-f]{32}$ ||
+                -z "$CLOUDFLARE_API_TOKEN" ||
+                ! "$PAGES_PROJECT" =~ ^[a-z0-9][a-z0-9-]*$ ]]; then
+            printf '%s\n' 'Configure the Pages project, account ID, and API token in the deployment environment.' >&2
+            exit 1
+          fi
+          project=$(curl -fsS --max-time 20 \
+            --header "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/pages/projects/$PAGES_PROJECT")
+          if ! jq -e '.success and .result.production_branch == "main" and .result.source == null' \
+              >/dev/null <<< "$project"; then
+            printf '%s\n' 'The Pages project must use Direct Upload with production branch main.' >&2
+            exit 1
+          fi
+          if [[ "$GITHUB_EVENT_NAME" == push && "$GITHUB_REF" == refs/tags/app-0.1.0 ]]; then
+            printf '%s\n' 'branch=main' >> "$GITHUB_OUTPUT"
+          elif [[ "$GITHUB_EVENT_NAME" == workflow_dispatch && "$GITHUB_REF" == refs/heads/main ]]; then
+            printf 'branch=preview-%s\n' "$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+          else
+            exit 1
+          fi
+      - name: Deploy the static site
+        id: pages
+        uses: cloudflare/wrangler-action@953926a2e2182532811c01a25e53647d93bf07c0 # v4
+        with:
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          wranglerVersion: "4.166.0"
+          command: >-
+            pages deploy app-static --project-name=${{ vars.CLOUDFLARE_PAGES_PROJECT }}
+            --branch=${{ steps.target.outputs.branch }} --commit-hash=${{ github.sha }} --commit-dirty=false
+      - name: Verify and record the deployment
+        env:
+          PAGES_URL: ${{ steps.pages.outputs.deployment-url }}
+        run: |
+          python3 scripts/verify-browser-deployment.py "$PAGES_URL" app-static |
+            tee -a "$GITHUB_STEP_SUMMARY"

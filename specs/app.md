@@ -110,10 +110,11 @@ reverse — so the seam is registered one way for both pages.
   those images as `original-present`. The app is stateless between runs, so the
   recheck pays one more copy; that is the trade for an entry that is one function
   in and one report out (`#149`, DEC-S7).
-- **No framework and no build step.** Plain HTML, CSS and ES modules, served
-  cross-origin isolated because the bridge's `SharedArrayBuffer` needs it. A
-  browser without `showDirectoryPicker` is told so, and pointed at the CLI, before
-  it is offered anything.
+- **No framework or JavaScript bundler.** The page uses plain HTML, CSS and
+  ES modules. The static build packages them with the compiled WebAssembly and
+  practice files. Serve the page cross-origin isolated for the bridge's
+  `SharedArrayBuffer`. The browser capability check directs users to the CLI
+  when the folder picker is unavailable.
 - **This slice's page is its own design; porting #117's prototype is a later
   decision, not an oversight.** #117 carries a prototype — one self-contained HTML
   file, recorded by ADR 0012 — and it was written for the **Windows executable**
@@ -154,6 +155,26 @@ reverse — so the seam is registered one way for both pages.
   review session. Dismissing the enlarged view restores focus to the same
   photo or pane control when it can receive focus. Otherwise focus moves to
   search.
+
+## Practice and distribution
+
+The guide opens the recovery page with a named practice case. A same-origin
+manifest identifies the bundled files and their byte revision. The app
+installs those files in a practice-only area of origin-private storage, then
+hands that directory to the same folder inspection and scan as a picked
+backup. A lock serializes installation of each revision. Once installed, its
+files stay available to other tabs using the same sample.
+
+The shared fixture builder generates the four downloadable ZIPs from
+synthetic catalogs and redistributable JPEGs. The ZIP and in-app route for each
+case use the same catalog and cache. The native app scan checks each case
+during packaging.
+
+[The static builder](../scripts/build-browser-app.py) packages tracked runtime
+assets, builds the WebAssembly module, and writes the app and core versions and
+checkout identity. [The deployment runbook](../docs/agents/browser-app-deployment.md)
+records how the same archived bytes reach Cloudflare Pages and how to check
+the deployed candidate.
 
 ## Testing
 
