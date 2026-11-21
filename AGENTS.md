@@ -108,6 +108,14 @@ for synthetic fixtures, the Chromium product check and hosted release evidence.
   "every file" means it was run over the whole tree, not a sample. It measures
   what the reader also measures, so `lrsalvage-cli`'s `tests/probe.rs` holds it
   to `scan --json` on a vault with a portrait level.
+- **`scripts/worktree-hygiene.sh` reports what a checkout has accumulated, and
+  is not a gate.** One `git worktree list` and one `gh pr list`, no directory
+  walk, so it answers in a second: every worktree with its branch and dirty
+  count, every local and remote branch with the pull request that carries it,
+  and the counts that decide a deletion. `--sizes` buys the tree sizes that are
+  not worth their cost by default — measuring walks every file under a
+  worktree's `target/`, so each tree is capped and a capped one reads
+  `unmeasured`.
 - **`typos` and `cargo deny` are the two gates with their own policy files.**
   Add domain words to `typos.toml`, never blanket-exclude prose. `deny.toml` is
   the licence and advisory policy: a dependency that trips its allow-list is a
@@ -129,6 +137,11 @@ for synthetic fixtures, the Chromium product check and hosted release evidence.
   pattern and the guard outside this repo enforces it at PR time — where
   `Closes #<issue>` closes the ticket the name carries, and `Refs #<issue>`
   answers a tracker's slice without closing it.
+- **Deleting a branch turns on its pull request, not on `git branch --merged`.**
+  The repository squash-merges, so a landed branch's tip is never an ancestor of
+  `main` and both `git` answers under-report. `scripts/worktree-hygiene.sh`
+  prints the join, and an `open` pull request outranks a merged one on a reused
+  branch name.
 - **`.githooks/pre-commit` runs the cheap gates on every commit** — `fmt`,
   `shell` and `typos` through `scripts/check.sh`, which is the only place they
   are written. A fresh clone installs it with
