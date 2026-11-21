@@ -6,9 +6,8 @@
 //! compares its report with the one below — so the browser is held to the
 //! desktop at the *entry*, not only at the module under it.
 //!
-//! Six vaults, because #117's user stories 4 and 5 are about telling the ways a
-//! scan can come back empty apart, and one vault cannot hold all six. Each is
-//! named for the answer it has to produce:
+//! The scan cases show the ways one catalog can be read or come back empty.
+//! The review case covers #167 using a catalog with decodable JPEG bytes.
 //!
 //! | vault | what the page must say |
 //! |---|---|
@@ -19,9 +18,10 @@
 //! | `no-payloads` | an index, a row, and no payload file |
 //! | `unknown-layout` | payload-like files matching no shape |
 //! | `not-a-catalog` | a file that is not a catalog at all |
+//! | `review` | decodable previews, a decode failure and missing previews |
 //!
-//! Six of the seven are compared with the page's report field by field. The
-//! seventh, `originals`, is compared only after the page has been handed the
+//! The cases are compared with the page's report field by field. The
+//! `originals` case is compared only after the page has been handed the
 //! folder — before that the two targets *must* disagree, and
 //! `lrsalvage_app::vault::Compare` is where that is said.
 //!
@@ -32,7 +32,8 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use lrsalvage_app::vault::{copy_tree, vaults};
+use lrsalvage_app::vault::{Compare, copy_tree, vaults};
+use lrsalvage_fixtures::review;
 use serde_json::json;
 
 fn main() {
@@ -46,7 +47,9 @@ fn main() {
     fs::create_dir_all(&out).expect("create the output directory");
 
     let mut reported = Vec::new();
-    for (name, compare, build) in vaults() {
+    let mut cases = vaults();
+    cases.push(("review", Compare::Full, review::vault));
+    for (name, compare, build) in cases {
         let root = out.join(name);
         let _ = fs::remove_dir_all(&root);
         fs::create_dir_all(&root).expect("create a vault directory");

@@ -23,7 +23,12 @@
 use serde_json::{Value, json};
 use wasm_bindgen::prelude::*;
 
+use std::cell::RefCell;
 use std::path::Path;
+
+thread_local! {
+    static REVIEW: RefCell<crate::Review> = RefCell::new(crate::Review::default());
+}
 
 use lrsalvage_core::plan::{Control, Progress};
 
@@ -130,10 +135,34 @@ pub fn scan(catalog: &str, cache: &str) -> String {
         }
     };
 
-    match crate::scan(Path::new(catalog), Path::new(cache), &mut progress) {
-        Ok(report) => report.to_string(),
+    REVIEW.with(|review| review.replace(crate::Review::default()));
+    match crate::scan_for_review(Path::new(catalog), Path::new(cache), &mut progress) {
+        Ok(result) => {
+            REVIEW.with(|review| review.replace(result.review));
+            result.report.to_string()
+        }
         Err(failure) => json!({ "ok": false, "problem": failure.to_json() }).to_string(),
     }
+}
+
+/// Release the catalog and index store before handing the plan to review.
+#[wasm_bindgen]
+pub fn pause_store() -> Result<(), JsValue> {
+    lrsalvage_core::fs::wasm::pause_store().map_err(|error| JsValue::from_str(&error.to_string()))
+}
+
+/// Read the scan's certified payload choice by its opaque catalog ID.
+#[wasm_bindgen]
+pub fn read_preview(id: &str) -> Result<Vec<u8>, JsValue> {
+    let id = id
+        .parse()
+        .map_err(|_| JsValue::from_str("Invalid photo ID."))?;
+    REVIEW.with(|review| {
+        review
+            .borrow()
+            .read(id)
+            .map_err(|message| JsValue::from_str(&message))
+    })
 }
 
 /// Register the mounts and begin installing the store. See [`install`].

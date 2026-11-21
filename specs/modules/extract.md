@@ -24,7 +24,8 @@ references:
 Write the items a plan selected: assemble each output (payload bytes, plus the
 metadata segments `exif` builds), place it at the planned path atomically, verify
 what is already there before touching it, and return one outcome per attempt with
-its byte count, SHA-256 and note.
+its byte count, SHA-256 and note. Review uses the same read-only payload
+reader without a destination.
 
 ## Boundary
 
@@ -48,7 +49,9 @@ half-perform. It decides nothing about which image deserves recovery — that is
   dimensions happen to match", and never the largest as a fallback. Both are
   re-certified from the bytes actually read (`SOI` … `FF D9`, `SOF` dimensions
   equal to the item's), so a cache edited between `scan` and `extract` fails
-  loudly instead of writing something no plan ever approved.
+  loudly instead of writing something no plan ever approved. `read_preview`
+  returns the certified bytes and their EXIF orientation to both the writer
+  and browser review.
 - **An existing destination is replaced only when it proves it is ours**: its
   EXIF carries our `Software` marker (`lrsalvage <version>`), the file is a
   complete JPEG, and its `SOF` dimensions match the planned item. Anything else —

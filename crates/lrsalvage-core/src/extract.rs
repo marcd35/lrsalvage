@@ -471,8 +471,55 @@ fn verifies_as_ours(bytes: &[u8], expected: (u32, u32)) -> bool {
             .is_some_and(|software| software.starts_with(exif::SOFTWARE_PREFIX))
 }
 
+/// The certified preview JPEG and the orientation its own EXIF records.
+pub struct Preview {
+    pub bytes: Vec<u8>,
+    pub orientation: Option<Orientation>,
+}
+
+/// Read the exact preview selected by the plan, re-certifying the current bytes.
+///
+/// This read-only operation is shared by review and extraction. Below-floor
+/// items still identify a preview. A caller must separately decide what to save.
+pub fn read_preview(item: &PlanItem) -> Result<Preview> {
+    let payload = item.payload.as_ref().ok_or(Error::PreviewUnavailable)?;
+    let file = fs::read(payload.path()).at(payload.path())?;
+    let level = match payload {
+        Payload::LevelFile { .. } => file.as_slice(),
+        Payload::Container {
+            path,
+            level: Some(name),
+        } => lrprev::chunk_data(&file, name)?.ok_or_else(|| Error::PreviewLevelMissing {
+            path: path.clone(),
+            level: name.clone(),
+        })?,
+        Payload::Container { level: None, .. } => return Err(Error::PreviewUnavailable),
+    };
+
+    let certified = jpeg::certify(level)?;
+    if !certified.complete {
+        return Err(Error::JpegMarkersMissing);
+    }
+    let expected = item
+        .width
+        .zip(item.height)
+        .ok_or(Error::PreviewUnavailable)?;
+    if certified.dimensions != expected {
+        return Err(Error::PreviewDimensionsChanged {
+            expected,
+            actual: certified.dimensions,
+        });
+    }
+    let orientation = exif::orientation(level, &certified.segments);
+    let bytes = match payload {
+        Payload::LevelFile { .. } => file,
+        Payload::Container { .. } => level.to_vec(),
+    };
+    Ok(Preview { bytes, orientation })
+}
+
 fn extract_one(item: &PlanItem, options: &ExtractOptions) -> Outcome {
-    let (Some(payload), Some(output)) = (item.payload.as_ref(), item.output.as_ref()) else {
+    let Some(output) = item.output.as_ref().filter(|_| item.payload.is_some()) else {
         return failed(
             item.output.clone().unwrap_or_default(),
             "plan item has no payload or no output path",
@@ -504,64 +551,10 @@ fn extract_one(item: &PlanItem, options: &ExtractOptions) -> Outcome {
         }
     }
 
-    let file = match fs::read(payload.path()) {
-        Ok(bytes) => bytes,
-        Err(e) => {
-            return failed(output.clone(), format!("unreadable payload: {e}"));
-        }
+    let mut bytes = match read_preview(item) {
+        Ok(preview) => preview.bytes,
+        Err(error) => return failed(output.clone(), error.to_string()),
     };
-
-    // The plan's choice is the choice: a level file *is* the level, and a
-    // container contributes the one chunk that was certified — never "the chunk
-    // whose dimensions happen to match", and never the largest as a fallback.
-    let level = match payload {
-        Payload::LevelFile { .. } => file.as_slice(),
-        Payload::Container {
-            level: Some(name), ..
-        } => match lrprev::chunk_data(&file, name) {
-            Ok(Some(data)) => data,
-            Ok(None) => {
-                return failed(
-                    output.clone(),
-                    format!("the payload no longer carries the certified `{name}` chunk"),
-                );
-            }
-            Err(e) => return failed(output.clone(), format!("not a usable .lrprev: {e}")),
-        },
-        Payload::Container { level: None, .. } => {
-            return failed(
-                output.clone(),
-                "plan item names no certified level to write".to_string(),
-            );
-        }
-    };
-
-    // Re-certify the bytes actually read against the item's dimensions, so a
-    // cache edited between `scan` and `extract` fails loudly instead of writing
-    // something no plan ever approved.
-    match jpeg::certify(level) {
-        Ok(certified) if certified.complete && certified.dimensions == expected => {}
-        Ok(certified) if !certified.complete => {
-            return failed(
-                output.clone(),
-                "level does not end with an EOI marker".to_string(),
-            );
-        }
-        Ok(certified) => {
-            let (width, height) = certified.dimensions;
-            let (expected_width, expected_height) = expected;
-            return failed(
-                output.clone(),
-                format!(
-                    "payload is {width}x{height} but the plan certified \
-                     {expected_width}x{expected_height}"
-                ),
-            );
-        }
-        Err(e) => return failed(output.clone(), format!("not a JPEG preview: {e}")),
-    }
-
-    let mut bytes = level.to_vec();
     let mut notes: Vec<String> = Vec::new();
     if options.write_metadata {
         let xmp = item

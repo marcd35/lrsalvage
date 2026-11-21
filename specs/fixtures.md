@@ -457,3 +457,14 @@ which medium proves each promise, and where the bytes come from.
   cross-reference from each state it leaves unmeasured to the row that pins the
   reader's behaviour in it — M3, M4, X1, X2 and M10f — and to M13 as the
   `unverified` one.
+
+
+## Browser review
+
+`lrsalvage_fixtures::review::vault` composes a synthetic catalog for the product
+page's browser test. The JPEG raster patterns are generated artwork with known
+dimensions. The vault includes both sides of the 640 px floor, a catalog-rotated
+portrait, an index dimension disagreement, a recoverable preview with no
+recorded folder, and catalog entries with missing previews. It also includes a
+JPEG that passes structural certification but has no decodable image data.
+These inputs assert the app's review behavior.

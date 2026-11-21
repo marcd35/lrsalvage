@@ -19,6 +19,8 @@ import {
   withMount,
 } from './app.js';
 
+import { mountReview } from './review.js';
+
 const NO_PICKER =
   'This browser cannot open a folder. The recovery path needs the File System ' +
   'Access API, which Firefox and Safari do not ship. The command-line tool does ' +
@@ -61,6 +63,8 @@ export function mount(document) {
   const roots = el('roots');
   const rootsSection = el('roots-section');
   const restart = el('restart');
+  const resultTitle = el('result-title');
+  const review = mountReview(document);
 
   let state = {
     handle: null,
@@ -71,6 +75,13 @@ export function mount(document) {
     source: null,
   };
   let running = null;
+  let completed = null;
+
+  function clearReview() {
+    review.clear();
+    completed?.close();
+    completed = null;
+  }
 
   const showed = capability();
   if (!showed.ok) {
@@ -105,6 +116,7 @@ export function mount(document) {
     bar.removeAttribute('value');
   });
   restart.addEventListener('click', () => {
+    clearReview();
     state = {
       handle: null,
       catalog: null,
@@ -119,6 +131,7 @@ export function mount(document) {
     pickCache.hidden = true;
     pickerError.hidden = true;
     showOnly(source);
+    pickCatalogue.focus();
   });
 
   // -- picking ------------------------------------------------------------
@@ -224,6 +237,7 @@ export function mount(document) {
   async function runScan(chosen) {
     state.source = chosen;
     pickerError.hidden = true;
+    clearReview();
     showOnly(scanning);
     bar.removeAttribute('value');
     stage.textContent = 'Preparing this browser’s storage…';
@@ -258,10 +272,11 @@ export function mount(document) {
       },
     };
 
-    running = start(chosen, ui);
+    const scan = start(chosen, ui, { review: true });
+    running = scan;
     let report;
     try {
-      report = await running.done;
+      report = await scan.done;
     } catch (error) {
       running = null;
       showOnly(source);
@@ -280,6 +295,11 @@ export function mount(document) {
     }
     render(report, chosen);
     showOnly(result);
+    if (report.ok) {
+      completed = scan;
+      review.show(report.photos, scan.preview);
+    }
+    resultTitle.focus();
   }
 
   // -- results ------------------------------------------------------------
@@ -290,6 +310,8 @@ export function mount(document) {
     checked.replaceChildren();
     roots.replaceChildren();
 
+    resultTitle.textContent = report.ok ? '3. Review previews' : 'The scan could not finish';
+    el('scan-details').hidden = !report.ok;
     if (!report.ok) {
       headline.append(
         document.createTextNode(failureSentence(report.problem.stage, report.problem.kind)),
@@ -306,13 +328,12 @@ export function mount(document) {
     }
 
     const stats = report.stats;
+    const previewCount = report.photos.filter((photo) => photo.preview).length;
     headline.append(
       document.createTextNode(
-        stats.recoverable > 0
-          ? `${counted(stats.recoverable)} of ${counted(stats.images)} images in this catalog ` +
-              'have a preview this tool can recover.'
-          : `No image in this catalog has a preview this tool can recover, out of ` +
-              `${counted(stats.images)}.`,
+        previewCount > 0
+          ? `${counted(previewCount)} of ${counted(stats.images)} photos have a preview to review.`
+          : `No previews found for the ${counted(stats.images)} photos in this catalog.`,
       ),
     );
 
@@ -333,7 +354,9 @@ export function mount(document) {
       );
     }
     if (report.cache.layout === 'none') {
-      reasons.push('The preview folder holds an index and no preview files at all.');
+      reasons.push(report.index.present
+        ? 'The preview folder holds an index and no preview files at all.'
+        : 'No preview files were found. If the preview folder lives elsewhere, choose it and scan again.');
     }
     if (report.cache.layout === 'unknown') {
       reasons.push(

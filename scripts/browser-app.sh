@@ -18,6 +18,8 @@
 #      same vault bytes, mounted into origin-private storage.
 #   3. `scripts/drive-browser.mjs` serves both, drives headless Chromium over the
 #      DevTools Protocol and reports every difference.
+#   4. The review case drives index.html after supplying the accepted directory
+#      handle at the picker boundary, including browser-native Escape and focus.
 #
 # What the run proves, and what it cannot: the File System Access *dialog* cannot
 # be answered by any automation we have (measured on Chrome 157.0.8103.79,
@@ -124,9 +126,8 @@ wasm-bindgen \
     target/wasm32-unknown-unknown/debug/lrsalvage_app.wasm
 
 printf '%s\n' '== headless Chromium'
-# The app's harness page, not the product page: the product page's first act is a
-# dialog no automation can answer. No leading slash: `sh` here rewrites an argument
-# that starts with one into a Windows path, and the driver puts it back.
+# The harness page covers scan parity and picker cancellation. No leading slash:
+# `sh` rewrites an argument that starts with one into a Windows path.
 page='crates/lrsalvage-app/web/test.html'
 if [ -n "$chrome" ]; then
     # shellcheck disable=SC2086
@@ -134,4 +135,13 @@ if [ -n "$chrome" ]; then
 else
     # shellcheck disable=SC2086
     node scripts/drive-browser.mjs "$work" --page "$page" $driver_args
+fi
+
+printf '%s\n' '== product preview review'
+if [ -n "$chrome" ]; then
+    # shellcheck disable=SC2086
+    node scripts/drive-browser.mjs "$work" --chrome "$chrome" --check-review $driver_args
+else
+    # shellcheck disable=SC2086
+    node scripts/drive-browser.mjs "$work" --check-review $driver_args
 fi

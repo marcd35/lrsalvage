@@ -156,3 +156,50 @@ fn a_scan_of_a_cache_without_an_index_still_reports_the_payloads() {
     // gives before it is handed the folder.
     assert_eq!(report["roots"][0]["in_reach"], Value::Bool(false));
 }
+
+#[test]
+fn review_reads_only_the_certified_jpeg_for_each_catalog_image() {
+    use lrsalvage_fixtures::review;
+
+    let vault = review::vault().write();
+    let scan = lrsalvage_app::scan_for_review(vault.catalog(), vault.previews(), &mut |_| {
+        Control::Continue
+    })
+    .expect("scan the review vault");
+    let photos = scan.report["photos"].as_array().expect("catalog photos");
+    assert_eq!(photos.len(), 10);
+    let row = |id| photos.iter().find(|photo| photo["id"] == id).unwrap();
+    assert_eq!(row("2")["checked"], true);
+    assert_eq!(row("7")["checked"], false);
+    assert_eq!(row("5")["folder"], Value::Null);
+    assert_eq!(row("9")["status"], "no-cache-entry");
+    assert_eq!(row("4")["declared"], serde_json::json!([720, 500]));
+    assert_eq!(row("4")["size"], serde_json::json!([768, 512]));
+    assert_eq!(scan.review.read(2).unwrap(), review::BOUNDARY);
+    assert!(
+        scan.review.read(7).is_ok(),
+        "a small preview is inspectable"
+    );
+    assert!(
+        scan.review.read(9).is_err(),
+        "a missing preview has no bytes"
+    );
+
+    let portrait = scan.review.read(3).unwrap();
+    let jpeg = lrsalvage_core::jpeg::certify(&portrait).unwrap();
+    assert_eq!(jpeg.dimensions, (800, 512));
+    assert_eq!(
+        lrsalvage_core::exif::orientation(&portrait, &jpeg.segments),
+        Some(lrsalvage_core::model::Orientation::Rotate90),
+    );
+
+    let source = vault
+        .level_files()
+        .iter()
+        .find(|path| path.to_string_lossy().contains("AAAA0002-"))
+        .unwrap();
+    std::fs::write(source, lrsalvage_fixtures::bytes::jpeg(800, 600)).unwrap();
+    let changed = scan.review.read(2).unwrap_err();
+    assert!(changed.contains("800x600"));
+    assert!(changed.contains("640x480"));
+}

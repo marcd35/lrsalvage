@@ -22,7 +22,7 @@
 //! 4. **Scan**: one reported build, stoppable at a unit boundary.
 //!
 //! Nothing is written outside the pool, which is why this slice has no
-//! destination and no refusal to make: `extract` is not called here at all.
+//! destination: review calls only the shared payload reader in `extract`.
 
 use std::path::{Path, PathBuf};
 
@@ -32,6 +32,10 @@ use lrsalvage_core::plan::{Control, Options, Plan, Progress};
 use lrsalvage_core::previews_db::{self, IndexProblem};
 use lrsalvage_core::snapshot::CatalogSnapshot;
 use serde_json::{Value, json};
+
+mod review;
+
+pub use review::Review;
 
 #[cfg(not(target_arch = "wasm32"))]
 pub mod vault;
@@ -140,6 +144,21 @@ pub fn scan(
     cache: &Path,
     progress: &mut dyn FnMut(Progress) -> Control,
 ) -> Result<Value, Failure> {
+    scan_for_review(catalog, cache, progress).map(|completed| completed.report)
+}
+
+/// The scan report and the certified payload choices for the open recovery.
+pub struct ScanResult {
+    pub report: Value,
+    pub review: Review,
+}
+
+/// Run the same scan and retain its preview choices for read-only review.
+pub fn scan_for_review(
+    catalog: &Path,
+    cache: &Path,
+    progress: &mut dyn FnMut(Progress) -> Control,
+) -> Result<ScanResult, Failure> {
     // 1. The catalog and its `-wal`/`-shm`, into the store, checkpointed. One
     //    call: a copy is not something a page can stop halfway through, which is
     //    why the page names this stage instead of drawing a bar for it.
@@ -186,10 +205,16 @@ pub fn scan(
     )
     .map_err(|error| Failure::of(Stage::Scan, &error))?;
 
-    Ok(match built {
-        Some(plan) => report(&plan, &opened.problem, index_present, digests, &catalog_db),
-        None => json!({ "ok": true, "stopped": true }),
-    })
+    let Some(plan) = built else {
+        return Ok(ScanResult {
+            report: json!({ "ok": true, "stopped": true }),
+            review: Review::default(),
+        });
+    };
+    let mut report = report(&plan, &opened.problem, index_present, digests, &catalog_db);
+    let review = Review::new(plan);
+    report["photos"] = review.rows();
+    Ok(ScanResult { report, review })
 }
 
 /// The conditions and counts one finished scan reports.
