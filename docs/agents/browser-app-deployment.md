@@ -94,6 +94,58 @@ time, and the platform does not say any of them out loud:
 No check can answer a native picker — the accepted folder is supplied as the value
 a pick returns, which is the measurement `#149`'s *Testing Decisions* records.
 
+## Verify the writer at release scale
+
+Run the [5,000-file writer check](https://github.com/marcd35/lrsalvage/issues/171)
+from the candidate's clean checkout in PowerShell with Node.js 22 or later:
+
+```powershell
+$candidate = 'https://your-preview.pages.dev/recovery'
+node scripts/check-writer-scale.mjs $candidate target/writer-scale 'internal SSD, NTFS'
+```
+
+Pass the hosted HTTPS `/recovery` URL and an unused work directory on the local
+destination drive. Describe the actual storage in the last argument. Set
+`CHROME` if Chrome is installed outside its default locations. The command
+builds the CLI reference and opens a foreground Chrome session. Follow the
+terminal prompts to pick the catalog, separate preview cache and destination in
+each tab. The command drives Save, Stop and Continue after those picks. Keep the
+Chrome tab visible during each batch.
+
+Generate one reproducible synthetic vault through the shared `Vault` builder.
+Select all 5,000 images in the default mirrored layout. Give each image a
+decodable, distinct JPEG payload and distribute the images across nested folders.
+Use 4,000 previews around 28 KB and 1,000 around 417 KB, the two sizes referenced
+by the [browser spike](../browser-spike.md#3-writing-payloads). Record the actual
+size distribution and total payload bytes. Extract the same vault through the
+CLI from the candidate commit with matching options and capture timestamps
+disabled. Use the CLI output as the reference for both runs.
+
+1. **Uninterrupted run.** Pick a fresh destination and start saving. Observe a
+   rendered saved count above zero and below the batch total while the batch is
+   active. Record elapsed time from Save to the final successful JPEG close and
+   the longest gap between consecutive successful JPEG closes. Compare elapsed
+   time with the 120-second performance target. Let all writes proceed without
+   deliberate holds.
+2. **Stop and continuation run.** Pick another fresh destination. After the
+   page shows a positive saved count, hold all eight active JPEG streams just
+   before their real closes, then click **Stop** and release the holds. Verify
+   that only those paths commit after Stop and that the stopped receipt matches
+   the settled files on disk. Select **Continue saving** in the same tab and
+   verify that writers open only for the remaining paths. Track real writer opens
+   by full relative JPEG path across the run so a byte-identical rewrite fails
+   the check. Record performance from the uninterrupted run because the copied
+   diagnostics can include the pause before continuation in the longest gap.
+
+For both runs, enumerate the actual destination and compare the complete set of
+relative JPEG paths and their SHA-256 hashes to the CLI. Require 5,000 saved
+images, zero write failures, and zero wrong, missing, or extra JPEGs. Reconcile
+the final receipt against the destination. Record the date, tested commit,
+hosted URL, app and core versions, Windows and Chrome versions, destination
+storage, fixture size, counts, correctness verdict, and timings in
+`writer-scale-result.json` in the work directory. Link that result from the app
+release checklist.
+
 ## Configure Pages
 
 Set up a [Cloudflare Pages Direct Upload project](https://developers.cloudflare.com/pages/get-started/direct-upload/)
