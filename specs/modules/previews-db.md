@@ -9,6 +9,7 @@ depends-on:
   - model
   - jpeg
   - fs
+  - error
 references:
   - adr-0002-map-via-previews-db
   - adr-0005-discover-payloads-by-index
@@ -173,3 +174,13 @@ decision.
   `plan`'s `Control` because `plan` depends on this module and never the reverse
   (`specs/architecture.md`, *Module dependency edges*), and this operation stays
   out of the supported seam beside the `sweep` whose only caller it is.
+
+
+## Required index for cache-only recovery
+
+The cache-only entry requires a supported SQLite index. Open a private copy,
+with its SQLite sidecars, and distinguish a missing file, a read failure, and
+a readable database with an unsupported schema. The required entry enumerates
+the distinct positive keys across the three index tables. It uses the same
+address grammar as the cache sweep and never resolves an unsupported key to a
+path. Catalog-backed callers continue to use the degrading entry.

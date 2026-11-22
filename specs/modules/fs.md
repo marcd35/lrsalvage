@@ -379,3 +379,11 @@ with a schema error; and Chromium or Chrome (or `CHROME` pointing at one).
   <destination>`. This slice adds one pragma to the checkpoint path and no other
   native behaviour; the CLI's fixture matrix, the four real-cache families and
   every byte they assert are unchanged.
+
+
+## Required cache inventory
+
+The cache-only scan uses a strict walk. It returns an error if the root or a
+descendant cannot be enumerated. On native targets this differs from the
+catalog-backed walk, which tolerates a failed descendant. The browser bridge
+already reports errors at either depth.

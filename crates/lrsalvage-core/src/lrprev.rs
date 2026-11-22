@@ -64,13 +64,25 @@ impl<'a> Lrprev<'a> {
     /// Walk every chunk. Fails on a bad magic, a truncated chunk, or a
     /// header length smaller than the fixed part.
     pub fn parse(bytes: &'a [u8]) -> Result<Self> {
+        let (container, result) = Self::parse_prefix(bytes);
+        result.map(|()| container)
+    }
+
+    /// Keep chunks whose boundaries were proved before an invalid chunk.
+    /// Cache-only recovery can still certify those JPEGs individually.
+    pub(crate) fn parse_prefix(bytes: &'a [u8]) -> (Self, Result<()>) {
+        let mut chunks = Vec::new();
+        let result = Self::parse_chunks(bytes, &mut chunks);
+        (Self { chunks }, result)
+    }
+
+    fn parse_chunks(bytes: &'a [u8], chunks: &mut Vec<Chunk<'a>>) -> Result<()> {
         if bytes.is_empty() {
             return Err(Error::LrprevHeader(
                 "empty input: a .lrprev file holds at least one chunk".into(),
             ));
         }
 
-        let mut chunks = Vec::new();
         let mut pos = 0usize;
         while pos < bytes.len() {
             let start = pos;
@@ -163,7 +175,7 @@ impl<'a> Lrprev<'a> {
             pos = next;
         }
 
-        Ok(Lrprev { chunks })
+        Ok(())
     }
 
     /// The `header` chunk payload (Lua-like text).

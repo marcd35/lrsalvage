@@ -148,7 +148,13 @@ pub fn list_files(dir: &Path) -> io::Result<Vec<PathBuf>> {
 /// unreadable folder must not hide the payloads next to it. A `root` that cannot
 /// be walked at all is the `Err`.
 pub fn walk_files(root: &Path) -> io::Result<Vec<PathBuf>> {
-    backend::walk_files(root)
+    backend::walk_files(root, false)
+}
+
+/// Return a traversal failure at any depth, so an incomplete inventory cannot
+/// be mistaken for an absence of payload files.
+pub(crate) fn walk_files_strict(root: &Path) -> io::Result<Vec<PathBuf>> {
+    backend::walk_files(root, true)
 }
 
 /// Create `dir` and every missing parent; an existing directory is not an error.

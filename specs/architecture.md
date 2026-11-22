@@ -66,7 +66,7 @@ that contract. The two are not synonyms (`glossary`, *compatibility contract*).
 
 ### Why a list, and not "everything `pub`"
 
-The crate exports `pub mod` for all fourteen modules plus a twelve-name re-export
+The crate exports `pub mod` for fifteen modules plus a twelve-name re-export
 of the data types, and it has no facade wide enough to make a `pub` item
 deliberate: visibility is the default here, not a promise. Three consumers are
 why: `lrsalvage-cli` drives the pipeline, `lrsalvage-fixtures` builds vaults
@@ -102,6 +102,7 @@ field.
 | Item | Tier | Public because |
 |---|---|---|
 | `snapshot::CatalogSnapshot`, `.capture`, `.path` | seam | the stable copy every other opener takes by reference |
+| `cache_recovery::CacheRecovery` (+ fields, `scan`), `Counts`, `Item`, `Status` (+ `as_str`), `Preview` (+ public fields, `read`, `matches`) | seam | the browser's cache-only plan, its outcomes, and the verified payload reader |
 | `catalog::Catalog`, `::from_snapshot`, `::images`, `::xmp`, `::versions`, `::root_folders` | seam | the catalog queries a run begins with, over a snapshot. `root_folders` is the recorded root folders with their image counts — the "last known folder" a front end shows, and a query rather than a derivation of a joined path |
 | `catalog::RootFolder` (+ `path`, `images`) | seam | what `root_folders` hands back |
 | `catalog::CatalogVersions` (+ `db_version`, `crs_version`) | seam | what `versions` hands back; `CacheFacts` carries the same two strings |
@@ -115,17 +116,19 @@ field.
 | `plan::Plan` (+ fields, `build`, `build_reported`, `selected`, `selected_images`), `PlanItem` (+ fields, `long_edge`), `Options`, `Stats`, `CacheFacts`, `Shapes`, `Status` (+ `as_str`), `Payload` (+ `path`), `Tier` (+ `as_str`), `Progress`, `Control` | seam | the plan is the hinge, and a front-end both builds it and reads it. `build_reported` and its two types are how a front end shows a scan moving and stops one: the progress unit and the stop signal are the plan's vocabulary, and a surface that paints every unit is the surface's own cost (`specs/modules/plan.md`) |
 | `plan::Tier::from_long_edge` | convenience | the mapping behind a tier a front-end only ever reads |
 | `extract::extract`, `ExtractOptions`, `Outcome`, `OutcomeStatus` (+ `as_str`), `outcome_summary`, `write_outcomes_csv`, `below_floor` | seam | the writer and what it reports; `extract` is the only module that writes user-visible output |
+| `extract::cache_only_outcomes_csv` | seam | the browser's mode-marked extraction report |
 | `extract::ensure_safe_destination_pending`, `ensure_safe_destination_create`, `ensure_create_outside` | seam | the refusal that must happen before the first write, on the destination and on `.lrcat-data` |
 | `extract::pending_bytes`, `ensure_room`, `Room` (+ `needed`, `available`, `left`, `is_nearly_full`, `nearly_full_note`), `Preflight` | seam | the free-space pre-flight a front-end runs before writing. `pending_bytes` is what the run has left to write (the plan's total less outputs the destination already holds); `ensure_room` answers `Preflight::Fits(Room)` when that fits — `nearly_full_note` says when the destination is left nearly full — or `Preflight::Unmeasured`, and *refuses* through `error::Error::Destination` rather than as a third variant, so a front-end learns no new failure and scripts no new code |
 | `extract::ensure_safe_destination` | convenience | its own doc points at `ensure_safe_destination_create`, which supersedes it |
 | `extract::DESTINATION_NOT_OURS` | not supported | the note text a refusal writes; no caller outside the module |
 | `report::summary`, `item_lines`, `write_csv`, `write_json`, `write_verification`, `write_contact_sheet`, `tiers_json`, `shapes_json` | seam | the surfaces a second front-end prints instead of inventing: the summary, the CSV, the manifest, the verification report and the sheet. The summary takes the run's `Options`, so the bounds it names are the ones the caller applied |
+| `report::cache_csv`, `cache_manifest_json`, `cache_verification_json`, `CacheBatch` (+ fields) | seam | the same three published files for a cache-only run, from `CacheRecovery` and the batch's counts. `CacheBatch` exists because `extract` owns the outcomes and renders through this module: the counts cross as values, and the manifest's three and the verification report's four are one value |
 | `report::escape_csv` | not supported | public so `extract`'s per-file CSV quotes by the same rules, as `report`'s own spec says |
 | `report::mebibytes`, `with_thousands` | convenience | the one home for the human and the exact forms of a count: the terminal summary and the free-space refusal both print through them, so one quantity is not spelled two ways |
 | `masks::Mask` (+ fields), `decode_dat`, `to_png`, `list` | seam | the third command's whole surface: decode a layer, encode it, find the layers |
 | `model::CatalogImage` (+ fields, `output_stem`, `root_display_name`, `relative_output_path`, `relative_output_path_with_suffix`), `CacheEntry`, `Pyramid`, `PyramidLevel`, `XmpMetadata`, `Orientation` (+ `from_catalog_code`, `from_exif`, `exif_value`, `degrees`, `is_upright`) | seam | the data every other seam type is made of |
 | `model::sanitize_component` | not supported | the security boundary `relative_output_path` already applies; the properties test is its only outside caller |
-| `error::Error` (+ variants), `error::Result` | seam | one error type, as the invariants below require, and a front-end matches its variants to decide what to tell a user |
+| `error::Error` (+ variants), `error::Result`, `IndexProblemKind` (+ `as_str`, `message`) | seam | one error type, as the invariants below require, and a front-end matches its variants to decide what to tell a user |
 | `error::IoContext` | convenience | attaches a path when a caller composes its own `io::Error`; no seam call needs it |
 | `fs` (every operation in it) | not supported | the crate's own seam onto a filesystem, reached by six modules — the edge table below is the list — and by no front-end; changing it is a change to the modules that ask it, not to a promise. The one exception is the browser's registration point: on `wasm32` `fs::wasm`'s `install_bridge`, `install_store`, `mount`, `seal`, `reset` and `store_installed` are public, because a page has to install the backend before a run |
 | `jpeg::certify`, `Certified` (+ fields), `Segment` (+ `marker`, `range`, `payload`), `dimensions`, `is_complete`, `is_payload_start` | not supported | the certification the plan already performed; a front-end reads `PlanItem`'s width, `payload_metadata` and `effective_orientation` instead. `lrsalvage-fixtures` and the tests are the outside callers |
@@ -133,7 +136,7 @@ field.
 | `exif::PayloadMetadata` (+ `is_empty`) | seam | it is a `PlanItem` field, and its three flags are what a report says about a payload |
 | `exif::MetadataInput` (+ fields, `with_marker`, `is_empty`), `Injection`, `inject`, `inject_full`, `inject_icc`, `from_catalog`, `from_catalog_with_profile`, `inventory`, `orientation`, `software`, `icc_profile`, `marker`, `SOFTWARE_PREFIX` | not supported | the writer's own parts: `extract` composes them, and the `Software` identity they spell is promised as bytes on disk (`adr-0010-what-0-2-promises`, its item 8), not as a Rust helper |
 | `header::PyramidHeader` (+ fields), `parse` | not supported | no production path calls it: `previews.db` is the authority for sizes, profile and mapping, so the module is documented and unused |
-| `pub mod` × 14 in `lib.rs`, and the twelve-name `pub use` block | — | a module carries the seam items listed above; ten do, and `jpeg`, `lrprev`, `header` and `fs` do not. `cli` is the other module spec in this graph and a consumer, not a `pub mod`. The re-export block is not a second home |
+| `pub mod` × 15 in `lib.rs`, and the twelve-name `pub use` block | — | a module carries the seam items listed above; eleven do, and `jpeg`, `lrprev`, `header` and `fs` do not. `cli` is the other module spec in this graph and a consumer, not a `pub mod`. The re-export block is not a second home |
 
 Two functions are already `pub(crate)` (`snapshot::with_suffix` and
 `snapshot::open_readonly`) and so make no claim at all; they are named here only
@@ -173,6 +176,7 @@ listed for it:
 | `snapshot` | `fs`, `error` |
 | `catalog` | `snapshot`, `model`, `error` |
 | `previews_db` | `snapshot`, `fs`, `model`, `error` |
+| `cache_recovery` | `error`, `fs`, `jpeg`, `lrprev`, `model`, `plan`, `previews_db` |
 | `lrprev` | `jpeg`, `error` |
 | `jpeg` | `fs`, `error` |
 | `header` | `error` |

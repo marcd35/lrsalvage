@@ -154,10 +154,11 @@ async function writeAndLink(destination, name, text, description) {
  * letting the run's own record pass for an observation (`specs/app.md`,
  * *Receipt, reports and diagnostics*).
  */
-async function reconcile(destination, ledger) {
+async function reconcile(destination, ledger, verifyBytes) {
   const entries = [...ledger.values()];
   const planned = new Map(entries.map((entry) => [entry.path.toLowerCase(), entry]));
   const present = new Map();
+  const changed = [];
   try {
     const walk = async (dir, prefix) => {
       for await (const [name, entry] of dir.entries()) {
@@ -169,6 +170,14 @@ async function reconcile(destination, ledger) {
         const found = planned.get(path.toLowerCase());
         if (!found) continue;
         const file = await entry.getFile();
+        if (verifyBytes) {
+          const hash = new Uint8Array(await crypto.subtle.digest('SHA-256', await file.arrayBuffer()));
+          const digest = Array.from(hash, (byte) => byte.toString(16).padStart(2, '0')).join('');
+          if (file.size !== found.bytes || digest !== found.sha256) {
+            changed.push(found.path);
+            continue;
+          }
+        }
         present.set(path.toLowerCase(), { id: found.id, path: found.path, bytes: file.size });
       }
     };
@@ -176,10 +185,24 @@ async function reconcile(destination, ledger) {
   } catch (error) {
     return { ok: false, reason: classify(error), present: [], missing: [] };
   }
+  const changedNames = new Set(changed);
   const missing = entries
-    .filter((entry) => !present.has(entry.path.toLowerCase()))
+    .filter((entry) => !present.has(entry.path.toLowerCase()) && !changedNames.has(entry.path))
     .map((entry) => entry.path);
-  return { ok: true, reason: null, present: [...present.values()], missing };
+  return { ok: true, reason: null, present: [...present.values()], missing, changed };
+}
+
+async function reconcileCache(ledger) {
+  const settled = { ok: true, present: [], missing: [], changed: [] };
+  for (const [target, entries] of Map.groupBy(ledger.values(), (entry) => entry.target)) {
+    const group = new Map(entries.map((entry) => [entry.id, entry]));
+    const result = await reconcile(target.handle, group, true);
+    if (!result.ok) return result;
+    settled.present = settled.present.concat(result.present);
+    settled.missing = settled.missing.concat(result.missing);
+    settled.changed = settled.changed.concat(result.changed);
+  }
+  return settled;
 }
 
 export function mountExport(document) {
@@ -196,10 +219,10 @@ export function mountExport(document) {
   const receipt = mountReceipt(document, { saveVerification });
   let run;
 
-  function open(scan, inputs) {
+  function open(scan, inputs, cacheOnly = false) {
     clear();
     run = {
-      scan, inputs, checked: new Set(), layouts: new Map(), targets: [],
+      scan, inputs, cacheOnly, checked: new Set(), layouts: new Map(), targets: [],
       flat: false, target: null, suggestion: null, batch: null, busy: false, photo: null,
       // The run's account: one entry per catalog image this run committed, plus
       // the failures and the reports it wrote. `targets[].saved` caches per
@@ -208,8 +231,10 @@ export function mountExport(document) {
       categorised: new Set(), reconciled: null,
     };
     section.hidden = false;
-    layout.value = 'mirrored';
-    void loadLayout(run, false);
+    el('layout-control').hidden = cacheOnly;
+    el('metadata-total').hidden = cacheOnly;
+    layout.value = cacheOnly ? 'flat' : 'mirrored';
+    void loadLayout(run, cacheOnly);
     const current = run;
     void readDestination().then((handle) => {
       if (run === current && !current.target && !current.suggestion && handle) {
@@ -235,6 +260,7 @@ export function mountExport(document) {
     if (run !== current) return;
     receipt.update({
       ledger: current.ledger,
+      cacheOnly: current.cacheOnly,
       failures: current.failures,
       reportFailures: current.reportFailures,
       reports: current.reports,
@@ -363,7 +389,7 @@ export function mountExport(document) {
     if (previous && !(previous.status === 'skipped' && outcome.status === 'written')) return;
     if (!previous) log.commit(outcome.status);
     current.ledger.set(row.id, {
-      id: row.id, path: row.path, status: outcome.status, bytes: outcome.bytes, target,
+      id: row.id, path: row.path, status: outcome.status, bytes: outcome.bytes, sha256: outcome.sha256, target,
     });
     const at = current.failures.findIndex((entry) => entry.path === row.path);
     if (at >= 0) current.failures.splice(at, 1);
@@ -372,7 +398,7 @@ export function mountExport(document) {
   async function write(current, target, flat, row) {
     const key = row.path.toLowerCase();
     const previous = target.saved.get(key);
-    if (previous?.id === row.id) return previous.outcome;
+    if (!current.cacheOnly && previous?.id === row.id) return previous.outcome;
     try {
       const outcome = await writeNew(target.handle, row.path,
         () => current.scan.exportJpeg(row.id, flat),
@@ -482,7 +508,9 @@ export function mountExport(document) {
     if (run !== current) return;
 
     // The destination's own answer, not the writer's recollection of it.
-    current.reconciled = await reconcile(target.handle, current.ledger);
+    current.reconciled = current.cacheOnly
+      ? await reconcileCache(current.ledger)
+      : await reconcile(target.handle, current.ledger, false);
     log.confirmed(current.reconciled.ok ? current.reconciled.present.length : null);
     if (run !== current) return;
     if (next < pending.length) {
@@ -514,6 +542,17 @@ export function mountExport(document) {
     receipt.focus();
   }
 
+  /** The batch's own account, as the report's `writes` member publishes it. */
+  function writes() {
+    const entries = [...run.ledger.values()];
+    return {
+      saved: entries.filter((entry) => entry.status === 'written').length,
+      already_recovered: entries.filter((entry) => entry.status === 'skipped').length,
+      failed: run.failures.length,
+      confirmed_on_disk: run.reconciled?.ok ? run.reconciled.present.length : null,
+    };
+  }
+
   /**
    * Write the path-free verification report on request, and list it with the rest.
    *
@@ -528,7 +567,10 @@ export function mountExport(document) {
     render();
     status.textContent = 'Writing the report…';
     try {
-      const { text } = await current.scan.verificationReport();
+      // The encoder writes the object, `writes` included: the page measures the
+      // batch and hands the counts over, and never re-serialises a published
+      // file (`specs/modules/report.md`).
+      const { text } = await current.scan.verificationReport(writes());
       const entry = await writeAndLink(
         current.target.handle, 'verification.json', text, DESCRIPTIONS['verification.json']);
       for (const gone of current.reports.filter((report) => report.name.startsWith('verification'))) {
@@ -604,6 +646,10 @@ export function mountExport(document) {
       // The receipt counts this run's photos, so a one-off save is a photo saved
       // even when no batch ever runs (`#117`, user story 27).
       promote(current, row, outcome, target);
+      if (current.cacheOnly) {
+        current.reconciled = await reconcileCache(current.ledger);
+        log.confirmed(current.reconciled.ok ? current.reconciled.present.length : null);
+      }
       updateReceipt(current);
     }, status);
   });

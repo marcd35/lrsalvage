@@ -4,6 +4,32 @@ use std::path::PathBuf;
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 
+/// The reason a cache-only run cannot read its required index.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IndexProblemKind {
+    Missing,
+    Unreadable,
+    Unsupported,
+}
+
+impl IndexProblemKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Missing => "missing",
+            Self::Unreadable => "unreadable",
+            Self::Unsupported => "unsupported",
+        }
+    }
+
+    pub fn message(self) -> &'static str {
+        match self {
+            Self::Missing => "The preview folder is missing previews.db.",
+            Self::Unreadable => "The preview index could not be read.",
+            Self::Unsupported => "This preview index has an unsupported schema.",
+        }
+    }
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("i/o error on {path}: {source}")]
@@ -21,6 +47,14 @@ pub enum Error {
 
     #[error("{path} is not a preview cache directory")]
     NotAPreviewCache { path: PathBuf },
+
+    #[error("preview index at {path}: {}", kind.message())]
+    RequiredPreviewIndex {
+        path: PathBuf,
+        kind: IndexProblemKind,
+        #[source]
+        source: Option<Box<Error>>,
+    },
 
     #[error("preview payload not found: {path}")]
     PayloadMissing { path: PathBuf },

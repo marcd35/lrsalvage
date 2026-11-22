@@ -7,6 +7,7 @@ use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 use serde_json::{Map, Value, json};
 
+use crate::cache_recovery::CacheRecovery;
 use crate::error::{IoContext, Result};
 use crate::fs;
 use crate::model::Orientation;
@@ -17,6 +18,15 @@ use crate::{jpeg, lrprev};
 
 /// The tag a consumer reads to know which facts a verification report holds.
 const VERIFICATION_SCHEMA: &str = "lrsalvage.verification";
+
+/// The tag a consumer reads to know which facts a manifest holds.
+const MANIFEST_SCHEMA: &str = "lrsalvage.manifest";
+
+/// The `mode` every published report carries, so two files are decidable on
+/// their own: a catalog-backed run and a cache-only run measure different
+/// facts and freeze their own member sets (`specs/modules/report.md`).
+const CATALOG_MODE: &str = "catalog";
+const CACHE_ONLY_MODE: &str = "cache-only";
 
 /// One-line-per-status summary for the terminal, naming the bounds the run
 /// actually applied.
@@ -416,9 +426,10 @@ pub fn write_json(plan: &Plan, path: &Path, version: &str) -> Result<()> {
 pub fn manifest_json(plan: &Plan, version: &str, generated_unix: u64) -> String {
     let items: Vec<Value> = plan.items.iter().map(item_json).collect();
     let manifest = json!({
-        "schema": "lrsalvage.manifest",
+        "schema": MANIFEST_SCHEMA,
         "version": version,
         "generated_unix": generated_unix,
+        "mode": CATALOG_MODE,
         "layout": plan.cache.layout.as_str(),
         "db_version": plan.cache.db_version,
         "crs_version": plan.cache.crs_version,
@@ -558,13 +569,14 @@ impl Verification<'_> {
             "schema": VERIFICATION_SCHEMA,
             "version": self.version,
             "generated_unix": self.generated_unix,
+            "mode": CATALOG_MODE,
             // ADR 0004's one word and two verbatim strings, never interpreted.
             "layout": self.layout.as_str(),
             "db_version": self.db_version,
             "crs_version": self.crs_version,
             // The evidence the run never touched, as lowercase hex. Hex carries
             // no path, and an unmeasured digest is `null`, so the key set is the
-            // same eleven members whether or not a run asked
+            // same twelve members whether or not a run asked
             // (`adr-0007-publish-a-verification-report`).
             "source_sha256": self.digests.map(SourceDigests::source),
             "snapshot_sha256": self.digests.map(SourceDigests::snapshot),
@@ -688,6 +700,146 @@ fn verification_shapes(shapes: &Shapes) -> Value {
     }
 
     json!({ "level_file": level_file, "container": container })
+}
+
+/// The batch's own counts, as a cache-only run publishes them.
+///
+/// `report` takes this rather than the app's `Outcome` list because outcomes are
+/// `extract`'s, and `extract` renders through this module — the other direction
+/// would be a cycle. `confirmed_on_disk` is the receipt's reconciliation of the
+/// destination, `None` when the run never reconciled.
+#[derive(Debug, Clone, Copy, Default, serde::Deserialize)]
+pub struct CacheBatch {
+    pub saved: usize,
+    pub already_recovered: usize,
+    pub failed: usize,
+    pub confirmed_on_disk: Option<usize>,
+}
+
+/// `report.csv`, one row per indexed pyramid, for a cache-only run.
+///
+/// A cache, unlike a catalog, has no folder, tier, original path or capture time
+/// to name, so this is its own frozen column set rather than the catalog header
+/// with sixteen empty cells (`specs/modules/report.md`). The filename is the
+/// generated one the plan chose, never an original.
+const CACHE_CSV_HEADER: &str = "mode,filename,status,width,height,fallback,dimension_mismatch";
+
+pub fn cache_csv(recovery: &CacheRecovery) -> String {
+    let mut text = String::with_capacity(CACHE_CSV_HEADER.len() + 2 + recovery.items.len() * 96);
+    let mut line = String::with_capacity(128);
+
+    text.push_str(CACHE_CSV_HEADER);
+    text.push_str("\r\n");
+
+    for item in &recovery.items {
+        line.clear();
+        push_csv_field(&mut line, CACHE_ONLY_MODE);
+        line.push(',');
+        push_csv_field(&mut line, &item.filename);
+        line.push(',');
+        push_csv_field(&mut line, item.status.as_str());
+        line.push(',');
+        let (width, height) = item.preview.as_ref().map_or((None, None), |preview| {
+            (Some(preview.dimensions.0), Some(preview.dimensions.1))
+        });
+        push_csv_field(&mut line, &optional_number(width));
+        line.push(',');
+        push_csv_field(&mut line, &optional_number(height));
+        line.push(',');
+        push_csv_field(&mut line, if item.fallback { "true" } else { "false" });
+        line.push(',');
+        push_csv_field(
+            &mut line,
+            if item.dimension_mismatch {
+                "true"
+            } else {
+                "false"
+            },
+        );
+        line.push_str("\r\n");
+        text.push_str(&line);
+    }
+    text
+}
+
+/// `manifest.json` for a cache-only run, with the host's clock and the batch's
+/// already-serialised outcomes.
+///
+/// The catalog manifest's cache facts (`db_version`, `crs_version`, `stats`,
+/// `shapes`, `items`) describe a catalog and a plan; a cache-only run has neither,
+/// so its frozen member set is named in `specs/modules/report.md` instead.
+pub fn cache_manifest_json(
+    recovery: &CacheRecovery,
+    outputs: &Value,
+    batch: CacheBatch,
+    version: &str,
+    generated_unix: u64,
+) -> String {
+    let manifest = json!({
+        "schema": MANIFEST_SCHEMA,
+        "version": version,
+        "generated_unix": generated_unix,
+        "mode": CACHE_ONLY_MODE,
+        "layout": recovery.layout.as_str(),
+        "scan": cache_scan_json(&recovery.counts),
+        "outputs": outputs,
+        "batch": {
+            "saved": batch.saved,
+            "already_recovered": batch.already_recovered,
+            "failed": batch.failed,
+        },
+    });
+    let mut text = serde_json::to_string_pretty(&manifest)
+        .expect("the cache-only manifest is JSON-serialisable by construction");
+    text.push('\n');
+    text
+}
+
+/// The path-free verification report for a cache-only run.
+///
+/// Aggregate counts and the cache's layout word, and nothing that names a file,
+/// a folder or a payload: no item list, no filename, no digest
+/// (`adr-0007-publish-a-verification-report`).
+pub fn cache_verification_json(
+    recovery: &CacheRecovery,
+    writes: CacheBatch,
+    version: &str,
+    generated_unix: u64,
+) -> String {
+    let report = json!({
+        "schema": VERIFICATION_SCHEMA,
+        "version": version,
+        "generated_unix": generated_unix,
+        "mode": CACHE_ONLY_MODE,
+        "layout": recovery.layout.as_str(),
+        "scan": cache_scan_json(&recovery.counts),
+        "writes": {
+            "saved": writes.saved,
+            "already_recovered": writes.already_recovered,
+            "failed": writes.failed,
+            "confirmed_on_disk": writes.confirmed_on_disk,
+        },
+    });
+    let mut text = serde_json::to_string_pretty(&report)
+        .expect("the cache-only verification report is JSON-serialisable by construction");
+    text.push('\n');
+    text
+}
+
+/// The five counts a cache-only run measured, named for what they count.
+///
+/// They are not the catalog's eighteen `stats` members under other words: a
+/// pyramid with no payload and an image whose payload is missing are different
+/// facts, and one vocabulary for both would be a lie about whichever it was not
+/// measuring (`specs/modules/report.md`).
+fn cache_scan_json(counts: &crate::cache_recovery::Counts) -> Value {
+    json!({
+        "indexed": counts.indexed,
+        "recoverable": counts.recoverable,
+        "missing": counts.missing,
+        "invalid": counts.invalid,
+        "unsupported": counts.unsupported,
+    })
 }
 
 /// Self-contained HTML contact sheet with inlined thumbnails.
@@ -904,6 +1056,140 @@ mod tests {
             stats,
             ..Plan::default()
         }
+    }
+
+    /// A recovery whose items have no payload: the encoders below publish the
+    /// plan's facts, and a `Preview` has no constructor outside a scan.
+    fn cache_recovery_for_reports() -> CacheRecovery {
+        use crate::cache_recovery::{Counts, Item, Status as CacheStatus};
+        CacheRecovery {
+            layout: Layout::Modern,
+            items: vec![
+                Item {
+                    filename: "preview-aa.jpg".to_string(),
+                    status: CacheStatus::Recoverable,
+                    fallback: true,
+                    dimension_mismatch: true,
+                    preview: None,
+                },
+                Item {
+                    filename: "preview-bb.jpg".to_string(),
+                    status: CacheStatus::Missing,
+                    fallback: false,
+                    dimension_mismatch: false,
+                    preview: None,
+                },
+            ],
+            counts: Counts {
+                indexed: 2,
+                recoverable: 1,
+                missing: 1,
+                ..Counts::default()
+            },
+        }
+    }
+
+    #[test]
+    fn the_cache_only_csv_is_its_own_frozen_columns() {
+        let expected = [
+            "mode,filename,status,width,height,fallback,dimension_mismatch",
+            "cache-only,preview-aa.jpg,recoverable,,,true,true",
+            "cache-only,preview-bb.jpg,missing,,,false,false",
+        ]
+        .map(|line| format!("{line}\r\n"))
+        .concat();
+        assert_eq!(
+            cache_csv(&cache_recovery_for_reports()),
+            expected,
+            "one row per indexed pyramid, generated names only, empty dimensions with no preview"
+        );
+    }
+
+    #[test]
+    fn the_cache_only_manifest_names_its_mode_and_its_members() {
+        let recovery = cache_recovery_for_reports();
+        let batch = CacheBatch {
+            saved: 1,
+            already_recovered: 2,
+            failed: 3,
+            confirmed_on_disk: Some(3),
+        };
+        let text = cache_manifest_json(
+            &recovery,
+            &json!([{"output": "preview-aa.jpg", "status": "written"}]),
+            batch,
+            "9.9.9",
+            1_700_000_000,
+        );
+        let manifest: Value = serde_json::from_str(&text).unwrap();
+        let mut keys: Vec<&String> = manifest.as_object().unwrap().keys().collect();
+        keys.sort();
+        assert_eq!(
+            keys,
+            [
+                "batch",
+                "generated_unix",
+                "layout",
+                "mode",
+                "outputs",
+                "scan",
+                "schema",
+                "version",
+            ],
+            "the cache-only member set, frozen in specs/modules/report.md"
+        );
+        assert_eq!(manifest["schema"], "lrsalvage.manifest");
+        assert_eq!(manifest["mode"], "cache-only");
+        assert_eq!(manifest["layout"], "modern");
+        assert_eq!(manifest["scan"]["indexed"], 2);
+        assert_eq!(manifest["scan"]["recoverable"], 1);
+        assert_eq!(manifest["scan"]["missing"], 1);
+        assert_eq!(manifest["outputs"][0]["output"], "preview-aa.jpg");
+        assert_eq!(manifest["batch"]["saved"], 1);
+        assert!(text.ends_with('\n'), "a published file ends in a newline");
+    }
+
+    #[test]
+    fn the_cache_only_verification_report_is_aggregate_and_path_free() {
+        let recovery = cache_recovery_for_reports();
+        let writes = CacheBatch {
+            saved: 1,
+            already_recovered: 2,
+            failed: 0,
+            confirmed_on_disk: None,
+        };
+        let text = cache_verification_json(&recovery, writes, "9.9.9", 1_700_000_000);
+        let report: Value = serde_json::from_str(&text).unwrap();
+        let mut keys: Vec<&String> = report.as_object().unwrap().keys().collect();
+        keys.sort();
+        assert_eq!(
+            keys,
+            [
+                "generated_unix",
+                "layout",
+                "mode",
+                "scan",
+                "schema",
+                "version",
+                "writes",
+            ],
+            "the frozen cache-only member set: no item, no filename, no catalog stats"
+        );
+        assert_eq!(report["schema"], "lrsalvage.verification");
+        assert_eq!(report["mode"], "cache-only");
+        assert_eq!(report["layout"], "modern");
+        assert_eq!(report["scan"]["unsupported"], 0);
+        assert_eq!(report["writes"]["already_recovered"], 2);
+        assert_eq!(
+            report["writes"]["confirmed_on_disk"],
+            Value::Null,
+            "a run that never reconciled the destination says so"
+        );
+        assert!(
+            !text.contains("preview-"),
+            "a shared report names no generated filename:
+{text}"
+        );
     }
 
     fn plan_with_items(items: Vec<PlanItem>) -> Plan {
@@ -1803,7 +2089,7 @@ recovered"
         let text = std::fs::read_to_string(&path).unwrap();
         let report: Value = serde_json::from_str(&text).unwrap();
 
-        // The envelope and the curated body, and no twelfth member.
+        // The envelope and the curated body, and no thirteenth member.
         let mut keys: Vec<&String> = report.as_object().unwrap().keys().collect();
         keys.sort();
         assert_eq!(
@@ -1813,6 +2099,7 @@ recovered"
                 "db_version",
                 "generated_unix",
                 "layout",
+                "mode",
                 "options",
                 "schema",
                 "shapes",
@@ -1824,6 +2111,7 @@ recovered"
             "the key set is the contract: `--json` minus its paths is not this object"
         );
         assert_eq!(report["schema"], "lrsalvage.verification");
+        assert_eq!(report["mode"], "catalog");
         assert_eq!(report["version"], "9.9.9");
         assert!(
             report["generated_unix"].as_u64().unwrap() > 1_600_000_000,

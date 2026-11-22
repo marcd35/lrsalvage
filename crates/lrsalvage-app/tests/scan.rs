@@ -12,6 +12,7 @@
 use lrsalvage_app::Stage;
 use lrsalvage_app::vault::{no_index, vaults, working};
 use lrsalvage_core::plan::{Control, Progress};
+use lrsalvage_core::report;
 use serde_json::Value;
 
 /// One scan of one vault, with a reporter that never stops.
@@ -170,9 +171,14 @@ fn the_review_publishes_the_three_reports_and_the_path_free_verification() {
         "the CLI's column order, unchanged"
     );
 
-    let verification: Value =
-        serde_json::from_str(&scan.review.verification(1_700_000_000)).expect("verified json");
+    let verification: Value = serde_json::from_str(
+        &scan
+            .review
+            .verification(report::CacheBatch::default(), 1_700_000_000),
+    )
+    .expect("verified json");
     assert_eq!(verification["schema"], "lrsalvage.verification");
+    assert_eq!(verification["mode"], "catalog");
     assert_eq!(verification["generated_unix"], 1_700_000_000_u64);
     assert_eq!(
         verification["options"]["verify_source"],

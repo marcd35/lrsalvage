@@ -13,6 +13,7 @@ use std::path::{Component, Path, PathBuf};
 use rusqlite::Connection;
 use rusqlite::types::ValueRef;
 
+use crate::error::IoContext;
 use crate::error::Result;
 use crate::fs;
 use crate::model::{CacheEntry, Pyramid, PyramidLevel};
@@ -89,6 +90,10 @@ impl PyramidKey {
         }
     }
 
+    pub(crate) fn has_supported_address(&self) -> bool {
+        is_uuid(&self.uuid) && is_digest(&self.digest)
+    }
+
     /// The pyramid a cache entry claims: both halves read from the one row
     /// (`adr-0005-discover-payloads-by-index` ¶1).
     pub fn of(entry: &CacheEntry) -> Self {
@@ -149,6 +154,10 @@ impl PreviewIndex {
     /// (`adr-0006-degrade-without-guessing` ¶1–¶2).
     fn read(db: &Path) -> Result<Self> {
         let conn = crate::snapshot::open_readonly(db)?;
+        Self::read_connection(&conn)
+    }
+
+    fn read_connection(conn: &rusqlite::Connection) -> Result<Self> {
         let mut index = Self::default();
 
         {
@@ -224,7 +233,7 @@ impl PreviewIndex {
         {
             // A store that predates the table reports no tombstones rather than
             // refusing a cache whose payloads are all readable.
-            if table_exists(&conn, "DeletedPyramid")? {
+            if table_exists(conn, "DeletedPyramid")? {
                 let mut stmt =
                     conn.prepare("SELECT uuid, digest, deletedTimeStamp FROM DeletedPyramid")?;
                 let mut rows = stmt.query([])?;
@@ -283,20 +292,7 @@ impl PreviewIndex {
     /// stats no file and reads no payload, so `plan` decides existence.
     pub fn candidates(&self, cache_root: &Path, key: &PyramidKey) -> Vec<Candidate<'_>> {
         let (uuid, digest) = (key.uuid(), key.digest());
-        let mut named: Vec<Candidate<'_>> = self
-            .levels
-            .get(key)
-            .map(|rows| {
-                rows.iter()
-                    .map(|row| Candidate {
-                        path: shard(cache_root, uuid)
-                            .join(format!("{uuid}-{digest}_{}", row.long_dimension)),
-                        row: Some(row),
-                        long_edge: row.long_dimension,
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
+        let mut named = self.row_candidates(cache_root, key);
 
         // The widening, inside the row's own identity: this pyramid's shard
         // folder and nothing else. A level the index forgot is a file here.
@@ -315,17 +311,34 @@ impl PreviewIndex {
             }
         }
 
-        // Path first so the order never depends on the database's row order or
-        // on `read_dir`; a row keeps a path the widening also found, and the
-        // level number breaks a tie between two rows naming one leaf.
-        named.sort_by(|a, b| {
-            a.path
-                .cmp(&b.path)
-                .then_with(|| a.row.is_none().cmp(&b.row.is_none()))
-                .then_with(|| a.row.map(|row| row.level).cmp(&b.row.map(|row| row.level)))
-        });
-        named.dedup_by(|a, b| a.path == b.path);
+        order_candidates(&mut named);
         named
+    }
+
+    pub(crate) fn keys(&self) -> std::collections::HashSet<PyramidKey> {
+        self.pyramids
+            .keys()
+            .chain(self.levels.keys())
+            .cloned()
+            .chain(self.all_entries.iter().map(PyramidKey::of))
+            .collect()
+    }
+
+    pub(crate) fn row_candidates(&self, cache_root: &Path, key: &PyramidKey) -> Vec<Candidate<'_>> {
+        let (uuid, digest) = (key.uuid(), key.digest());
+        self.levels
+            .get(key)
+            .map(|rows| {
+                rows.iter()
+                    .map(|row| Candidate {
+                        path: shard(cache_root, uuid)
+                            .join(format!("{uuid}-{digest}_{}", row.long_dimension)),
+                        row: Some(row),
+                        long_edge: row.long_dimension,
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 
     /// Largest level for a pyramid by pixel area (`width * height`), keeping
@@ -367,6 +380,60 @@ pub struct PyramidOnDisk {
     pub levels: Vec<LevelOnDisk>,
     /// The coexisting `<UUID>-<digest>.lrprev`, when there is one.
     pub container: Option<PathBuf>,
+}
+
+pub(crate) fn order_candidates(named: &mut Vec<Candidate<'_>>) {
+    // Path first so the order never depends on the database's row order or
+    // on `read_dir`; a row keeps a path the widening also found, and the
+    // level number breaks a tie between two rows naming one leaf.
+    named.sort_by(|a, b| {
+        a.path
+            .cmp(&b.path)
+            .then_with(|| a.row.is_none().cmp(&b.row.is_none()))
+            .then_with(|| a.row.map(|row| row.level).cmp(&b.row.map(|row| row.level)))
+    });
+    named.dedup_by(|a, b| a.path == b.path);
+}
+
+/// Read from a private copy, including any SQLite WAL, so neither SQLite
+/// recovery nor copying metadata can write into the preview folder.
+pub(crate) fn open_required(cache: &Path) -> Result<PreviewIndex> {
+    use crate::error::IndexProblemKind::{Missing, Unreadable, Unsupported};
+    let path = cache.join(INDEX_FILE);
+    let problem = |kind, source: Option<crate::Error>| crate::Error::RequiredPreviewIndex {
+        path: path.clone(),
+        kind,
+        source: source.map(Box::new),
+    };
+    match fs::exists(&path) {
+        Ok(true) => {}
+        Ok(false) => return Err(problem(Missing, None)),
+        Err(source) => {
+            let error = crate::Error::Io {
+                path: path.clone(),
+                source,
+            };
+            return Err(problem(Unreadable, Some(error)));
+        }
+    }
+    let snapshot = crate::snapshot::CatalogSnapshot::capture(&path)
+        .map_err(|error| problem(Unreadable, Some(error)))?;
+    let conn = crate::snapshot::open_readonly(snapshot.path())
+        .map_err(|error| problem(Unreadable, Some(error)))?;
+    conn.query_row("PRAGMA schema_version", [], |row| row.get::<_, i64>(0))
+        .map_err(|error| problem(Unreadable, Some(error.into())))?;
+    PreviewIndex::read_connection(&conn).map_err(|error| {
+        let kind = match &error {
+            // SQLite could read its schema but an index query was rejected.
+            crate::Error::Sqlite(rusqlite::Error::SqliteFailure(code, _))
+                if code.extended_code == rusqlite::ffi::SQLITE_ERROR =>
+            {
+                Unsupported
+            }
+            _ => Unreadable,
+        };
+        problem(kind, Some(error))
+    })
 }
 
 /// Why a cache has no usable index.
@@ -512,21 +579,31 @@ impl CacheSweep {
 /// the catalog has.
 #[must_use]
 pub fn sweep(cache_root: &Path, progress: &mut dyn FnMut(u64) -> bool) -> Option<CacheSweep> {
+    sweep_paths(
+        cache_root,
+        fs::walk_files(cache_root).unwrap_or_default(),
+        progress,
+    )
+}
+
+pub(crate) fn sweep_required(
+    cache_root: &Path,
+    progress: &mut dyn FnMut(u64) -> bool,
+) -> Result<Option<CacheSweep>> {
+    let paths = fs::walk_files_strict(cache_root).at(cache_root)?;
+    Ok(sweep_paths(cache_root, paths, progress))
+}
+
+fn sweep_paths(
+    cache_root: &Path,
+    paths: Vec<PathBuf>,
+    progress: &mut dyn FnMut(u64) -> bool,
+) -> Option<CacheSweep> {
     let mut found: HashMap<(String, String), PyramidOnDisk> = HashMap::new();
     let mut unrecognised = Vec::new();
 
-    // A root that cannot be walked is an empty sweep, which is what this walk
-    // has always done with one; an unreadable folder inside the tree is skipped
-    // by the seam rather than losing the payloads beside it.
-    //
-    // The index of this enumeration is the answer: it is the number of files
-    // finished before this one, which is what a reporter is asked about and what
-    // a stop leaves.
-    for (walked, path) in fs::walk_files(cache_root)
-        .unwrap_or_default()
-        .into_iter()
-        .enumerate()
-    {
+    // The count is the number of files finished before this one.
+    for (walked, path) in paths.into_iter().enumerate() {
         if !progress(walked as u64) {
             return None;
         }

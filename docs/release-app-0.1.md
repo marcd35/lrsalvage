@@ -26,11 +26,18 @@ pending.
 - [ ] Run the applicable gates in [scripts/check.sh](../scripts/check.sh)
       on that commit. Record the output parity gate required by ADR 0012 D12
       for the actual browser writer and CLI.
+- [ ] Close [#186](https://github.com/marcd35/lrsalvage/issues/186) before tagging.
+      On the accepted candidate, run the native and browser comparison and the
+      existing catalog-backed CLI parity gate, then record the tested commit and
+      results. [The app spec](../specs/app.md#recover-from-preview-cache) is the
+      one home for what that comparison covers. The real-vault catalog-backed
+      walkthrough below remains its own release check.
 - [ ] The release maintainer builds the static candidate from trusted `main`
       and deploys it to Cloudflare Pages over HTTPS. Record the build commit
       and preview URL on [#172](https://github.com/marcd35/lrsalvage/issues/172).
       Verify cross-origin isolation, the app and core versions on the page and
-      receipt, the four practice cases, and the guide and screenshots.
+      receipt, all practice cases — including the cache-only one, whose receipt is
+      reconciled against the saved files — and the guide and screenshots.
 - [ ] Record the [synthetic writer result](https://github.com/marcd35/lrsalvage/issues/171).
       Follow the [release-scale writer protocol](agents/browser-app-deployment.md#verify-the-writer-at-release-scale)
       and link the dated result for the tested candidate.

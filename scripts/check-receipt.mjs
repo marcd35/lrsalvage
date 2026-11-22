@@ -136,9 +136,14 @@ export async function checkReceipt(send) {
   /** The field list, and nothing beside it, at every level. */
   function assertFields(diagnostics) {
     assert.deepEqual(Object.keys(diagnostics).sort(), [
-      'events', 'failure', 'failures', 'scan', 'schema', 'timings', 'versions', 'writes',
+      'cache_scan', 'events', 'failure', 'failures', 'mode', 'scan', 'schema', 'timings',
+      'versions', 'writes',
     ]);
     assert.equal(diagnostics.schema, 'lrsalvage.diagnostics');
+    assert.equal(diagnostics.mode, 'catalog', 'the copy names the run that produced it');
+    assert.deepEqual(Object.keys(diagnostics.cache_scan).sort(), [
+      'indexed', 'invalid', 'missing', 'recoverable', 'unsupported',
+    ]);
     assert.deepEqual(Object.keys(diagnostics.versions).sort(), [
       'app', 'browser', 'build', 'core', 'platform', 'platform_version',
     ]);

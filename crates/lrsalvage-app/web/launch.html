@@ -75,6 +75,14 @@
             <a href="./practice/unrecognized-layout.zip" download aria-label="Download unrecognized layout sample ZIP">ZIP</a>
           </div>
         </li>
+        <li>
+          <h3>Preview cache without a catalog</h3>
+          <p>Recover two JPEGs, including a smaller surviving level, and see how a missing preview is reported.</p>
+          <div class="sample-actions">
+            <a href="./recovery?sample=cache-only">Open cache-only sample</a>
+            <a href="./practice/cache-only.zip" download aria-label="Download cache-only sample ZIP">ZIP</a>
+          </div>
+        </li>
       </ul>
       <p class="fine">The catalogs and metadata are synthetic. <a href="./practice/credits.txt">Sample photo credits</a>.</p>
     </section>
@@ -105,7 +113,9 @@
           <p>
             Open the recovery page and choose the folder that holds your catalog. The app looks
             for a nearby preview cache. If your cache lives elsewhere, choose it separately.
-            Select <strong>Scan this catalog</strong>.
+            Select <strong>Scan this catalog</strong>. If the catalog is missing or unreadable,
+            select <strong>Recover from preview cache</strong> and choose the cache folder itself.
+            The cache must contain a readable <code>previews.db</code>.
           </p>
           <figure class="guide-shot">
             <img src="./guide/choose-folder.png" width="723" height="331" loading="lazy" alt="Recovery source screen with a Choose folder button above Scan this catalog">
@@ -117,7 +127,7 @@
           <p>
             Preview quality depends on what Lightroom built and what the cache still holds.
             A larger preview can be more useful, and some photos may have only a small preview
-            or no preview at all. Small previews start unchecked. A recovered JPEG cannot recover
+            or no preview at all. In catalog recovery, small previews start unchecked. A recovered JPEG cannot recover
             original raw data or detail that never made it into the preview.
           </p>
           <figure class="guide-shot">

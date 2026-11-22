@@ -477,3 +477,14 @@ Every image has one eligible, decodable level. The shared bridge raster has a
 distinct JPEG comment per image, which makes swaps visible in the CLI comparison.
 The two payload sizes model write volume with synthetic comment bytes. The vault
 does not establish the size distribution of a real preview cache.
+
+
+## Cache-only app recovery
+
+The app's native and browser checks use matching synthetic legacy, modern, and
+mixed caches, with recoverable, damaged, unsupported, missing, and pruned
+levels. The fixture has more valid previews than the batch writer can schedule
+at once, so Stop/Continue can leave pending work and finish it on continuation.
+The browser product test compares the generated names and JPEG SHA-256 values
+against the native run and reads the receipt and manifest against the saved
+files. It supplies accepted handles at the picker boundary.

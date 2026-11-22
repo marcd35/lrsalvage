@@ -127,6 +127,23 @@ pub fn poll() -> String {
 /// a person gets a sentence instead of an exception.
 #[wasm_bindgen]
 pub fn scan(catalog: &str, cache: &str) -> String {
+    scan_with(|progress| {
+        crate::scan_for_review(Path::new(catalog), Path::new(cache), progress)
+            .map_err(|failure| failure.to_json())
+    })
+}
+
+/// Scan a cache without mounting or opening a catalog.
+#[wasm_bindgen]
+pub fn scan_cache(cache: &str) -> String {
+    scan_with(|progress| {
+        crate::scan_cache(Path::new(cache), progress).map_err(|failure| failure.to_json())
+    })
+}
+
+fn scan_with(
+    run: impl FnOnce(&mut dyn FnMut(Progress) -> Control) -> Result<crate::ScanResult, Value>,
+) -> String {
     let mut progress = |progress: Progress| {
         let (phase, done, total) = match progress {
             Progress::Cache { files } => (PHASE_CACHE, files, 0),
@@ -141,12 +158,12 @@ pub fn scan(catalog: &str, cache: &str) -> String {
     };
 
     REVIEW.with(|review| review.replace(crate::Review::default()));
-    match crate::scan_for_review(Path::new(catalog), Path::new(cache), &mut progress) {
+    match run(&mut progress) {
         Ok(result) => {
             REVIEW.with(|review| review.replace(result.review));
             result.report.to_string()
         }
-        Err(failure) => json!({ "ok": false, "problem": failure.to_json() }).to_string(),
+        Err(problem) => json!({ "ok": false, "problem": problem }).to_string(),
     }
 }
 
@@ -196,15 +213,12 @@ pub fn prepare_export(id: &str, flat: bool) -> Result<ExportJpeg, JsValue> {
         .map_err(|_| JsValue::from_str("This preview is unavailable."))?;
     REVIEW.with(|review| {
         let review = review.borrow();
-        let (jpeg, output) = review
+        let (bytes, outcome) = review
             .prepare(id, flat)
             .map_err(|error| JsValue::from_str(&error))?;
-        let outcome = serde_json::to_string(&jpeg.written(output))
+        let outcome = serde_json::to_string(&outcome)
             .map_err(|error| JsValue::from_str(&error.to_string()))?;
-        Ok(ExportJpeg {
-            bytes: jpeg.bytes,
-            outcome,
-        })
+        Ok(ExportJpeg { bytes, outcome })
     })
 }
 
@@ -214,8 +228,11 @@ pub fn existing_export(id: &str, flat: bool, bytes: &[u8]) -> Result<String, JsV
         .parse()
         .map_err(|_| JsValue::from_str("This preview is unavailable."))?;
     REVIEW.with(|review| {
-        serde_json::to_string(&review.borrow().existing(id, flat, bytes))
-            .map_err(|error| JsValue::from_str(&error.to_string()))
+        let outcome = review
+            .borrow()
+            .existing(id, flat, bytes)
+            .map_err(|_| JsValue::from_str("This preview is unavailable."))?;
+        serde_json::to_string(&outcome).map_err(|error| JsValue::from_str(&error.to_string()))
     })
 }
 
@@ -235,10 +252,15 @@ pub fn export_reports(flat: bool, outcomes: &str, now: f64) -> Result<String, Js
 ///
 /// The page's clock rather than the module's, for the same reason the manifest
 /// takes one: a browser has a `Date` and this target has no trustworthy
-/// `SystemTime` (`specs/modules/report.md`).
+/// `SystemTime` (`specs/modules/report.md`). `writes` is the batch's own account
+/// and the only fact here the page measured — a catalog run ignores it, and the
+/// encoder is still the one that writes the object, so no JavaScript
+/// re-serialises a published file.
 #[wasm_bindgen]
-pub fn verification_report(now: f64) -> String {
-    REVIEW.with(|review| review.borrow().verification(now as u64))
+pub fn verification_report(now: f64, writes: &str) -> Result<String, JsValue> {
+    let writes: lrsalvage_core::report::CacheBatch =
+        serde_json::from_str(writes).map_err(|error| JsValue::from_str(&error.to_string()))?;
+    Ok(REVIEW.with(|review| review.borrow().verification(writes, now as u64)))
 }
 
 /// The two release numbers ADR 0012 D2 puts on the receipt.

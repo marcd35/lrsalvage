@@ -28,6 +28,8 @@ const SCAN_COUNTS = [
   'selected_items', 'selected_images', 'tiers', 'superseded', 'deleted', 'unrecognised',
 ];
 
+const CACHE_SCAN_COUNTS = ['indexed', 'recoverable', 'missing', 'invalid', 'unsupported'];
+
 /** The seven categories a failed write is counted under, aimed at a person. */
 const FAILURE_CATEGORIES = [
   'destination_gone', 'permission', 'out_of_room', 'occupied_foreign',
@@ -86,6 +88,9 @@ function blank() {
   return {
     marks: {},
     scan: null,
+    // The other mode's counts, present as `null` on every copy so a reader can key
+    // on the same five names whichever run produced it (`specs/app.md`).
+    cacheScan: Object.fromEntries(CACHE_SCAN_COUNTS.map((name) => [name, null])),
     writes: { planned: 0, written: 0, already_recovered: 0, failed: 0, confirmed_on_disk: null },
     events: { stopped: 0, settled: 0, continued: 0 },
     failures: Object.fromEntries(FAILURE_CATEGORIES.map((name) => [name, 0])),
@@ -106,10 +111,11 @@ let state = blank();
  */
 export const log = {
   /** A new run begins: the receipt's counters start again, the versions do not. */
-  run() {
+  run(cacheOnly = false) {
     const versions = state.versions;
     state = blank();
     state.versions = versions;
+    state.cacheOnly = cacheOnly;
   },
 
   /**
@@ -145,10 +151,19 @@ export const log = {
     state.versions = { app: versions?.app ?? null, core: versions?.core ?? null };
   },
 
-  /** The scan's frozen counts, copied member by member and by name. */
+  /** The scan's frozen counts, copied member by member and by name.
+   *
+   * Each mode fills its own object and leaves the other's `null`: a cache-only
+   * scan measures five facts about pyramids and none of the catalog's eighteen,
+   * and giving one set the other's names would be the second vocabulary
+   * `specs/app.md` forbids.
+   */
   scanCounts(stats) {
     if (!stats) return;
-    state.scan = Object.fromEntries(SCAN_COUNTS.map((name) => [name, stats[name] ?? null]));
+    const fields = state.cacheOnly ? CACHE_SCAN_COUNTS : SCAN_COUNTS;
+    const counts = Object.fromEntries(fields.map((name) => [name, stats[name] ?? null]));
+    if (state.cacheOnly) state.cacheScan = counts;
+    else state.scan = counts;
   },
 
   /** How many files the batch fixed when it started. */
@@ -222,6 +237,7 @@ export const log = {
     const marks = state.marks;
     const object = {
       schema: 'lrsalvage.diagnostics',
+      mode: state.cacheOnly ? 'cache-only' : 'catalog',
       versions: {
         app: identity.app,
         core: identity.core,
@@ -232,14 +248,15 @@ export const log = {
       },
       timings: {
         storage_setup_ms: marks.storage_setup ?? null,
-        catalog_copy_ms: marks.catalog_copy ?? null,
+        catalog_copy_ms: state.cacheOnly ? null : marks.catalog_copy ?? null,
         scan_ms: marks.scan_ms ?? null,
         first_thumbnail_ms: marks.first_thumbnail ?? null,
         first_saved_jpeg_ms: marks.first_saved_jpeg ?? null,
         longest_write_gap_ms: state.commits.length > 1 ? gap() : null,
         elapsed_ms: at(),
       },
-      scan: state.scan,
+      scan: state.cacheOnly ? null : state.scan,
+      cache_scan: state.cacheScan,
       writes: { ...state.writes },
       events: { ...state.events },
       failures: { ...state.failures },

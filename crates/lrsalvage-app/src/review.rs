@@ -1,5 +1,6 @@
 //! Plan projections for browser review and export.
 
+use crate::cache_review::CacheReview;
 use std::cell::OnceCell;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -13,6 +14,7 @@ use serde_json::{Value, json};
 /// The open scan's payload choices and cached export layouts.
 #[derive(Default)]
 pub struct Review {
+    cache: Option<CacheReview>,
     plan: Plan,
     /// The knobs this run planned with, kept because a [`Plan`] records what the
     /// run decided and the verification report echoes what shaped it.
@@ -34,6 +36,7 @@ impl Review {
             .filter_map(|(index, item)| item.image.as_ref().map(|image| (image.id_local, index)))
             .collect();
         Self {
+            cache: None,
             plan,
             options,
             digests,
@@ -42,7 +45,17 @@ impl Review {
         }
     }
 
+    pub(crate) fn from_cache(cache: CacheReview) -> Self {
+        Self {
+            cache: Some(cache),
+            ..Self::default()
+        }
+    }
+
     pub(crate) fn rows(&self) -> Value {
+        if let Some(cache) = &self.cache {
+            return cache.rows();
+        }
         Value::Array(self.plan.items.iter().filter_map(row).collect())
     }
 
@@ -58,6 +71,9 @@ impl Review {
 
     /// The selected projection of either layout is rendered by the page.
     pub fn export_paths(&self, flat: bool) -> Value {
+        if let Some(cache) = &self.cache {
+            return cache.paths();
+        }
         Value::Array(
             self.plan
                 .items
@@ -85,23 +101,33 @@ impl Review {
         has_preview(item).then_some((item, path))
     }
 
-    /// Prepare the JPEG with the core marker and metadata for either save action.
+    /// Prepare the JPEG and its prospective outcome for either save action.
     pub fn prepare(
         &self,
         id: i64,
         flat: bool,
-    ) -> std::result::Result<(extract::PreparedJpeg, &Path), String> {
+    ) -> std::result::Result<(Vec<u8>, extract::Outcome), String> {
+        if let Some(cache) = &self.cache {
+            return cache
+                .prepare(id)
+                .map_err(|_| Error::PreviewUnavailable.to_string());
+        }
         let (item, path) = self
             .export_item(id, flat)
             .ok_or_else(|| Error::PreviewUnavailable.to_string())?;
         let jpeg = extract::prepare_jpeg(item, &extract::ExtractOptions::default())?;
-        Ok((jpeg, path))
+        let outcome = jpeg.written(path);
+        Ok((jpeg.bytes, outcome))
     }
 
     /// Recognize an existing output using the scan's certified size.
-    pub fn existing(&self, id: i64, flat: bool, bytes: &[u8]) -> Option<extract::Outcome> {
-        let (item, path) = self.export_item(id, flat)?;
-        extract::existing_outcome(path, bytes, item.width.zip(item.height)?)
+    pub fn existing(&self, id: i64, flat: bool, bytes: &[u8]) -> Result<Option<extract::Outcome>> {
+        if let Some(cache) = &self.cache {
+            return cache.existing(id, bytes);
+        }
+        Ok(self.export_item(id, flat).and_then(|(item, path)| {
+            extract::existing_outcome(path, bytes, item.width.zip(item.height)?)
+        }))
     }
 
     /// Use the same report encoders as the CLI, over the batch's fixed selection.
@@ -110,6 +136,9 @@ impl Review {
     /// manifest describe the selection this batch committed. Three files, one
     /// encoder each — the page writes the text and owns the file names.
     pub fn reports(&self, flat: bool, mut outcomes: Vec<extract::Outcome>, now: u64) -> Value {
+        if let Some(cache) = &self.cache {
+            return cache.reports(&outcomes, now);
+        }
         for outcome in &mut outcomes {
             if outcome.output.is_relative() {
                 outcome.output = Path::new(crate::OUTPUT_ROOT).join(&outcome.output);
@@ -136,7 +165,13 @@ impl Review {
     ///
     /// The same object `scan --report` writes, from the same three facts: this
     /// run's plan, the options it applied, and the digest pair its copy proved.
-    pub fn verification(&self, now: u64) -> String {
+    /// A cache-only run measures none of those, so it publishes its own frozen
+    /// member set and takes the batch's counts from the page, which is the only
+    /// place the destination was seen.
+    pub fn verification(&self, writes: report::CacheBatch, now: u64) -> String {
+        if let Some(cache) = &self.cache {
+            return cache.verification(writes, now);
+        }
         report::verification_json(
             &self.plan,
             &self.options,
@@ -151,6 +186,9 @@ impl Review {
     /// The browser applies any embedded EXIF orientation. Add the catalog
     /// fallback as EXIF when needed, without touching the compressed image.
     pub fn read(&self, id: i64) -> Result<Vec<u8>> {
+        if let Some(cache) = &self.cache {
+            return cache.read(id);
+        }
         let item = self
             .by_id
             .get(&id)

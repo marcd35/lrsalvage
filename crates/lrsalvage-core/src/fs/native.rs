@@ -59,7 +59,7 @@ pub(super) fn list_files(dir: &Path) -> io::Result<Vec<PathBuf>> {
     Ok(files)
 }
 
-pub(super) fn walk_files(root: &Path) -> io::Result<Vec<PathBuf>> {
+pub(super) fn walk_files(root: &Path, strict: bool) -> io::Result<Vec<PathBuf>> {
     let mut files = Vec::new();
     for entry in WalkDir::new(root) {
         match entry {
@@ -70,7 +70,7 @@ pub(super) fn walk_files(root: &Path) -> io::Result<Vec<PathBuf>> {
             }
             // Depth 0 is the root itself: there is nothing to walk, so this is
             // the one failure the caller is told about.
-            Err(error) if error.depth() == 0 => return Err(error.into()),
+            Err(error) if strict || error.depth() == 0 => return Err(error.into()),
             Err(_) => continue,
         }
     }

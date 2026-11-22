@@ -20,7 +20,7 @@
 
 import { installBridge } from './seam/lrsalvage-fs.js';
 import init, {
-  pause_store, poll_install, read_preview, scan, start_install,
+  pause_store, poll_install, read_preview, scan, scan_cache, start_install,
   export_paths, prepare_export, existing_export, export_reports,
   verification_report, versions,
 } from './pkg/lrsalvage_app.js';
@@ -63,8 +63,15 @@ self.onmessage = async (event) => {
     try {
       if (message.type === 'verification-report') {
         // The text, not a re-serialised value: the report's formatting is the
-        // report, and it goes straight into the file the page writes.
-        const text = verification_report(Math.floor(Date.now() / 1000));
+        // report, and it goes straight into the file the page writes. `writes`
+        // is the one member the page measured, so it crosses as data into the
+        // encoder rather than being written into the text afterwards.
+        const text = verification_report(
+          Math.floor(Date.now() / 1000),
+          JSON.stringify({
+            saved: 0, already_recovered: 0, failed: 0, confirmed_on_disk: null,
+            ...message.writes,
+          }));
         self.postMessage({ type: 'export', request, value: { text } });
       } else if (message.type === 'export-jpeg') {
         const jpeg = prepare_export(id, flat);
@@ -144,7 +151,7 @@ async function run({ sab, stop, mounts, catalog, cache, capacity }) {
   self.postMessage({ type: 'stage', stage: 'copy' });
 
   const began = performance.now();
-  const report = JSON.parse(scan(catalog, cache));
+  const report = JSON.parse(catalog ? scan(catalog, cache) : scan_cache(cache));
   // Preview reads address the picked cache through the bridge. Release the
   // SQLite pool before reporting so a restart or recheck can install it again.
   pause_store();

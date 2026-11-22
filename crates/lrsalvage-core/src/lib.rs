@@ -17,6 +17,7 @@
 //! * **Map via `previews.db`, never re-derive hashes**
 //!   (`docs/adr/0002-map-via-previews-db.md`).
 
+pub mod cache_recovery;
 pub mod catalog;
 pub mod error;
 pub mod exif;

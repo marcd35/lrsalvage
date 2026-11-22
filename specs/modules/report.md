@@ -6,6 +6,7 @@ status: draft
 parent: architecture
 depends-on:
   - plan
+  - cache-recovery
   - lrprev
   - jpeg
   - model
@@ -47,6 +48,15 @@ built from a struct of its own — the curated fields below — rather than from
 filtered plan or a filtered `--json` object. Nothing in this module ever hands that
 struct a path.
 
+A cache-only run plans `CacheRecovery` rather than `Plan`, so it gets its own
+encoders for the same three files: `cache_csv`, `cache_manifest_json` and
+`cache_verification_json`. They take the batch's counts as `CacheBatch` — `saved`,
+`already_recovered`, `failed`, `confirmed_on_disk` — because outcomes are
+`extract`'s and `extract` renders its CSV through this module, so the counts cross
+as values rather than as types that would make a cycle. The member sets below are
+frozen for both modes and differ, because a cache has no catalog to measure; what
+they share is the schema tag and a `mode` member that says which one a file is.
+
 ## Decisions
 
 - **One encoder per published file, whatever writes it.** `report.csv` and the
@@ -58,6 +68,38 @@ struct a path.
   the manifest's does — a `wasm32` page has no clock here. The alternative, a
   second renderer per artifact, is two grammars for one file
   (`specs/app.md`, *Receipt, reports and diagnostics*).
+- **Every published report says which mode wrote it, and each mode's member set is
+  frozen here.** `mode` is `catalog` or `cache-only`; it is the one member both
+  modes share besides `schema`, `version`, `generated_unix` and `layout`. A
+  cache-only run measured no catalog, so it publishes none of the catalog
+  objects' facts rather than a row of nulls a reader has to filter:
+  - `manifest.json` (cache-only): `schema` `lrsalvage.manifest`, `version`,
+    `generated_unix`, `mode` `cache-only`, `layout`, `scan`, `outputs` (one entry
+    per prepared output, as the catalog manifest's `items` are), `batch`
+    (`saved`, `already_recovered`, `failed`).
+  - `verification.json` (cache-only): `schema` `lrsalvage.verification`,
+    `version`, `generated_unix`, `mode` `cache-only`, `layout`, `scan`,
+    `writes` (`saved`, `already_recovered`, `failed`, `confirmed_on_disk`; the
+    last is the receipt's reconciliation, `null` when the run never made one).
+    It carries no item, filename, folder or payload digest: the aggregate
+    counts and the layout word are the whole of it.
+  - `scan` is the five counts that mode measured — `indexed`, `recoverable`,
+    `missing`, `invalid`, `unsupported` — in `report.md`'s order. They are not
+    the catalog `stats` under other words: an indexed pyramid with no payload is
+    a different fact from an image whose payload is missing, and one vocabulary
+    for both would be a lie about whichever it was not measuring.
+- **A cache-only `report.csv` has its own frozen columns.** `mode,filename,status,
+  width,height,fallback,dimension_mismatch`: one row per indexed pyramid, the
+  generated filename rather than an original, and an empty width and height when
+  no preview survived. The catalog header's folder, tier, capture-time and
+  original-path columns describe a catalog this run does not have, so reusing the
+  header would publish sixteen empty cells and call them facts.
+- **The batch's counts arrive as a value, not as a type this module would have to
+  know.** `CacheBatch` carries `saved`, `already_recovered`, `failed` and
+  `confirmed_on_disk`; `extract` owns the outcomes and renders its own CSV through
+  `escape_csv`, so handing this module `Outcome` would close a dependency cycle.
+  The three counts in the manifest and the four in the verification report are
+  the same value, so the two files cannot disagree about one batch.
 - **A degraded run says what it saw, in one hint.** Every line that talks about a
   payload the run could not name is a fact about this run — counts filled from the
   plan, never hard-coded — and no line calls an unclaimed payload recovered,
@@ -145,7 +187,8 @@ struct a path.
   file is expected to contain.
 - **The verification report is a curated field set, frozen here.**
   `scan --report <file>` writes one JSON object: `schema`
-  `lrsalvage.verification`, the tool `version` that wrote it, `generated_unix`;
+  `lrsalvage.verification`, the tool `version` that wrote it, `generated_unix`,
+  the `mode` that wrote it;
   then `layout`, `db_version` and `crs_version` (ADR 0004's five words and two
   verbatim strings), `source_sha256` and `snapshot_sha256` (the digest pair a
   `--verify-source` run proved, `null` for both when it did not), `options`

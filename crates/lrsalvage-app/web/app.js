@@ -295,7 +295,7 @@ export function start(source, ui = {}, { review = false } = {}) {
     exportJpeg: (id, flat) => ask('export-jpeg', { id, flat }),
     existingExport: (id, flat, bytes) => ask('export-existing', { id, flat, bytes }, [bytes.buffer]),
     exportReports: (flat, outcomes) => ask('export-reports', { flat, outcomes }),
-    verificationReport: () => ask('verification-report', {}),
+    verificationReport: (writes) => ask('verification-report', { writes }),
     close,
   };
 }

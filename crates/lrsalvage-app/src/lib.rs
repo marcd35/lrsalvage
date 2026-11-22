@@ -33,6 +33,7 @@ use lrsalvage_core::previews_db::{self, IndexProblem};
 use lrsalvage_core::snapshot::CatalogSnapshot;
 use serde_json::{Value, json};
 
+mod cache_review;
 mod review;
 
 pub use review::Review;
@@ -67,6 +68,10 @@ pub enum Stage {
     Open,
     /// Copying the index into the pool, and reading it.
     Index,
+    /// Opening the required index for cache-only recovery.
+    CacheIndex,
+    /// Walking the preview cache to record the exact paths it holds.
+    CacheWalk,
     /// The reported build over the catalog and the cache.
     Scan,
 }
@@ -78,6 +83,8 @@ impl Stage {
             Stage::Copy => "copy",
             Stage::Open => "open",
             Stage::Index => "index",
+            Stage::CacheIndex => "cache-index",
+            Stage::CacheWalk => "cache-walk",
             Stage::Scan => "scan",
         }
     }
@@ -105,6 +112,7 @@ impl Failure {
     pub fn of(stage: Stage, error: &lrsalvage_core::Error) -> Self {
         use lrsalvage_core::Error;
         let kind = match error {
+            Error::RequiredPreviewIndex { kind, .. } => kind.as_str(),
             Error::NotACatalog { .. } => "not-a-catalog",
             Error::SourceChanged { .. } => "catalog-changed",
             Error::Sqlite(_) => "unreadable",
@@ -228,6 +236,36 @@ pub fn scan_for_review(
         &catalog_db,
     );
     let review = Review::new(plan, options, digests);
+    report["photos"] = review.rows();
+    Ok(ScanResult { report, review })
+}
+
+/// Open a preview cache directly, with the same review and writer protocol as
+/// the catalog-backed entry point.
+pub fn scan_cache(
+    cache: &Path,
+    progress: &mut dyn FnMut(Progress) -> Control,
+) -> Result<ScanResult, Failure> {
+    let plan =
+        lrsalvage_core::cache_recovery::CacheRecovery::scan(cache, progress).map_err(|error| {
+            let stage = if matches!(error, lrsalvage_core::Error::RequiredPreviewIndex { .. }) {
+                Stage::CacheIndex
+            } else {
+                Stage::CacheWalk
+            };
+            Failure::of(stage, &error)
+        })?;
+    let Some(plan) = plan else {
+        return Ok(ScanResult {
+            report: json!({ "ok": true, "stopped": true }),
+            review: Review::default(),
+        });
+    };
+    let cache = cache_review::CacheReview(plan);
+    let mut report = cache.summary();
+    let review = Review::from_cache(cache);
+    report["ok"] = json!(true);
+    report["stopped"] = json!(false);
     report["photos"] = review.rows();
     Ok(ScanResult { report, review })
 }

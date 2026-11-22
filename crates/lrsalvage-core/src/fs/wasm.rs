@@ -480,7 +480,7 @@ pub(super) fn list_files(dir: &Path) -> io::Result<Vec<PathBuf>> {
     }
 }
 
-pub(super) fn walk_files(root: &Path) -> io::Result<Vec<PathBuf>> {
+pub(super) fn walk_files(root: &Path, _strict: bool) -> io::Result<Vec<PathBuf>> {
     match mount_of(root)?.kind {
         Kind::Store => store_children(root, true),
         Kind::Bridge => {
