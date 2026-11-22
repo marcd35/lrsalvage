@@ -163,25 +163,41 @@ accessibility tree. Nothing in it is timed, so it says nothing about an
 estimate.
 
 The full half takes minutes and is release evidence. From the candidate's clean
-checkout, build the page's WASM at that commit, compose a 5,000-image Writer
-Scale vault, and drive a whole scan and a stopped scan through the page's own
-entry:
+checkout:
 
 ```sh
-cargo build --release --locked --lib --target wasm32-unknown-unknown -p lrsalvage-app
-wasm-bindgen --target web --out-dir crates/lrsalvage-app/web/pkg --out-name lrsalvage_app target/wasm32-unknown-unknown/release/lrsalvage_app.wasm
-cargo run --release --locked -p lrsalvage-app --bin vault-writer-scale -- target/scan-progress-fixture
-node scripts/drive-browser.mjs target/scan-progress-fixture --check-scan-progress-fixture
+sh scripts/scan-progress-fixture.sh --work target/scan-progress-fixture
 ```
 
-The command prints one JSON line. Record the matching time, the number of worker
+It builds the page's WASM at that checkout — with the compiler variables and the
+order [Build locally](#build-locally) describes — composes the 5,000-image Writer
+Scale vault when `--work` does not already hold one, and drives a whole scan and a
+stopped scan through the page's own entry. Pass `--chrome <path>` when Chrome is
+not in a default location; reusing `--work` skips the vault, which takes minutes
+and never changes.
+
+The command prints one JSON line and writes the run's progress events to
+`target/scan-progress-trace.json` — or the path `SCAN_PROGRESS_TRACE` names, for a
+run whose trace belongs somewhere else. Record the matching time, the number of
+worker
 updates the page received, the first estimate and how long after matching began
 it appeared, the upward revisions of the displayed estimate, the distinct
 milestones the live region was given, whether the full count was painted inside
 an animation frame, and that the stopped run returned to source selection with no
-queued update repainting the stop. A revision count near zero is the point: the
-estimator projects from average throughput and refuses to guess while the recent
-rate disagrees with it.
+queued update repainting the stop.
+
+That trace can then be replayed without a browser — the page's own arithmetic
+over the saved events:
+
+```sh
+node scripts/scan-progress-trace.mjs target/scan-progress-trace.json
+```
+
+A revision count near zero is the point: the estimator projects from average
+throughput and refuses to guess while the recent rate disagrees with it, and the
+replay is how that property is checked from a trace instead of from a two-minute
+watch. `scripts/check-js.mjs` holds the same arithmetic to its four rules in
+milliseconds, so a threshold that moves fails a gate rather than an estimate.
 
 **The rest is not this run.** Two release checks stay open until they are done on
 the deployed page, and neither is ticked by a local result:

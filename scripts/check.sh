@@ -61,44 +61,21 @@ printf 'tree %s
 # that holds them. It is never committed: real catalog paths are not a repo
 # artefact.
 #
-# The four pairs are read from up to three files, and the last one wins: the
-# machine's file, the file `lrsalvage.realEnvFile` names, then this worktree's
-# `.env`. The only gate that verifies a byte-level claim must not be unreachable
-# from a fresh worktree, which is what per-worktree configuration made it.
+# The four pairs are read from up to three files, in the order and by the rule
+# `scripts/load-env.sh` owns: the machine's file, the file
+# `lrsalvage.realEnvFile` names, then this worktree's `.env`, all three read so
+# the worktree's value wins and a variable set in only one is still found. The
+# only gate that verifies a byte-level claim must not be unreachable from a fresh
+# worktree, which is what per-worktree configuration made it.
 #
 #   git config --global lrsalvage.realEnvFile ~/real-lrsalvage.env
-#   ~/.config/lrsalvage/real.env          (the default, when the setting is unset)
-#   ./.env                                (this worktree's, and it wins)
 #
-# **Every candidate is read**, the machine's first and the worktree's last, so a
-# variable set in two files takes the worktree's value and a variable set in one
-# is still found. Stopping at the first file that exists is what let a worktree
-# `.env` holding only the wasm C compiler hide the four real-catalog pairs on the
-# same machine — and the failure it produced named neither file, which is why
-# `require_pair` prints `env_files` below.
-#
-# A name left at `=""` is assigned, not unset, so an empty line in a later file
-# wins over a value in an earlier one. Leave the name out rather than copying
-# `.env.example`'s empty line into a file that also needs the machine's value.
+# `require_pair` prints `env_files` below, which is the list that loader actually
+# read, not a second copy of the candidates.
 env_files=''
 load_env() {
-    env_files=''
-    for candidate in \
-        "${XDG_CONFIG_HOME:-$HOME/.config}/lrsalvage/real.env" \
-        "$(git config --get lrsalvage.realEnvFile 2>/dev/null || true)" \
-        ./.env; do
-        [ -n "$candidate" ] || continue
-        # A relative operand needs its slash: a POSIX `.` searches `PATH` for a
-        # name like `.env` and fails on the file that is right here.
-        [ -f "$candidate" ] || continue
-        # `set -a` exports what the file assigns: a plain `NAME=value` line is
-        # only a shell variable, and the tests are a child process.
-        set -a
-        # shellcheck disable=SC1090,SC1091
-        . "$candidate"
-        set +a
-        env_files="${env_files:+$env_files, }$candidate"
-    done
+    . ./scripts/load-env.sh
+    env_files=$load_env_files
 }
 
 gate_fmt() {

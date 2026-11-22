@@ -14,7 +14,7 @@
 //   recorded are `docs/agents/browser-app-deployment.md`, *Verify matching
 //   progress at release scale*.
 import assert from 'node:assert/strict';
-import { readFile, readdir } from 'node:fs/promises';
+import { readFile, readdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 
@@ -390,6 +390,11 @@ export async function checkScanProgressFixture(send, fixturePath) {
     };
     return seconds(state.eta) > seconds(previous.eta) ? count + 1 : count;
   }, 0);
+
+  // A trace is what `scripts/scan-progress-trace.mjs` replays: the run leaves the
+  // evidence its own replay needs, rather than only the number derived from it.
+  const tracePath = process.env.SCAN_PROGRESS_TRACE;
+  if (tracePath) await writeFile(tracePath, JSON.stringify({ events: result.events }));
 
   // A second run, stopped during matching: the readout stays the stop, and the
   // page goes back to source selection.

@@ -45,23 +45,11 @@ if ! rustup target list --installed | grep -qx wasm32-unknown-unknown; then
     exit 1
 fi
 
-# The one gitignored file a machine's own paths may live in, and the file
-# `scripts/check.sh` reads for the same reason: the wasm C compiler is not on this
-# machine's PATH. `scripts/check.sh` owns the rule; this is the same three
-# candidates, so a machine that satisfied the `wasm` gate satisfies this too.
-# A relative name needs a slash for `sh`: a POSIX `.` searches `PATH` for a
-# operand like `.env` and fails on a file that is right there.
-for candidate in \
-    ./.env \
-    "$(git config --get lrsalvage.realEnvFile 2>/dev/null || true)" \
-    "${XDG_CONFIG_HOME:-$HOME/.config}/lrsalvage/real.env"; do
-    [ -n "$candidate" ] || continue
-    [ -f "$candidate" ] || continue
-    set -a
-    # shellcheck disable=SC1090,SC1091
-    . "$candidate"
-    set +a
-done
+# The machine's own values, which is where the wasm C compiler lives on a machine
+# that keeps it off `PATH`. The candidates and their order are
+# `scripts/load-env.sh`'s, so a machine that satisfied the `wasm` gate satisfies
+# this one too — including which file wins when two name the same variable.
+. ./scripts/load-env.sh
 
 chrome=''
 # Everything the node driver understands, forwarded as given: `--attach <port>`

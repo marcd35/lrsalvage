@@ -395,7 +395,12 @@ the deployed candidate.
   refusal to project across a stalled or a more-than-halved rate, the empty
   catalog, the completion frame before result preparation, and a stop that a
   queued report cannot repaint — and reads the accessible progress bar's name,
-  value and maximum from Chromium's accessibility tree. The whole 5,000-image
+  value and maximum from Chromium's accessibility tree. The estimate's
+  arithmetic is `web/rate.js`, which `scripts/check-js.mjs` also runs directly in
+  milliseconds; `scripts/scan-progress-trace.mjs` replays a recorded run through
+  it, so the property that matters — the displayed estimate not climbing while
+  the rate holds — is checkable from a trace rather than only from a watch. The
+  whole 5,000-image
   scan, which takes minutes, is release evidence rather than a gate: its protocol
   is `docs/agents/browser-app-deployment.md`, *Verify matching progress at
   release scale*.

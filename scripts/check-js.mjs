@@ -19,6 +19,16 @@
 // a renamed field leaves the contract describing something no copy contains — the
 // drift class §6.4 already paid for once.
 //
+// Two more jobs sit on the seam between the page and the crate:
+//
+// - `web/app.js` names the phases `src/wasm.rs` numbers. One fact in two
+//   languages, and a phase added on one side alone silently shifts every name
+//   the page reads, so the two lists are compared here.
+// - `web/rate.js` is the estimate's whole arithmetic. It is pure, so it is run
+//   here on made-up reports: warm-up, a steady rate, a sustained slowdown and a
+//   stall. The browser gate drives the same module for twelve minutes; this
+//   costs milliseconds and fails first.
+//
 //   node --no-warnings --experimental-vm-modules scripts/check-js.mjs
 import { readdir, readFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
@@ -124,13 +134,131 @@ async function diagnosticsMatchTheSpec() {
   }
 }
 
+/**
+ * The phase names the page reads and the phase numbers the seam writes are one
+ * fact kept in two languages, so the two lists are compared here rather than by
+ * whoever adds the next phase.
+ */
+async function phasesMatchTheSeam() {
+  const app = await readFile(join(ROOT, 'crates', 'lrsalvage-app', 'web', 'app.js'), 'utf8');
+  const declared = /export const PHASES = \[([^\]]*)\]/.exec(app);
+  if (!declared) {
+    problems.push('web/app.js: no PHASES list to compare with the seam');
+    return;
+  }
+  const names = [...declared[1].matchAll(/'([a-z]+)'/g)].map((match) => match[1]);
+
+  const wasm = await readFile(join(ROOT, 'crates', 'lrsalvage-app', 'src', 'wasm.rs'), 'utf8');
+  const numbered = [...wasm.matchAll(/const PHASE_([A-Z_]+): u32 = (\d+);/g)]
+    .map(([, name, number]) => ({ name: name.toLowerCase(), number: Number(number) }))
+    .sort((first, second) => first.number - second.number);
+  if (numbered.length === 0) {
+    problems.push('src/wasm.rs: no PHASE_* constants to compare with the page');
+    return;
+  }
+  const contiguous = numbered.every((phase, index) => phase.number === index);
+  if (!contiguous) {
+    problems.push(
+      `src/wasm.rs numbers its phases ${numbered.map((phase) => phase.number).join(', ')}: ` +
+        'the page indexes them, so they have to run from zero without a gap',
+    );
+  }
+  const fromRust = numbered.map((phase) => phase.name);
+  if (JSON.stringify(fromRust) !== JSON.stringify(names)) {
+    problems.push(
+      'web/app.js PHASES and src/wasm.rs\'s PHASE_* disagree:\n' +
+        `  in the page: ${names.join(', ') || '(none)'}\n` +
+        `  in the seam: ${fromRust.join(', ')}`,
+    );
+  }
+}
+
+/**
+ * The estimate, on made-up reports: the four rules that keep it from drifting.
+ *
+ * The browser gate drives this same module end to end, which costs minutes; the
+ * arithmetic is pure, so the property that matters — a number that does not climb
+ * while the rate holds — is checked here in milliseconds, and a sentence that
+ * changes for the wrong reason fails before a browser starts.
+ */
+async function theEstimateHoldsSteady() {
+  const { CALCULATING, approximate, createRate } = await import(
+    '../crates/lrsalvage-app/web/rate.js'
+  );
+  const report = (done, seconds, total) => ({ done, at: seconds * 1000, total });
+  const fail = (message) => problems.push(`web/rate.js: ${message}`);
+
+  // Warm-up: three steady samples are still too few seconds of work to speak for
+  // the stage, so the warm-up alone has to hold the estimate back.
+  const early = createRate();
+  early.add(0, 7000, 0);
+  early.add(500, 7000, 1000);
+  if (early.add(1000, 7000, 2000) !== null) {
+    fail('an estimate appeared before the warm-up window had elapsed');
+  }
+
+  // A steady rate is projected from the average.
+  const steady = createRate();
+  let seconds = null;
+  for (let second = 0; second <= 8; second += 1) {
+    seconds = steady.add(second * 500, 40000, second * 1000);
+  }
+  if (seconds === null || seconds <= 0) {
+    fail('a steady rate produced no estimate');
+  }
+
+  // A sustained slowdown of more than a factor of two is not a rate to project
+  // from, and a recovery is one again.
+  const slowed = createRate();
+  for (let second = 0; second <= 8; second += 1) slowed.add(second * 500, 40000, second * 1000);
+  let duringSlowdown = null;
+  for (let second = 9; second <= 14; second += 1) {
+    duringSlowdown = slowed.add(4000 + (second - 8) * 5, 40000, second * 1000);
+  }
+  if (duringSlowdown !== null) {
+    fail('a sustained slowdown was still projected as a number');
+  }
+  let recovered = null;
+  for (let second = 15; second <= 22; second += 1) {
+    recovered = slowed.add(4030 + (second - 14) * 500, 40000, second * 1000);
+  }
+  if (recovered === null) fail('a recovered rate was not projected again');
+
+  // A stall clears the history: the samples before it describe work that stopped.
+  const stalled = createRate();
+  for (let second = 0; second <= 8; second += 1) stalled.add(second * 500, 40000, second * 1000);
+  if (stalled.add(4500, 40000, 11000) !== null) {
+    fail('a report after a two-second stall was projected from the stalled history');
+  }
+
+  // The sentences, at the precision the measurement has.
+  const sentences = [
+    [4, 'A few seconds remaining'],
+    [55, 'About 55 seconds remaining'],
+    [92, 'About 2 minutes remaining'],
+  ];
+  for (const [value, expected] of sentences) {
+    if (approximate(value) !== expected) {
+      fail(`${value} seconds reads "${approximate(value)}", not "${expected}"`);
+    }
+  }
+  if (CALCULATING !== 'Calculating time remaining…') {
+    fail('the warm-up sentence changed');
+  }
+}
+
 const scanned = await files();
 for (const file of scanned) parse(file, await readFile(file, 'utf8'));
 await diagnosticsMatchTheSpec();
+await phasesMatchTheSeam();
+await theEstimateHoldsSteady();
 
 if (problems.length) {
   for (const problem of problems) console.error(problem);
   console.error(`\n${problems.length} problem(s) in ${scanned.length} modules`);
   process.exit(1);
 }
-console.log(`${scanned.length} modules parse, and the diagnostics field list matches its spec`);
+console.log(
+  `${scanned.length} modules parse, the diagnostics list matches its spec, ` +
+    "the phase list matches the seam, and the estimate holds steady",
+);
