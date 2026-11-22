@@ -592,3 +592,52 @@ fn a_stop_during_the_cache_walk_ends_before_any_payload_is_read() {
         "the first boundary is before the first file, and nothing later ran"
     );
 }
+
+#[test]
+fn the_last_image_count_is_informational_and_every_unit_is_behind_it() {
+    let vault = three_images();
+    let mut reported = Vec::new();
+    let built = vault.plan_reported(&Options::default(), &mut |progress| {
+        reported.push(progress);
+        // Ask to stop exactly at the count that says every image is decided.
+        match progress {
+            Progress::Images { done, total } if done == total => Control::Stop,
+            _ => Control::Continue,
+        }
+    });
+
+    let plan = built.expect("a stop at the last count has no unit left to stop");
+    assert_eq!(
+        reported.last(),
+        Some(&Progress::Images { done: 3, total: 3 }),
+        "the stage's end is the count, not the plan"
+    );
+    assert_eq!(plan.stats.images, 3);
+    assert_eq!(
+        plan.items.iter().filter(|item| item.selected).count(),
+        plan.stats.selected_items as usize,
+        "the work after the count happened even though the report answered stop"
+    );
+}
+
+#[test]
+fn an_empty_catalog_still_reports_the_matching_stage_ending_at_zero() {
+    let vault = Vault::modern().write();
+    let mut reported = Vec::new();
+    let built = vault
+        .plan_reported(&Options::default(), &mut |progress| {
+            reported.push(progress);
+            Control::Continue
+        })
+        .expect("an empty catalog is a plan, not a stop");
+
+    assert_eq!(built.stats.images, 0);
+    assert_eq!(
+        reported
+            .iter()
+            .filter(|progress| matches!(progress, Progress::Images { .. }))
+            .collect::<Vec<_>>(),
+        vec![&Progress::Images { done: 0, total: 0 }],
+        "one report, at zero, so a surface has a boundary to end the stage on"
+    );
+}
