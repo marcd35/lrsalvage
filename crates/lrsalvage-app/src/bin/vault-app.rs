@@ -116,6 +116,11 @@ fn main() {
 }
 
 fn cache_only(out: &Path) -> Vec<serde_json::Value> {
+    // The app calls an index supported when SQLite reads it *and* its schema is
+    // this one, so a catalog's own SQLite bytes are what an unsupported schema
+    // looks like from the check's side.
+    let other_schema = fs::read(Vault::modern().write().catalog())
+        .expect("read the synthetic catalog's SQLite bytes");
     [
         ("cache-legacy", recovery_vault(Vault::legacy())),
         ("cache-modern", recovery_vault(Vault::modern())),
@@ -125,6 +130,11 @@ fn cache_only(out: &Path) -> Vec<serde_json::Value> {
         ),
         ("cache-no-index", Vault::unindexed()),
         ("cache-bad-index", Vault::modern().raw_index(b"not SQLite")),
+        (
+            "cache-unsupported-index",
+            Vault::modern().raw_index(&other_schema),
+        ),
+        ("cache-empty-index", Vault::modern()),
     ]
     .into_iter()
     .map(|(name, vault)| {

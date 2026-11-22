@@ -156,6 +156,7 @@ export async function checkCacheOnly(send) {
   for (const [name, message] of [
     ['cache-no-index', 'no previews.db'],
     ['cache-bad-index', 'could not be read'],
+    ['cache-unsupported-index', 'unsupported schema'],
   ]) {
     await call(mount, name, true);
     await click('recover-cache');
@@ -164,6 +165,13 @@ export async function checkCacheOnly(send) {
     assert.equal(await evaluate(el('export-section') + '.hidden'), true);
     await click('restart');
   }
+  // A supported index with no entries is its own answer, not a failure.
+  await call(mount, 'cache-empty-index', true);
+  await click('recover-cache');
+  await until('!' + el('result') + '.hidden', 'The empty index did not report a result');
+  assert.equal(await text('headline'), 'This preview index is empty.');
+  assert.equal(await evaluate(el('export-section') + '.hidden'), true);
+  await click('restart');
   await call(mount, 'cache-modern', true);
   await evaluate(`(() => {
     const native = FileSystemDirectoryHandle.prototype.entries;

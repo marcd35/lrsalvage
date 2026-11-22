@@ -103,6 +103,130 @@ fn distinguishes_missing_damaged_and_unsupported_indexes_from_an_empty_index() {
 }
 
 #[test]
+fn warns_when_a_complete_level_does_not_match_its_indexed_size() {
+    use lrsalvage_fixtures::bytes::jpeg;
+    let vault = Vault::modern()
+        .pyramid(PyramidRow::new(KEY).level(1600, 1000))
+        .level_file(Level::sized(KEY, 1600, 1000).raw(&jpeg(1200, 800)))
+        .write();
+    let scan = CacheRecovery::scan(vault.previews(), &mut |_| Control::Continue)
+        .expect("readable index")
+        .expect("finished");
+    let item = &scan.items[0];
+    assert_eq!(item.status, Status::Recoverable);
+    assert!(
+        item.dimension_mismatch,
+        "a 1200x800 file for a 1600x1000 row"
+    );
+    assert!(!item.fallback, "nothing larger was indexed and unreadable");
+    assert_eq!(
+        item.preview.as_ref().expect("recoverable").dimensions,
+        (1200, 800)
+    );
+}
+
+#[test]
+fn an_equal_area_tie_prefers_the_level_file_over_the_legacy_chunk() {
+    use lrsalvage_fixtures::bytes::{exif_app1, jpeg, jpeg_with};
+    let level_file = jpeg_with(960, 640, &[exif_app1(1)]);
+    let vault = Vault::mixed()
+        .pyramid(PyramidRow::new(KEY).level(960, 640))
+        .level_file(Level::sized(KEY, 960, 640).raw(&level_file))
+        .container(&[Level::sized(KEY, 960, 640).raw(&jpeg(960, 640))])
+        .write();
+    let scan = CacheRecovery::scan(vault.previews(), &mut |_| Control::Continue)
+        .expect("readable index")
+        .expect("finished");
+    let preview = scan.items[0].preview.as_ref().expect("recoverable");
+    assert_eq!(preview.dimensions, (960, 640));
+    assert_eq!(
+        preview.read().expect("certified bytes"),
+        level_file,
+        "the modern level file wins an area tie"
+    );
+}
+
+#[test]
+fn equal_area_level_files_tie_on_their_cache_relative_path() {
+    let vault = Vault::modern()
+        .pyramid(PyramidRow::new(KEY).level(960, 640).level(640, 960))
+        .level_file(Level::sized(KEY, 960, 640))
+        .level_file(Level::sized(KEY, 640, 960))
+        .write();
+    let scan = CacheRecovery::scan(vault.previews(), &mut |_| Control::Continue)
+        .expect("readable index")
+        .expect("finished");
+    let preview = scan.items[0].preview.as_ref().expect("recoverable");
+    assert_eq!(
+        preview.dimensions,
+        (640, 960),
+        "the `_640` leaf sorts before the `_960` leaf"
+    );
+}
+
+#[test]
+fn equal_area_legacy_chunks_keep_their_chunk_order() {
+    let vault = Vault::mixed()
+        .pyramid(PyramidRow::new(KEY).level(960, 640).level(640, 960))
+        .container(&[Level::sized(KEY, 960, 640), Level::sized(KEY, 640, 960)])
+        .write();
+    let scan = CacheRecovery::scan(vault.previews(), &mut |_| Control::Continue)
+        .expect("readable index")
+        .expect("finished");
+    let preview = scan.items[0].preview.as_ref().expect("recoverable");
+    assert_eq!(
+        preview.dimensions,
+        (960, 640),
+        "the first `level_N` chunk wins"
+    );
+}
+
+#[test]
+fn generated_names_depend_only_on_the_indexed_pair() {
+    let alone = Vault::modern()
+        .pyramid(PyramidRow::new(KEY).level(640, 400))
+        .level_file(Level::sized(KEY, 640, 400))
+        .write();
+    let mut crowded = Vault::modern()
+        .pyramid(PyramidRow::new(KEY).level(640, 400))
+        .level_file(Level::sized(KEY, 640, 400));
+    // Another cache root, and pyramids this pair has nothing to do with.
+    for number in 1..=8 {
+        let uuid = format!("B{number:07}-1111-4111-8111-{number:012}");
+        crowded = crowded
+            .pyramid(PyramidRow::new(&uuid).level(800, 600))
+            .level_file(Level::sized(&uuid, 800, 600));
+    }
+    let crowded = crowded.write();
+    let names = |vault: &Vault| -> Vec<String> {
+        let scan = CacheRecovery::scan(vault.previews(), &mut |_| Control::Continue)
+            .expect("readable index")
+            .expect("finished");
+        scan.items
+            .into_iter()
+            .filter(|item| item.status == Status::Recoverable)
+            .map(|item| item.filename)
+            .collect()
+    };
+    let alone = names(&alone);
+    assert_eq!(alone.len(), 1, "one indexed pyramid, one name");
+    assert!(
+        names(&crowded).contains(&alone[0]),
+        "the pair keeps its name beside unrelated pyramids, in another cache root"
+    );
+    let hex = alone[0]
+        .strip_prefix("preview-")
+        .and_then(|rest| rest.strip_suffix(".jpg"))
+        .expect("preview-<hash>.jpg");
+    assert_eq!(hex.len(), 64);
+    assert!(hex.chars().all(|character| character.is_ascii_hexdigit()));
+    assert!(
+        hex.chars().all(|character| !character.is_ascii_uppercase()),
+        "the hash is lowercase"
+    );
+}
+
+#[test]
 fn a_differently_cased_disk_key_does_not_match_an_indexed_pyramid() {
     let vault = Vault::modern()
         .pyramid(PyramidRow::new(&KEY.to_ascii_lowercase()).level(640, 400))
