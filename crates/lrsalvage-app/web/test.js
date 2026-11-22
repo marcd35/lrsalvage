@@ -17,7 +17,7 @@
 // The result is `window.__result` and `window.__done`, which the CDP driver reads.
 
 import { capability, folderSource, pickFolder, sourceFrom, start, withMount } from './app.js';
-import { json, mountVault } from './mount.js';
+import { freshDirectory, json, mountVault } from './mount.js';
 
 const logNode = document.getElementById('log');
 function log(...parts) {
@@ -192,6 +192,38 @@ async function main() {
   if (atRoot.catalogs.length !== 0) {
     differences.push(
       `folder: the vault root read ${JSON.stringify(atRoot.catalogs)} as catalogs, expected none`,
+    );
+  }
+
+  // -- 3b. the cache suggestion, beside a real catalog ---------------------
+  //
+  // `#191`: a real catalog has up to three `.lrdata` siblings whose names all
+  // start with the catalog's stem, and the suggestion used to be a prefix match
+  // — so `Helper`, sorting first, won. These folders are empty on purpose: to
+  // this page a companion is a name, and the rule is what has to hold.
+  const beside = await freshDirectory(base, 'app-beside');
+  await beside.getFileHandle('2023.lrcat', { create: true });
+  const previews = await beside.getDirectoryHandle('2023 Previews.lrdata', { create: true });
+  await previews.getFileHandle('previews.db', { create: true });
+  for (const name of ['2023 Smart Previews.lrdata', '2023 Helper.lrdata']) {
+    await beside.getDirectoryHandle(name, { create: true });
+  }
+  const siblings = await folderSource(beside);
+  numbers.cacheSuggestion = siblings.cache;
+  if (siblings.cache !== '2023 Previews.lrdata') {
+    differences.push(
+      `cache: a catalog with all three siblings suggested ${JSON.stringify(siblings.cache)}, ` +
+        'expected "2023 Previews.lrdata"',
+    );
+  }
+
+  const companionOnly = await freshDirectory(base, 'app-companion');
+  await companionOnly.getFileHandle('2023.lrcat', { create: true });
+  await companionOnly.getDirectoryHandle('2023 Smart Previews.lrdata', { create: true });
+  const alone = await folderSource(companionOnly);
+  if (alone.cache !== null) {
+    differences.push(
+      `cache: a catalog whose only folder is Smart Previews suggested ${JSON.stringify(alone.cache)}`,
     );
   }
 

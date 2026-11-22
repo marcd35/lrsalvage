@@ -206,6 +206,22 @@ create disagreement to resolve. Do not describe it as part of the read path.
 
 ## 2. `previews.db` — VERIFIED
 
+**Adobe writes up to three `.lrdata` siblings beside a catalog, and only one of
+them is a preview cache** (**reported** — the maintainer's pre-alpha catalog and
+cache, 2026-11-22, not reproduced against a fresh Lightroom install).
+
+| Sibling | Carries `previews.db` |
+| --- | --- |
+| `<catalog> Previews.lrdata` | yes — the standard previews this project reads |
+| `<catalog> Smart Previews.lrdata` | no — DNG smart previews |
+| `<catalog> Helper.lrdata` | no — Lightroom's own helper caches |
+
+All three share the catalog's stem, so a prefix match over the folder listing
+names three caches and answers the wrong one (`Helper`, alphabetically first).
+The app's rule is the exact `<stem> Previews.lrdata`, with the other two never a
+candidate — `web/folders.js`, `specs/app.md` *Decisions*, `#191`. Treat a fourth
+name a future Lightroom release invents as unverified rather than as a cache.
+
 Every `* Previews.lrdata` directory contains a SQLite database, `previews.db`,
 which is the authoritative map from catalog image to payload file. It contains
 **no image bytes at all** — every column in every table is a scalar (text or

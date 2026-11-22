@@ -23,6 +23,12 @@ pending.
 - [ ] Close the tracker’s implementation slices against
       [the app acceptance spec](https://github.com/marcd35/lrsalvage/issues/117)
       and its dated corrections. Record the accepted candidate commit.
+- [ ] Close [#191](https://github.com/marcd35/lrsalvage/issues/191) and
+      [#192](https://github.com/marcd35/lrsalvage/issues/192) before tagging, and
+      run the hosted walks below on a candidate that carries them: the first
+      changes which folder the app suggests and how a destination is refused, the
+      second changes the review and export surfaces the maintainer's recovery
+      reads.
 - [ ] Run the applicable gates in [scripts/check.sh](../scripts/check.sh)
       on that commit. Record the output parity gate required by ADR 0012 D12
       for the actual browser writer and CLI.

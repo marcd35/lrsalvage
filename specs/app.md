@@ -72,6 +72,16 @@ reverse — so the seam is registered one way for both pages.
   reads `<name>.lrcat` and `<name> Previews.lrdata`; a split backup is a second
   folder pick. This corrects #117's "pick the catalog with a file picker", and the
   correction is forced by the API rather than by taste (`#149`, DEC-S1).
+- **The suggested cache is the catalog's own previews folder, or nothing.** The
+  folder listing collects every `.lrdata`, and the suggestion is the exact
+  `<stem> Previews.lrdata` for the chosen catalog — never one of Adobe's companion
+  folders (`<stem> Smart Previews.lrdata`, `<stem> Helper.lrdata`), which carry no
+  `previews.db` and are not offered even when they are the only `.lrdata` there
+  is. With no exact cache, a single remaining candidate is still offered, because
+  a renamed or copied backup is a real case; anything more ambiguous suggests
+  nothing and the step says the cache folder must be chosen. The rule is
+  `web/folders.js`, one pure function, and a folder a person picks by hand answers
+  to it too (`#191`).
 - **The source is a value, and the picker is one way to make one.** `start(source)`
   takes mount paths and the handles that answer for them; the pickers, and the
   page's own reading of the folder, are what a click makes of them. That is what
@@ -220,7 +230,13 @@ describe browser storage and cannot measure the destination's disk space.
 
 The page checks a picked destination against the source handles in both
 directions. This excludes destinations inside or containing the catalog, preview
-cache, or other mounted inputs. The worker uses the shared extraction preparation
+cache, or other mounted inputs. A refusal names the tree the folder landed in and
+renders as its own block inside the export panel — the sentence and the button
+that reopens the picker — with focus moved into it, so the way out is one press
+away rather than a control to go looking for. The destination picker opens at the
+catalog's folder, which is the handle the page already holds; a platform that
+refuses to open a read-write picker there is retried once without it, since the
+start location is a convenience and never a failure. The worker uses the shared extraction preparation
 for every JPEG. The page commits the bytes through a writable file stream and
 records success after close. The app verifies existing JPEGs with the same marker and dimensions check as
 native extraction. It reports matching files as already recovered. The app refuses foreign files it
@@ -369,7 +385,15 @@ the deployed candidate.
 - The browser app workflow runs `scripts/browser-app.sh` on one headless
   Chromium runner for relevant pull requests. It compares the page's entry
   and native results field by field, including digests, and covers stop,
-  recheck, picker cancellation and the capability check.
+  recheck, picker cancellation and the capability check. The cache suggestion is
+  asserted over a real directory holding a catalog with all three `.lrdata`
+  siblings, so the page's reading of the folder is held to the rule and not only
+  the rule to itself (`#191`).
+- `web/folders.js` is the cache-suggestion rule in one pure function, and
+  `scripts/check-js.mjs` runs it on made-up name lists in milliseconds: the
+  companion folders rejected, the exact cache winning between same-stem
+  siblings, one renamed candidate still offered, and two ambiguous ones
+  suggesting nothing.
 - What the browser run cannot prove, and does not claim: that a human's accepted
   pick returns a handle. The mechanism is the browser's, one `await` deep, and the
   value it returns is the value the test supplies.

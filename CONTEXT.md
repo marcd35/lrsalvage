@@ -26,6 +26,13 @@ The directory of rendered copies Lightroom keeps beside a catalog so it never ha
 to re-render an image just to show it.
 _Avoid_: cache folder, preview folder, lrdata
 
+**Companion cache**:
+One of the other directories Lightroom keeps beside a catalog under the catalog's
+own name — smart previews, and its private helper caches. They are not the
+preview cache: they carry no index of rendered copies, so nothing in them answers
+the question a recovery asks.
+_Avoid_: second cache, smart cache, helper folder
+
 **Pyramid**:
 The cache's unit for one image: an index row naming the levels that image's renders consist of, and the payloads those levels live in. A *converted* cache keeps one per image; a *render* keeps two — see below.
 _Avoid_: preview set, preview file, image cache

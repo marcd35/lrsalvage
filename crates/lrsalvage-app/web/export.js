@@ -43,9 +43,12 @@ const DESCRIPTIONS = {
 };
 
 async function validateDestination(destination, inputs) {
-  for (const { handle } of inputs) {
+  for (const { path, handle } of inputs) {
     if (await handle.resolve(destination) !== null || await destination.resolve(handle) !== null) {
-      throw new Error('Choose a folder outside the catalog, preview cache and original folders.');
+      throw new Overlap(
+        `That folder is inside ${treeName(path)}. Choose a folder outside the catalog, ` +
+          'the preview cache and the original folders.',
+      );
     }
   }
 }
@@ -54,6 +57,23 @@ class OccupiedPath extends Error {
   constructor() {
     super('A file already exists at this path. It was left unchanged.');
   }
+}
+
+/**
+ * The destination landed inside the source, and the way out has its own place.
+ *
+ * `#191`: this refusal used to be one sentence in the status line, which left the
+ * user to find the destination control themselves. It carries the tree it
+ * landed in so the panel can say which one, and the panel renders it as a block
+ * with the button that reopens the picker (`refuse`).
+ */
+class Overlap extends Error {}
+
+/** The tree a mount path belongs to, in the words the refusal uses. */
+function treeName(path) {
+  if (path === '/source') return "the catalog's folder";
+  if (path === '/cache') return 'the preview cache folder';
+  return 'a folder the catalog records as an original-photo location';
 }
 
 async function fileAt(directory, name) {
@@ -216,6 +236,9 @@ export function mountExport(document) {
   const end = el('end');
   const save = el('one');
   const details = el('paths');
+  const refusal = el('refusal');
+  const refusalMessage = el('refusal-message');
+  const refusalPick = el('refusal-pick');
   const receipt = mountReceipt(document, { saveVerification });
   let run;
 
@@ -224,6 +247,10 @@ export function mountExport(document) {
     run = {
       scan, inputs, cacheOnly, checked: new Set(), layouts: new Map(), targets: [],
       flat: false, target: null, suggestion: null, batch: null, busy: false, photo: null,
+      // The catalog's own folder, so the destination picker can start there: the
+      // recovery folder belongs beside the source, and the page still holds the
+      // handle it was picked with (`#191`).
+      catalog: inputs.find((mount) => mount.path === '/source')?.handle ?? null,
       // The run's account: one entry per catalog image this run committed, plus
       // the failures and the reports it wrote. `targets[].saved` caches per
       // destination for the writer; this is what the receipt counts.
@@ -249,6 +276,7 @@ export function mountExport(document) {
     run = null;
     section.hidden = true;
     details.open = false;
+    clearRefusal();
     el('status').textContent = '';
     el('errors').replaceChildren();
     el('one-status').textContent = '';
@@ -338,14 +366,24 @@ export function mountExport(document) {
   }
 
   async function choose(current) {
-    const picked = await pickFolder({ id: 'lrsalvage-destination', mode: 'readwrite' });
-    if (picked.cancelled) return;
+    const picked = await pickFolder({
+      id: 'lrsalvage-destination',
+      mode: 'readwrite',
+      startIn: current.catalog,
+    });
+    if (picked.cancelled) {
+      // One of the two ways a pick ends: the panel is where it was, and what the
+      // user was doing is still the thing in front of them.
+      focusAfterPick();
+      return undefined;
+    }
     if (picked.refused) throw new Error(picked.refused.message);
     return accept(current, picked.handle);
   }
 
   async function accept(current, handle) {
     await validateDestination(handle, current.inputs);
+    clearRefusal();
     void rememberDestination(handle).catch(() => {});
     for (const target of current.targets) {
       if (await target.handle.isSameEntry(handle)) {
@@ -365,7 +403,10 @@ export function mountExport(document) {
     try {
       await action();
     } catch (error) {
-      if (run === current) status.textContent = error.message;
+      if (run === current) {
+        if (error instanceof Overlap) refuse(error.message);
+        else status.textContent = error.message;
+      }
     } finally {
       current.busy = false;
       if (run === current) {
@@ -375,6 +416,36 @@ export function mountExport(document) {
         updateReceipt(current);
       }
     }
+  }
+
+  /**
+   * Show the overlap refusal where the destination is, with the way out beside it.
+   *
+   * Focus moves into the block, to the button rather than the sentence: the
+   * sentence is announced by its `role="alert"`, and a focused paragraph would
+   * leave the only useful action one Tab away.
+   */
+  function refuse(message) {
+    refusalMessage.textContent = message;
+    refusal.hidden = false;
+    refusalPick.focus();
+  }
+
+  function clearRefusal() {
+    refusal.hidden = true;
+    refusalMessage.textContent = '';
+  }
+
+  /**
+   * Where focus goes when a pick ends without one.
+   *
+   * Cancelled: the refusal block is still the thing to answer, so its button.
+   * Otherwise the destination control, which is what an accepted folder leaves the
+   * user wanting to use.
+   */
+  function focusAfterPick() {
+    if (run && !refusal.hidden) refusalPick.focus();
+    else picker.focus();
   }
 
   /**
@@ -608,7 +679,19 @@ export function mountExport(document) {
       status.textContent = '';
       const target = await choose(current);
       if (target) current.target = target;
-    }, status);
+    }, status).then(focusAfterPick);
+  });
+  // The refusal's own way out (`#191`): the same pick, from the block that says
+  // why the last one was refused.
+  refusalPick.addEventListener('click', () => {
+    const current = run;
+    const status = el('status');
+    if (!current || current.batch || current.busy) return;
+    void locked(current, async () => {
+      status.textContent = '';
+      const target = await choose(current);
+      if (target) current.target = target;
+    }, status).then(focusAfterPick);
   });
   suggestion.addEventListener('click', () => {
     const current = run;
