@@ -91,6 +91,26 @@ reverse — so the seam is registered one way for both pages.
   times a second, and always on a stage change and on a stage's last unit. A
   100,000-image catalog crosses the boundary that many times and a DOM update does
   not cost what a `u64` does (`specs/modules/plan.md`).
+- **Matching progress measures catalog images (#185).** For a known positive
+  total the bar ranges from zero to that total. Matching shows the processed
+  count and a percentage that reaches 100% on the last image and never before it:
+  below completion the ceiling is 99%. The estimate is the average matching
+  throughput in worker time, checked against the recent rate; *Calculating time
+  remaining…* stands in during warm-up, after a stall, and while the recent rate
+  differs from the average by more than a factor of two, so a revision upwards is
+  the workload changing rather than the measuring window moving. An empty catalog
+  says *No catalog images to match* with neither a bar nor an estimate. The last
+  image's count is the end of the matching stage: one browser frame later the
+  page clears the count and the estimate and says *Preparing scan results…* with
+  the bar indeterminate, until the report arrives. The page reads that second
+  boundary from the last stage's completion rather than from an event, because
+  `Progress` reports no finalization (`specs/modules/plan.md`, *Decisions*). A
+  stop clears the
+  readout immediately and a report queued behind it cannot repaint it; a stop
+  that arrives once the last image's count has been reported cannot land, so the
+  completed result opens. The bar is named by the stage sentence and described by
+  the count and the estimate, and one polite live region announces each stage,
+  each matching quarter and the first estimate, and matching completion.
 - **The stages that are one call are named, not pretended to move.** The copy, the
   index copy and the SQLite open have no unit inside them, so the page says which
   stage it is in and offers no stop for it. The measured copy is 6–10 s per GiB
@@ -327,6 +347,16 @@ the deployed candidate.
   to their browser mount paths and ignores the generation timestamp. The embedded
   core version is the same in both builds, so the JPEG marker, hash and manifest
   version are compared exactly.
+- `scripts/check-scan-progress.mjs` is the scanning readout's phase of that
+  script (`#185`). It drives the page's own progress module with made-up reports
+  — the range and its maximum, the 99% ceiling, the estimate's warm-up and its
+  refusal to project across a stalled or a more-than-halved rate, the empty
+  catalog, the completion frame before result preparation, and a stop that a
+  queued report cannot repaint — and reads the accessible progress bar's name,
+  value and maximum from Chromium's accessibility tree. The whole 5,000-image
+  scan, which takes minutes, is release evidence rather than a gate: its protocol
+  is `docs/agents/browser-app-deployment.md`, *Verify matching progress at
+  release scale*.
 - `scripts/check-receipt.mjs` is the receipt's own phase of that script. It
 drives the product through a batch that is stopped and continued with a one-off
 save overlapping it, then lists the destination back and compares the three

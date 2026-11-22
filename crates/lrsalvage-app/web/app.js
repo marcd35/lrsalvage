@@ -180,7 +180,8 @@ export function withMount(source, path, handle) {
  * Start one scan, and hand back what it needs to be stopped.
  *
  * `ui.stage(name)` is called with `'install'`, `'copy'`, `'scan'` and `'report'`;
- * `ui.progress({phase, done, total})` with every report the worker forwards; and
+ * `ui.progress({phase, done, total, at})` with every report the worker forwards,
+ * `at` being the worker's monotonic milliseconds at the unit; and
  * `done` resolves with the Rust half's report — `{ok: true, …}`,
  * `{ok: true, stopped: true}`, or `{ok: false, problem: {stage, kind, message}}`.
  * Scan failures are reports. Worker failures reject `done`.

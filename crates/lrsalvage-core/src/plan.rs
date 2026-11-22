@@ -281,6 +281,12 @@ pub enum Progress {
     /// before the first read, because the walk that just finished found them.
     Payloads { done: u64, total: u64 },
     /// A catalog image the plan has finished with.
+    ///
+    /// The last report carries `done == total` and is sent as soon as the last
+    /// image is decided, before the orphan sweep and the path assignment: it is
+    /// the matching stage's end, and what follows it is preparation rather than
+    /// another unit. Its answer is not consulted, because there is nothing left
+    /// to stop.
     Images { done: u64, total: u64 },
 }
 
@@ -327,6 +333,13 @@ impl Plan {
     /// How often a surface paints is the surface's decision, not this
     /// function's: a 100 000-image catalog crosses this boundary that many
     /// times, and a DOM update does not cost what a `u64` does.
+    ///
+    /// The last image's report is the one exception to "the answer decides":
+    /// it is sent when the last image is decided and every unit is behind it, so
+    /// a stop asked for there cannot land anywhere and the build finishes. A
+    /// surface that has reached it is finished matching and is preparing a
+    /// result, which is why the count arrives before the orphan sweep and the
+    /// path assignment rather than after them.
     pub fn build_reported(
         catalog: &Catalog,
         index: &PreviewIndex,
@@ -583,6 +596,17 @@ impl Plan {
             }
         }
 
+        // The matching stage ends here, where the last image was decided — not
+        // where the plan exists. Everything below is preparation: the orphan
+        // sweep and the path assignment are work, but no unit of a stage, so a
+        // surface reaching this count has matched everything and is waiting for
+        // a result (`specs/app.md`, *Decisions*). Nothing is left to stop and
+        // the answer is not consulted.
+        let _ = progress(Progress::Images {
+            done: total_images,
+            total: total_images,
+        });
+
         // Payloads with no cache entry: recoverable, but unmappable. One item
         // per pyramid, never one per level file: one orphan is one lost
         // photograph, whatever its level set looks like
@@ -663,13 +687,6 @@ impl Plan {
 
         stats.selected_items = items.iter().filter(|item| item.selected).count() as u64;
         stats.selected_images = distinct_selected_images(&items) as u64;
-
-        // The last report is the stage's end, not a boundary: there is nothing
-        // left to stop, so what it answers is not consulted.
-        let _ = progress(Progress::Images {
-            done: total_images,
-            total: total_images,
-        });
 
         Ok(Some(Plan {
             items,

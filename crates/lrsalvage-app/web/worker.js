@@ -119,7 +119,7 @@ async function run({ sab, stop, mounts, catalog, cache, capacity }) {
     if (boundary || now - lastPaint >= PAINT_MS) {
       lastPaint = now;
       lastPhase = phase;
-      self.postMessage({ type: 'progress', phase, done, total });
+      self.postMessage({ type: 'progress', phase, done, total, at: now });
     }
     // Read on *every* call, painted or not: a stop must not wait for the next
     // paint to be noticed.

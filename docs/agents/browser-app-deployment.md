@@ -146,6 +146,54 @@ storage, fixture size, counts, correctness verdict, and timings in
 `writer-scale-result.json` in the work directory. Link that result from the app
 release checklist.
 
+## Verify matching progress at release scale
+
+[Matching progress](https://github.com/marcd35/lrsalvage/issues/185) has two
+kinds of evidence, and they answer different questions. A **local Chromium run**
+proves what the page's readout does — the range, the percentage, the estimate,
+the completion frame, the boundary before result preparation, and Stop. It
+does **not** prove that a screen reader announced the milestones, and a headless
+browser is not the deployed page.
+
+The controlled half is a gate: `sh scripts/browser-app.sh --only progress` — and
+so `sh scripts/check.sh browser` — drives
+`crates/lrsalvage-app/web/scan-progress.js` with made-up reports and reads the
+accessible progress bar's name, value and maximum out of Chromium's
+accessibility tree. Nothing in it is timed, so it says nothing about an
+estimate.
+
+The full half takes minutes and is release evidence. From the candidate's clean
+checkout, build the page's WASM at that commit, compose a 5,000-image Writer
+Scale vault, and drive a whole scan and a stopped scan through the page's own
+entry:
+
+```sh
+cargo build --release --locked --lib --target wasm32-unknown-unknown -p lrsalvage-app
+wasm-bindgen --target web --out-dir crates/lrsalvage-app/web/pkg --out-name lrsalvage_app target/wasm32-unknown-unknown/release/lrsalvage_app.wasm
+cargo run --release --locked -p lrsalvage-app --bin vault-writer-scale -- target/scan-progress-fixture
+node scripts/drive-browser.mjs target/scan-progress-fixture --check-scan-progress-fixture
+```
+
+The command prints one JSON line. Record the matching time, the number of worker
+updates the page received, the first estimate and how long after matching began
+it appeared, the upward revisions of the displayed estimate, the distinct
+milestones the live region was given, whether the full count was painted inside
+an animation frame, and that the stopped run returned to source selection with no
+queued update repainting the stop. A revision count near zero is the point: the
+estimator projects from average throughput and refuses to guess while the recent
+rate disagrees with it.
+
+**The rest is not this run.** Two release checks stay open until they are done on
+the deployed page, and neither is ticked by a local result:
+
+- The same 5,000-image scan against the hosted `/recovery` page, because the
+deployed URL, its cross-origin isolation and its headers are not the local
+server's.
+- A hands-on screen-reader pass on that page: the live region's announcements in
+reading order, the bar's name and value at a milestone, and Stop from the
+keyboard. The accessibility tree is evidence about the page, not about what was
+announced.
+
 ## Configure Pages
 
 Set up a [Cloudflare Pages Direct Upload project](https://developers.cloudflare.com/pages/get-started/direct-upload/)

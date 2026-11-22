@@ -130,12 +130,27 @@
       border-left-color: #f87171;
     }
   }
+  /* Text a screen reader reads and a screen does not: the live region is the
+     one place a milestone is announced, so the stage paragraph and the count can
+     change at the paint rate without being read aloud at the paint rate. */
+  .visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    clip-path: inset(50%);
+    overflow: hidden;
+    white-space: nowrap;
+  }
   progress {
     display: block;
     width: 100%;
     height: 0.6rem;
     margin-top: 0.9rem;
     accent-color: var(--accent);
+  }
+  /* An empty catalog has no range: no bar, rather than a bar of nothing. */
+  progress[hidden] {
+    display: none;
   }
   progress:not([value]) {
     opacity: 0.5;
@@ -231,9 +246,11 @@
 
   <section id="scanning" class="step" hidden>
     <h2>2. Scanning</h2>
-    <p id="stage" role="status" aria-live="polite"></p>
-    <progress id="bar" aria-hidden="true"></progress>
+    <p id="stage"></p>
+    <progress id="bar" aria-labelledby="stage" aria-describedby="count eta"></progress>
     <p id="count"></p>
+    <p id="eta" hidden></p>
+    <p id="scan-status" class="visually-hidden" role="status" aria-atomic="true"></p>
     <div class="actions">
       <button id="stop" type="button">Stop</button>
     </div>

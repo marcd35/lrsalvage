@@ -11,8 +11,7 @@
 // Explorer instead of offering an *Open folder* the page cannot honour.
 
 import { log } from './diagnostics.js';
-
-const counted = (value) => Number(value).toLocaleString('en');
+import { counted } from './count.js';
 
 /** `IMG_0001.jpg` from `2023/IMG_0001.jpg`. */
 function name(path) {
