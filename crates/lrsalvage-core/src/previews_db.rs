@@ -13,6 +13,7 @@ use std::path::{Component, Path, PathBuf};
 use rusqlite::Connection;
 use rusqlite::types::ValueRef;
 
+use crate::error::IoContext;
 use crate::error::Result;
 use crate::fs;
 use crate::model::{CacheEntry, Pyramid, PyramidLevel};
@@ -578,21 +579,31 @@ impl CacheSweep {
 /// the catalog has.
 #[must_use]
 pub fn sweep(cache_root: &Path, progress: &mut dyn FnMut(u64) -> bool) -> Option<CacheSweep> {
+    sweep_paths(
+        cache_root,
+        fs::walk_files(cache_root).unwrap_or_default(),
+        progress,
+    )
+}
+
+pub(crate) fn sweep_required(
+    cache_root: &Path,
+    progress: &mut dyn FnMut(u64) -> bool,
+) -> Result<Option<CacheSweep>> {
+    let paths = fs::walk_files_strict(cache_root).at(cache_root)?;
+    Ok(sweep_paths(cache_root, paths, progress))
+}
+
+fn sweep_paths(
+    cache_root: &Path,
+    paths: Vec<PathBuf>,
+    progress: &mut dyn FnMut(u64) -> bool,
+) -> Option<CacheSweep> {
     let mut found: HashMap<(String, String), PyramidOnDisk> = HashMap::new();
     let mut unrecognised = Vec::new();
 
-    // A root that cannot be walked is an empty sweep, which is what this walk
-    // has always done with one; an unreadable folder inside the tree is skipped
-    // by the seam rather than losing the payloads beside it.
-    //
-    // The index of this enumeration is the answer: it is the number of files
-    // finished before this one, which is what a reporter is asked about and what
-    // a stop leaves.
-    for (walked, path) in fs::walk_files(cache_root)
-        .unwrap_or_default()
-        .into_iter()
-        .enumerate()
-    {
+    // The count is the number of files finished before this one.
+    for (walked, path) in paths.into_iter().enumerate() {
         if !progress(walked as u64) {
             return None;
         }

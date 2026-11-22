@@ -9,6 +9,7 @@ depends-on:
   - model
   - jpeg
   - fs
+  - error
 references:
   - adr-0002-map-via-previews-db
   - adr-0005-discover-payloads-by-index

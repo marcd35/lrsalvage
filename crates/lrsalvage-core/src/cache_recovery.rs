@@ -64,9 +64,10 @@ impl CacheRecovery {
         progress: &mut dyn FnMut(Progress) -> Control,
     ) -> Result<Option<Self>> {
         let index = previews_db::open_required(cache)?;
-        let Some(sweep) = previews_db::sweep(cache, &mut |files| {
+        let Some(sweep) = previews_db::sweep_required(cache, &mut |files| {
             progress(Progress::Cache { files }) == Control::Continue
-        }) else {
+        })?
+        else {
             return Ok(None);
         };
         let layout = sweep.layout();

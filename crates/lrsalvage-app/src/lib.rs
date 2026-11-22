@@ -70,6 +70,8 @@ pub enum Stage {
     Index,
     /// Opening the required index for cache-only recovery.
     CacheIndex,
+    /// Walking the preview cache to record the exact paths it holds.
+    CacheWalk,
     /// The reported build over the catalog and the cache.
     Scan,
 }
@@ -82,6 +84,7 @@ impl Stage {
             Stage::Open => "open",
             Stage::Index => "index",
             Stage::CacheIndex => "cache-index",
+            Stage::CacheWalk => "cache-walk",
             Stage::Scan => "scan",
         }
     }
@@ -243,8 +246,15 @@ pub fn scan_cache(
     cache: &Path,
     progress: &mut dyn FnMut(Progress) -> Control,
 ) -> Result<ScanResult, Failure> {
-    let plan = lrsalvage_core::cache_recovery::CacheRecovery::scan(cache, progress)
-        .map_err(|error| Failure::of(Stage::CacheIndex, &error))?;
+    let plan =
+        lrsalvage_core::cache_recovery::CacheRecovery::scan(cache, progress).map_err(|error| {
+            let stage = if matches!(error, lrsalvage_core::Error::RequiredPreviewIndex { .. }) {
+                Stage::CacheIndex
+            } else {
+                Stage::CacheWalk
+            };
+            Failure::of(stage, &error)
+        })?;
     let Some(plan) = plan else {
         return Ok(ScanResult {
             report: json!({ "ok": true, "stopped": true }),

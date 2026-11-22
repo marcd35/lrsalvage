@@ -164,6 +164,25 @@ export async function checkCacheOnly(send) {
     assert.equal(await evaluate(el('export-section') + '.hidden'), true);
     await click('restart');
   }
+  await call(mount, 'cache-modern', true);
+  await evaluate(`(() => {
+    const native = FileSystemDirectoryHandle.prototype.entries;
+    globalThis.restoreCacheEntries = () => { FileSystemDirectoryHandle.prototype.entries = native; };
+    FileSystemDirectoryHandle.prototype.entries = function () {
+      if (this.name === 'A000') throw new DOMException('Test shard refused', 'NotAllowedError');
+      return native.call(this);
+    };
+  })()`);
+  try {
+    await click('recover-cache');
+    await until('!' + el('result') + '.hidden', 'Unreadable shard did not report a result');
+    assert.match(await text('headline'), /could not read the entire preview cache/);
+    assert.equal(await evaluate(el('export-section') + '.hidden'), true);
+    await click('restart');
+  } finally {
+    await evaluate('restoreCacheEntries()');
+  }
+
   await call(async () => {
     const { json, mountVault } = await import('./mount.js');
     const entry = (await json('/native.json')).vaults.find(({ name }) => name === 'not-a-catalog');

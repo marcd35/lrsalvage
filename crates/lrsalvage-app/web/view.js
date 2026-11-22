@@ -625,6 +625,9 @@ export function mount(document) {
  * details toggle for whoever is helping them.
  */
 function failureSentence(stage, kind) {
+  if (stage === 'cache-walk') {
+    return 'The app could not read the entire preview cache. Check access to its folders and try again.';
+  }
   if (stage === 'cache-index') {
     return {
       missing: 'This folder has no previews.db. Choose the preview cache folder that contains it.',
