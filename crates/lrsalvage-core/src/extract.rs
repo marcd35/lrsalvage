@@ -793,6 +793,7 @@ mod tests {
     // Observe the disk directly, as a test always has: checking the seam's work
     // with the seam would prove nothing.
     use std::fs;
+    use std::time::{Duration, SystemTime};
 
     use crate::model::{CatalogImage, XmpMetadata};
     use crate::plan::Stats;
@@ -1116,26 +1117,33 @@ mod tests {
         let dir = tempfile::tempdir().expect("temp dir");
         let output = dir.path().join("recovered.jpg");
         fs::write(&output, b"whatever the payload was").expect("write");
-        let written = filetime::FileTime::from_unix_time(1_600_000_000, 0);
-        filetime::set_file_mtime(&output, written).expect("set mtime");
+        crate::fs::set_mtime(&output, 1_600_000_000).expect("set mtime");
 
         // The fold reaches the file as nothing at all: the mtime a recovery
         // arrived with is what it leaves with.
         apply_capture_time(&output, "2024-11-03T01:30:00", &zone);
-        assert_eq!(mtime(&output), written);
+        assert_eq!(mtime(&output), at(1_600_000_000));
 
         // The same file, a wall clock that is unambiguous: the mtime moves. So
         // the assertion above rests on the refusal, not on a missing write path.
         apply_capture_time(&output, "2024-11-03T03:30:00", &zone);
-        assert_eq!(
-            mtime(&output),
-            filetime::FileTime::from_unix_time(1_730_622_600, 0)
-        );
+        assert_eq!(mtime(&output), at(1_730_622_600));
     }
 
-    fn mtime(path: &Path) -> filetime::FileTime {
-        let metadata = fs::metadata(path).expect("metadata");
-        filetime::FileTime::from_last_modification_time(&metadata)
+    /// An epoch second as the `SystemTime` the platform's own clock reports.
+    fn at(unix_seconds: i64) -> SystemTime {
+        if unix_seconds < 0 {
+            SystemTime::UNIX_EPOCH - Duration::from_secs(unix_seconds.unsigned_abs())
+        } else {
+            SystemTime::UNIX_EPOCH + Duration::from_secs(unix_seconds.unsigned_abs())
+        }
+    }
+
+    fn mtime(path: &Path) -> SystemTime {
+        fs::metadata(path)
+            .expect("metadata")
+            .modified()
+            .expect("an mtime")
     }
 
     /// The US eastern transition rule as a POSIX string: no tzdb, and 2024 has a
@@ -1157,8 +1165,7 @@ mod tests {
         let dir = tempfile::tempdir().expect("temp dir");
         let output = dir.path().join("recovered.jpg");
         fs::write(&output, b"whatever the payload was").expect("write");
-        let written = filetime::FileTime::from_unix_time(1_600_000_000, 0);
-        filetime::set_file_mtime(&output, written).expect("set mtime");
+        crate::fs::set_mtime(&output, 1_600_000_000).expect("set mtime");
 
         set_capture_time(&output, &item_with_capture_time("2024-07-01T12:00:00"));
 
@@ -1172,10 +1179,7 @@ mod tests {
                     .expect("a civil datetime"),
             )
             .expect("an unambiguous instant");
-        assert_eq!(
-            mtime(&output),
-            filetime::FileTime::from_unix_time(instant.timestamp().as_second(), 0)
-        );
+        assert_eq!(mtime(&output), at(instant.timestamp().as_second()));
     }
 
     /// An item whose only interesting field is the catalog's capture time.

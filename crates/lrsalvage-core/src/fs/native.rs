@@ -182,6 +182,12 @@ pub(super) fn current_dir() -> io::Result<PathBuf> {
     std::env::current_dir()
 }
 
+// `filetime` deprecated this call in 0.2.30 in favour of `std::fs::set_times`,
+// which this crate cannot use: `FileTimes` is stable since Rust 1.99 and the
+// workspace publishes `rust-version = "1.89"` (`scripts/check.sh msrv` refuses
+// it). The attribute goes when the floor does; pinning the crate back to keep
+// the floor would be the trade AGENTS.md rules out.
+#[allow(deprecated)]
 pub(super) fn set_mtime(path: &Path, unix_seconds: i64) -> io::Result<()> {
     filetime::set_file_mtime(path, filetime::FileTime::from_unix_time(unix_seconds, 0))
 }
