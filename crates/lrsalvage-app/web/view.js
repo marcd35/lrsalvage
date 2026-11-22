@@ -18,6 +18,7 @@ import {
   withMount,
 } from './app.js';
 import { loadPractice } from './practice.js';
+import { suggestedCache } from './folders.js';
 import { log } from './diagnostics.js';
 import { counted } from './count.js';
 import { createScanProgress } from './scan-progress.js';
@@ -283,14 +284,17 @@ export function mount(document) {
     const found = await folderSource(answer.handle);
     // The user may have picked the `.lrdata` folder itself or the folder holding
     // it; both are ordinary answers to "where are your previews", and the name
-    // is what tells them apart.
+    // is what tells them apart. A folder holding several `.lrdata` is the same
+    // choice the catalog step makes, so it is the same rule: the standard
+    // previews folder, never Adobe's Smart Previews or Helper folder (`#191`).
+    const named = suggestedCache(found.caches, state.catalog);
     state.cacheHandle = answer.handle;
-    state.cacheName = found.caches[0] ?? null;
+    state.cacheName = named ?? null;
     state.cache = null;
     picked.append(
       line(
         'Previews: ',
-        found.caches[0] ? `${found.caches[0]} (chosen)` : `${answer.handle.name} (itself)`,
+        named ? `${named} (chosen)` : `${answer.handle.name} (itself)`,
       ),
     );
     scanButton.disabled = false;

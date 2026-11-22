@@ -247,11 +247,73 @@ async function theEstimateHoldsSteady() {
   }
 }
 
+/**
+ * The cache suggestion, on made-up folder listings.
+ *
+ * `#191` was a prefix match: `2023 Helper.lrdata` shares the catalog's stem,
+ * sorted first, and was offered as the cache the app would then fail to read. A
+ * name list in and a name out, so the rule is held here rather than in the
+ * twelve-minute browser run that would otherwise be the only thing to notice.
+ */
+async function theCacheSuggestionIsExact() {
+  const { isCompanionCache, suggestedCache } = await import(
+    '../crates/lrsalvage-app/web/folders.js'
+  );
+  const fail = (message) => problems.push(`web/folders.js: ${message}`);
+
+  for (const name of ['2023 Smart Previews.lrdata', '2023 Helper.lrdata']) {
+    if (!isCompanionCache(name)) fail(`${name} is not read as a companion folder`);
+  }
+  if (isCompanionCache('2023 Previews.lrdata')) {
+    fail('the standard previews folder is read as a companion folder');
+  }
+
+  // The reported bug: all three siblings, and `Helper` sorts first.
+  const real = ['2023 Helper.lrdata', '2023 Previews.lrdata', '2023 Smart Previews.lrdata'];
+  if (suggestedCache(real, '2023.lrcat') !== '2023 Previews.lrdata') {
+    fail(`a real catalog suggested ${suggestedCache(real, '2023.lrcat')}`);
+  }
+
+  // A companion folder alone is never offered, however alone it is.
+  for (const only of ['2023 Smart Previews.lrdata', '2023 Helper.lrdata']) {
+    if (suggestedCache([only], '2023.lrcat') !== null) {
+      fail(`${only} was offered as the cache`);
+    }
+  }
+
+  // A renamed cache is a real backup, and the only candidate.
+  if (suggestedCache(['2023 Backup.lrdata'], '2023.lrcat') !== '2023 Backup.lrdata') {
+    fail('a single renamed cache was not offered');
+  }
+
+  // Two candidates and no exact match is a guess, so nothing is suggested.
+  const ambiguous = ['2003 Previews.lrdata', '2024 Previews.lrdata'];
+  if (suggestedCache(ambiguous, '2023.lrcat') !== null) {
+    fail(`two candidate caches suggested ${suggestedCache(ambiguous, '2023.lrcat')}`);
+  }
+
+  // The exact cache wins over a same-stem sibling that is not one.
+  const both = ['2023 (2) Previews.lrdata', '2023 Previews.lrdata'];
+  if (suggestedCache(both, '2023.lrcat') !== '2023 Previews.lrdata') {
+    fail(`an exact cache lost to a sibling: ${suggestedCache(both, '2023.lrcat')}`);
+  }
+
+  // No catalog named yet: the single candidate is still the answer, and nothing
+  // is invented when there are none.
+  if (suggestedCache(['2023 Previews.lrdata'], null) !== '2023 Previews.lrdata') {
+    fail('a single cache was not suggested before a catalog was chosen');
+  }
+  if (suggestedCache(['2023 Helper.lrdata'], null) !== null) {
+    fail('a companion folder was suggested before a catalog was chosen');
+  }
+}
+
 const scanned = await files();
 for (const file of scanned) parse(file, await readFile(file, 'utf8'));
 await diagnosticsMatchTheSpec();
 await phasesMatchTheSeam();
 await theEstimateHoldsSteady();
+await theCacheSuggestionIsExact();
 
 if (problems.length) {
   for (const problem of problems) console.error(problem);
@@ -260,5 +322,6 @@ if (problems.length) {
 }
 console.log(
   `${scanned.length} modules parse, the diagnostics list matches its spec, ` +
-    "the phase list matches the seam, and the estimate holds steady",
+    'the phase list matches the seam, the estimate holds steady, and the cache ' +
+    'suggestion is exact',
 );

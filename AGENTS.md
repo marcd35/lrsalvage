@@ -75,7 +75,11 @@ not allowed.
 module: a `publish = false` crate holding the app's one entry, the page a browser
 loads, and the seam's page-side JavaScript (`web/seam/`, which the harness imports
 rather than copy). It owns no format and no decision, and every number it shows
-was observed by a module with a spec of its own. `specs/app.md` is its spec.
+was observed by a module with a spec of its own. `specs/app.md` is its spec. The
+one name it does decide is which `.lrdata` folder beside a catalog is its cache —
+`web/folders.js`, one pure function, because the choice happens on a folder a
+person picked and before anything is mounted for the seam; the sibling rule it
+encodes is recorded in `docs/format-notes.md` §2 (`#191`).
 
 `crates/lrsalvage-web` is the browser parity harness and is not a module either:
 a `publish = false` crate holding one scan-and-extract driver that compiles for

@@ -35,9 +35,15 @@ export async function checkExport(send) {
       globalThis.exportPicker = { source, destination, cache, fixture, root };
     };
     await prepareExport('working');
-    globalThis.showDirectoryPicker = async ({ id, mode }) =>
-      mode === 'readwrite' ? exportPicker.destination :
+    // The picker is the one line a test supplies the answer to, so it is also the
+    // only place startIn can be observed (#191).
+    globalThis.pickerCalls = [];
+    globalThis.showDirectoryPicker = async (options) => {
+      const { id, mode } = options;
+      pickerCalls.push({ id, mode, startIn: options.startIn?.name ?? null });
+      return mode === 'readwrite' ? exportPicker.destination :
         id === 'lrsalvage-cache' ? exportPicker.cache : exportPicker.source;
+    };
     globalThis.outputFiles = async (dir = exportPicker.destination) => {
       const files = {};
       async function walk(folder, prefix) {
@@ -66,6 +72,13 @@ export async function checkExport(send) {
   await scan();
   await click('#export-pick');
   await until(el('#export-start') + '?.disabled === false', 'The export destination was not accepted');
+  // `#191`: the destination picker starts at the catalog's own folder, which is
+  // the handle the page already holds.
+  const startedAt = await evaluate(
+    'pickerCalls.filter(call => call.mode === \'readwrite\').at(-1)?.startIn ?? null',
+  );
+  assert.equal(startedAt, await evaluate('exportPicker.source.name'),
+    'The destination picker did not start at the catalog folder');
   await click('#export-start');
   await until(el('#export-status') + '.textContent.includes("3 saved") && ' + el('#export-start') + '.disabled === false', 'The product did not commit three JPEGs');
   const files = await evaluate('outputFiles()');
@@ -136,16 +149,33 @@ export async function checkExport(send) {
 
   const inputsBefore = await evaluate('outputFiles(exportPicker.fixture)');
   const originalDestination = await evaluate("exportPicker.safe = exportPicker.destination; exportPicker.safe.name");
+  // `#191`: the refusal is its own block with the way out inside it, and focus
+  // lands on that button rather than on a status line below the fold.
+  const refused = el('#export-refusal') + '.hidden === false';
+  const refusalText = el('#export-refusal-message') + '.textContent';
+  const refusalSays = (fragment) => refused + ' && ' + refusalText + '.includes(' + JSON.stringify(fragment) + ')';
+  const focused = (id) => 'document.activeElement && document.activeElement.id === ' + JSON.stringify(id);
   for (const target of ['source', 'cache', 'fixture']) {
     await evaluate('exportPicker.destination = exportPicker.' + target);
     await click('#export-pick');
-    await until(status + '.textContent.includes("outside")', 'An input tree was accepted as a destination');
+    await until(refusalSays('outside the catalog'), 'An input tree was accepted as a destination');
+    assert.match(
+      await evaluate(refusalText),
+      /inside (the catalog's folder|the preview cache folder|a folder the catalog records)/,
+      'The refusal does not say which tree the destination landed in',
+    );
+    assert.equal(await evaluate(focused('export-refusal-pick')), true,
+      'The refusal did not take focus to its own way out');
     assert.equal(await evaluate(ready), false);
   }
   await evaluate("(async () => { exportPicker.destination = await exportPicker.cache.getDirectoryHandle('A'); })()");
   await click('#export-pick');
-  await until(status + '.textContent.includes("outside")', 'A cache descendant was accepted');
+  await until(refusalSays('the preview cache folder'), 'A cache descendant was accepted');
+  // The block's own button is the way out, and it is one press from the refusal.
   await evaluate('exportPicker.destination = exportPicker.safe; true');
+  await click('#export-refusal-pick');
+  await until(el('#export-refusal') + '.hidden === true', 'The refusal survived a folder that was accepted');
+  await until(focused('export-pick'), 'Focus did not return to the destination control');
   await click('button[aria-label="Preview Small.CR2"]');
   await until(el('#export-one') + '.disabled === false', 'One-off save was not enabled');
   assert.equal(await evaluate(el('#export-one-path') + '.textContent'), 'Small_small.jpg');

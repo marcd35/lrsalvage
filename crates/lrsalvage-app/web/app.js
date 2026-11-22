@@ -18,6 +18,7 @@
 //    synchronous wasm frame and cannot read a message until it ends.
 
 import { FsHost } from './seam/fs-host.js';
+import { suggestedCache } from './folders.js';
 
 /** The answer buffer the seam's bridge parks the worker on. */
 const SAB_BYTES = 1024 * 1024 + 8;
@@ -67,22 +68,42 @@ export function capability(browser = globalThis) {
  * it was, while a refusal deserves the browser's own words. Measured on Chrome
  * 157.0.8103.79 in `--headless=new`: a picker rejects `AbortError` without a
  * dialog, so this is the branch a headless run exercises for real.
+ *
+ * `startIn` is where the dialog opens, and it is a convenience: the platform
+ * may reject a handle it will not reopen in this mode (a folder picked read-only
+ * inside a read-write picker is not guaranteed), so a `TypeError` retries once
+ * without it rather than failing a pick the user could still make. Nothing else
+ * is retried — a cancel and a refusal both keep their own answer.
  */
-export async function pickFolder({ id = 'lrsalvage-catalog', mode = 'read' } = {}) {
+export async function pickFolder({ id = 'lrsalvage-catalog', mode = 'read', startIn = null } = {}) {
+  const ask = (where) =>
+    where ? globalThis.showDirectoryPicker({ id, mode, startIn: where })
+      : globalThis.showDirectoryPicker({ id, mode });
   try {
-    const handle = await globalThis.showDirectoryPicker({ id, mode });
-    return { handle };
+    return { handle: await ask(startIn) };
   } catch (error) {
     if (error && error.name === 'AbortError') {
       return { cancelled: true };
     }
-    return {
-      refused: {
-        name: (error && error.name) || 'Error',
-        message: (error && error.message) || String(error),
-      },
-    };
+    if (startIn && error && error.name === 'TypeError') {
+      try {
+        return { handle: await ask(null) };
+      } catch (again) {
+        return refusal(again);
+      }
+    }
+    return refusal(error);
   }
+}
+
+/** The browser's own words, in the shape the page's three answers expect. */
+function refusal(error) {
+  return {
+    refused: {
+      name: (error && error.name) || 'Error',
+      message: (error && error.message) || String(error),
+    },
+  };
 }
 
 /**
@@ -94,9 +115,10 @@ export async function pickFolder({ id = 'lrsalvage-catalog', mode = 'read' } = {
  * path, so the `-wal` SQLite needs and the cache the next step wants are both
  * unreachable from it (`#149`, DEC-S1).
  *
- * The cache suggestion is the `.lrdata` whose name starts with the catalog's, or
- * the only `.lrdata` there is. Anything else is the user's to pick — a split
- * backup is exactly the case where no suggestion is right.
+ * The cache suggestion is [`suggestedCache`]'s answer for the catalog: the exact
+ * `<stem> Previews.lrdata`, never one of Adobe's companion folders (`folders.js`)
+ * and never a guess between several. A null suggestion is what the page shows as
+ * "no preview folder beside that catalog"; the user picks one.
  */
 export async function folderSource(handle) {
   const catalogs = [];
@@ -117,16 +139,8 @@ export async function folderSource(handle) {
     catalogs,
     caches,
     catalog: catalogs.length === 1 ? catalogs[0] : null,
-    cache:
-      caches.find((name) => catalogs.some((catalog) => sameStem(name, catalog))) ??
-      (caches.length === 1 ? caches[0] : null),
+    cache: suggestedCache(caches, catalogs.length === 1 ? catalogs[0] : null),
   };
-}
-
-/** `2023.lrcat` and `2023 Previews.lrdata` share a stem. */
-function sameStem(cache, catalog) {
-  const stem = catalog.slice(0, catalog.length - '.lrcat'.length);
-  return cache.toLowerCase().startsWith(stem.toLowerCase());
 }
 
 /**
