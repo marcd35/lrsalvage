@@ -28,6 +28,7 @@ import { createServer } from 'node:http';
 import { checkExport } from './check-export.mjs';
 import { checkReceipt } from './check-receipt.mjs';
 import { checkPreviewReview } from './check-preview-review.mjs';
+import { checkScanProgress, checkScanProgressFixture } from './check-scan-progress.mjs';
 import { spawn } from 'node:child_process';
 import { readFile, mkdtemp, rm, stat } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
@@ -67,8 +68,10 @@ const CHROME_CANDIDATES = [
 function usage(message) {
   if (message) console.error(message);
   console.error(
-    `usage: node scripts/drive-browser.mjs <out-dir> [--chrome <path>] [--timeout <s>] [--attach <port>] [--verbose] [--page <path>] [--check-review|--check-export|--check-receipt]\n` +
-      `  --page defaults to ${PARITY_PAGE}; the app's page is ${APP_PAGE}`,
+    `usage: node scripts/drive-browser.mjs <out-dir> [--chrome <path>] [--timeout <s>] [--attach <port>] [--verbose] [--page <path>] [--check-review|--check-export|--check-receipt|--check-scan-progress|--check-scan-progress-fixture]\n` +
+      `  --page defaults to ${PARITY_PAGE}; the app's page is ${APP_PAGE}\n` +
+      '  --check-scan-progress-fixture needs <out-dir> to hold a vault (fixture.json and its files);\n' +
+      '  the other product checks need the native.json a vault-app run writes',
   );
   process.exit(2);
 }
@@ -81,6 +84,10 @@ let attachPort = 0;
 let verbose = false;
 let pagePath = PARITY_PAGE;
 let productCheck = null;
+/** What the run prints in front of a product check's numbers. */
+let productLabel = '';
+/** A whole scan over a supplied vault needs no native run to compare against. */
+let needsNative = true;
 for (let index = 0; index < args.length; index += 1) {
   const arg = args[index];
   if (arg === '--chrome') chromePath = args[++index];
@@ -90,6 +97,12 @@ for (let index = 0; index < args.length; index += 1) {
   else if (arg === '--check-review') productCheck = checkPreviewReview;
   else if (arg === '--check-export') productCheck = checkExport;
   else if (arg === '--check-receipt') productCheck = checkReceipt;
+  else if (arg === '--check-scan-progress') productCheck = checkScanProgress;
+  else if (arg === '--check-scan-progress-fixture') {
+    productCheck = (send) => checkScanProgressFixture(send, out);
+    productLabel = 'checkScanProgressFixture';
+    needsNative = false;
+  }
   else if (arg === '--page') {
     // A leading slash is optional: `sh` on this machine rewrites an argument that
     // begins with one into a Windows path, so the script passes it without.
@@ -103,7 +116,7 @@ if (productCheck) pagePath = APP_PAGE;
 
 const chrome = chromePath ?? CHROME_CANDIDATES.find((candidate) => existsSync(candidate));
 if (!chrome) usage(`no Chrome found; set CHROME to one, or pass --chrome <path>`);
-if (!existsSync(join(out, 'native.json'))) usage(`${out} holds no native.json`);
+if (needsNative && !existsSync(join(out, 'native.json'))) usage(`${out} holds no native.json`);
 
 const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
 
@@ -334,7 +347,7 @@ async function run(target, seconds) {
     try {
       await send('Page.bringToFront');
       const numbers = await productCheck(send);
-      console.log(productCheck.name + ':', JSON.stringify(numbers));
+      console.log((productLabel || productCheck.name) + ':', JSON.stringify(numbers));
       if (exceptions.length) throw new Error(exceptions.join('\n'));
       return 0;
     } finally {

@@ -4,10 +4,11 @@
 #   sh scripts/browser-app.sh [--chrome <path>] [--attach <port>] [--verbose]
 #                             [--only <phase>] [--work <dir>]
 #
-# `--only` runs one phase — `parity`, `review`, `export` or `receipt` — and
-# `--work` reuses a fixture directory: the native run, the vaults and the CLI's
-# own files are made only when they are missing, and the directory is left in
-# place. Together they turn iterating on one phase from a rebuild into a rerun.
+# `--only` runs one phase — `parity`, `review`, `export`, `receipt` or
+# `progress` — and `--work` reuses a fixture directory: the native run, the
+# vaults and the CLI's own files are made only when they are missing, and the
+# directory is left in place. Together they turn iterating on one phase from a
+# rebuild into a rerun.
 #
 # The browser app workflow runs this check on one Chromium runner for relevant
 # pull requests. See docs/agents/browser-app-deployment.md for setup and evidence.
@@ -26,6 +27,9 @@
 #   5. The export case holds the page to the CLI on identical bytes, and the
 #      receipt case reads the clipboard back: the frozen diagnostics field list,
 #      the path-free copy, and the report files the page wrote.
+#   6. The progress case drives the scanning readout with made-up reports: the
+#      range and its maximum, the percentage, the estimate's warm-up and refusal
+#      to guess, the empty catalog, the completion frame and a stop (`#185`).
 #
 # What the run proves, and what it cannot: the File System Access *dialog* cannot
 # be answered by any automation we have (measured on Chrome 157.0.8103.79,
@@ -104,9 +108,9 @@ while [ "$#" -gt 0 ]; do
             shift
             phase=${1:-}
             case "$phase" in
-                parity | review | export | receipt) ;;
+                parity | review | export | receipt | progress) ;;
                 *)
-                    printf '%s\n' '--only needs one of: parity review export receipt' >&2
+                    printf '%s\n' '--only needs one of: parity review export receipt progress' >&2
                     exit 2
                     ;;
             esac
@@ -232,5 +236,16 @@ if [ -n "$chrome" ]; then
 else
     # shellcheck disable=SC2086
     node scripts/drive-browser.mjs "$work" --check-receipt $driver_args
+fi
+fi
+
+printf '%s\n' '== #185 scan progress readout'
+if want progress; then
+if [ -n "$chrome" ]; then
+    # shellcheck disable=SC2086
+    node scripts/drive-browser.mjs "$work" --chrome "$chrome" --check-scan-progress $driver_args
+else
+    # shellcheck disable=SC2086
+    node scripts/drive-browser.mjs "$work" --check-scan-progress $driver_args
 fi
 fi
