@@ -1325,6 +1325,47 @@ fn r1_the_verification_report_is_the_frozen_field_set() {
     );
 }
 
+/// R12. The manifest's envelope is a contract like the verification report's:
+/// one schema tag and one member set, whatever the plan held. R1 pins the
+/// report this way; without its sibling here, a published file could lose
+/// `schema` and every green gate would stay green.
+#[test]
+fn r12_the_manifest_is_the_frozen_field_set() {
+    let vault = modern();
+    extract(&vault).assert().code(0);
+
+    let manifest: Value = serde_json::from_str(
+        &fs::read_to_string(vault.out().join("manifest.json")).expect("manifest.json"),
+    )
+    .expect("one object in manifest.json");
+
+    let mut keys: Vec<&String> = manifest.as_object().expect("an object").keys().collect();
+    keys.sort();
+    assert_eq!(
+        keys,
+        [
+            "crs_version",
+            "db_version",
+            "generated_unix",
+            "items",
+            "layout",
+            "mode",
+            "schema",
+            "shapes",
+            "stats",
+            "version",
+        ],
+        "the key set is frozen at ten: a consumer keys on it, and a new member is \
+         a decision rather than a field that appears in a published file"
+    );
+    assert_eq!(manifest["schema"], "lrsalvage.manifest");
+    assert_eq!(
+        manifest["mode"], "catalog",
+        "the manifest says which run wrote it, as the verification report does"
+    );
+    assert_eq!(manifest["version"], env!("CARGO_PKG_VERSION"));
+}
+
 /// R2. The matrix's first negative row: one leaked string fails it. Compared
 /// against names the builder produced, never a hard-coded sample.
 #[test]

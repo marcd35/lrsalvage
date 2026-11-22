@@ -67,4 +67,8 @@ a commit message that says why.
 The two axes cite this file instead of re-deriving standards from six others:
 
 - **Standards** — does the diff break a rule above? Quote the rule.
-- **Spec** — does the diff do what the ticket asked, and only that?
+- **Spec** — does the diff do what the ticket asked, and only that? Each
+  `Decision` bullet in a module spec the diff touches names the test that holds
+  it, or the reason it cannot be tested. A bullet with neither is a finding: a
+  decision the suite has never exercised is an implementation nobody has proved,
+  and a green gate says nothing about it.
