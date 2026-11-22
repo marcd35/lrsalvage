@@ -112,12 +112,17 @@ export async function checkCacheOnly(send) {
     if (layout === 'mixed') {
       await evaluate('cacheCheck.target = cacheCheck.cache; true');
       await click('export-pick');
-      await until(el('export-status') + '.textContent.length > 0', 'The overlapping destination was accepted');
+      // `#191`: the refusal is its own block, not a status line below the gallery.
+      await until(el('export-refusal') + '.hidden === false && ' +
+        el('export-refusal-message') + '.textContent.includes("outside the catalog")',
+      'The overlapping destination was accepted');
       assert.equal(await evaluate(el('export-start') + '.disabled'), true);
       await evaluate('cacheCheck.target = cacheCheck.destination; true');
     }
     await click('export-pick');
     await until('!' + el('export-start') + '.disabled', 'Cannot save to the fixture destination');
+    assert.equal(await evaluate(el('export-refusal') + '.hidden'), true,
+      'The refusal survived a destination that was accepted');
     if (layout === 'mixed') await call(pauseCloses);
     await click('export-start');
     if (layout === 'mixed') {
