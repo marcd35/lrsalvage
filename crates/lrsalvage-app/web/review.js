@@ -1,6 +1,9 @@
 // Review owns the choices for one open scan. Visibility and selection are independent.
 const MAX_THUMBNAIL_READS = 2;
 
+/** The section whose previews the plan left unchecked, by name. */
+const SMALL = 'Small previews';
+
 import { log } from './diagnostics.js';
 
 export function mountReview(document, exports) {
@@ -67,7 +70,7 @@ export function mountReview(document, exports) {
 
   const sections = [
     { name: 'Previews', matches: (photo) => photo.preview && photo.checked },
-    { name: 'Small previews', matches: (photo) => photo.preview && !photo.checked },
+    { name: SMALL, matches: (photo) => photo.preview && !photo.checked },
     { name: 'Photos without a recoverable preview', matches: (photo) => !photo.preview },
   ];
   const noPreview = {
@@ -196,6 +199,16 @@ export function mountReview(document, exports) {
       if (!rows.length) continue;
       const group = element('section', 'review-group');
       group.append(element('h3', '', name));
+      // The floor is `plan`'s, and a list of unticked previews with no sentence
+      // beside it is a question the page never answers (`#192`).
+      if (name === SMALL) {
+        group.append(element(
+          'p',
+          'review-note',
+          'These previews are smaller than the 640 px long edge, so they start ' +
+            'unchecked. Include them if a small copy is worth more than nothing.',
+        ));
+      }
       if (!cacheOnly && el('group').checked) {
         const folders = Map.groupBy(rows, (photo) => photo.folder);
         for (const [folder, photos] of folders) {

@@ -116,6 +116,9 @@ export async function checkPreviewReview(send) {
   assert.equal(await evaluate(checkbox('Bridge.CR2') + '.checked'), true);
   assert.equal(await evaluate(checkbox('Creek.CR2') + '.checked'), false);
   assert.match(await text(element('groups')), /Small previews.*Creek.CR2/s);
+  // `#192`: the floor `plan` applied is stated where the unticked previews are.
+  assert.match(await text(element('groups')),
+    /Small previewsThese previews are smaller than the 640 px long edge, so they start unchecked/s);
   assert.match(await text(element('groups')), /Photos without a recoverable preview.*Missing file.CR2/s);
   assert.match(await text(element('groups')), /Missing index entry.CR2No entry in the preview index/);
   const bridge = button('Bridge.CR2') + '.querySelector("img")';

@@ -81,6 +81,14 @@ export async function checkExport(send) {
     'The destination picker did not start at the catalog folder');
   await click('#export-start');
   await until(el('#export-status') + '.textContent.includes("3 saved") && ' + el('#export-start') + '.disabled === false', 'The product did not commit three JPEGs');
+  // `#192`: the batch's readout — percentage from completed writes, a bar at the
+  // same figure, and one live region that announced the milestones.
+  assert.match(await evaluate(el('#export-progress') + '.textContent'),
+    /^100% · 3 of 3 written · /, 'The export readout did not finish at 100%');
+  assert.equal(await evaluate('document.getElementById("export-bar").max'), 3);
+  assert.equal(await evaluate('document.getElementById("export-bar").value'), 3);
+  assert.match(await evaluate(el('#export-announce') + '.textContent'),
+    /100% — 3 of 3 written · finished/, 'The milestone was not announced');
   const files = await evaluate('outputFiles()');
   const expected = await evaluate(`(async () => {
     const csv = await (await fetch('/cli-extract/extract.csv')).text();
@@ -131,21 +139,59 @@ export async function checkExport(send) {
   const errors = () => evaluate(el('#export-errors') + '.textContent');
   const status = el('#export-status');
   const ready = el('#export-start') + '.disabled === false';
-  const paths = () => evaluate("Array.from(document.querySelectorAll('#export-path-list li'), li => li.textContent)");
+  // The list is only rendered while its dialog is open (`#192`), so reading the
+  // plan means opening it — the same two presses a person makes.
+  const listPaths = () => evaluate(
+    "Array.from(document.querySelectorAll('#export-path-list li'), li => li.textContent)",
+  );
+  const pathsOpen = () => el('#export-paths-dialog') + '.open === true';
+  const paths = async () => {
+    await click('#export-paths-open');
+    await until(pathsOpen(), 'The planned-path dialog did not open');
+    const rows = await listPaths();
+    await click('#export-paths-close');
+    return rows;
+  };
   const toggleFlat = (flat) => evaluate(
     el('#export-layout') + ".value = '" + (flat ? 'flat' : 'mirrored') + "'; " +
     el('#export-layout') + ".dispatchEvent(new Event('change'))",
   );
   const unchanged = await tally();
   assert.match(unchanged, /12 checked/);
-  await click('#export-paths summary');
-  assert((await paths()).includes('Synthetic export/2023/img (3).jpg'));
-  assert((await paths()).includes('Synthetic export/2024/IMG.jpg'));
-  assert((await paths()).includes('Synthetic export/2024/A (2).jpg'));
-  assert((await paths()).includes('Synthetic export/2024/A.jpg/H.jpg'));
+  // `#192`: the save controls above the gallery carry the same state as the panel.
+  assert.equal(await evaluate(el('#export-save-bar-count') + '.textContent'), '12 selected');
+  assert.equal(await evaluate(el('#export-save-bar-destination') + '.textContent'),
+    'No destination chosen yet');
+  assert.equal(await evaluate(el('#export-save-bar-save') + '.textContent'),
+    await evaluate(el('#export-start') + '.textContent'));
+  assert.equal(await evaluate(el('#export-save-bar-save') + '.disabled'),
+    await evaluate(el('#export-start') + '.disabled'));
+  await click('#export-paths-open');
+  await until(pathsOpen(), 'The planned-path dialog did not open');
+  assert.equal(await evaluate(el('#export-paths-note') + '.textContent'),
+    '12 planned paths, original folders mirrored, into no destination yet, ' +
+      '3 of them numbered to avoid a clash');
+  assert.match(await evaluate(el('#export-paths-shown') + '.textContent'), /^12 matching paths\.$/);
+  assert.equal(await evaluate('document.activeElement.id'), 'export-paths-search');
+  assert((await listPaths()).includes('Synthetic export/2023/img (3).jpg'));
+  assert((await listPaths()).includes('Synthetic export/2024/IMG.jpg'));
+  assert((await listPaths()).includes('Synthetic export/2024/A (2).jpg'));
+  assert((await listPaths()).includes('Synthetic export/2024/A.jpg/H.jpg'));
+  // Searching filters the plan, not the DOM that happens to be there.
+  await evaluate(el('#export-paths-search') + ".value = 'img (3)'; " +
+    el('#export-paths-search') + ".dispatchEvent(new Event('input'))");
+  await until(el('#export-paths-shown') + '.textContent.startsWith("1 matching path")',
+    'The path search did not filter');
+  assert.deepEqual(await listPaths(), ['Synthetic export/2023/img (3).jpg']);
+  await click('#export-paths-close');
+  await until('document.getElementById("export-paths-dialog").open === false',
+    'The planned-path dialog did not close');
   await toggleFlat(true);
   await until(el('#export-total') + '.textContent.startsWith("12 JPEGs")', 'Flat paths did not load');
-  assert.deepEqual((await paths()).slice(0, 4), ['IMG.jpg', 'IMG (2).jpg', 'img (3).jpg', 'IMG (4).jpg']);
+  await click('#export-paths-open');
+  await until(pathsOpen(), 'The planned-path dialog did not reopen');
+  assert.deepEqual((await listPaths()).slice(0, 4), ['IMG.jpg', 'IMG (2).jpg', 'img (3).jpg', 'IMG (4).jpg']);
+  await click('#export-paths-close');
 
   const inputsBefore = await evaluate('outputFiles(exportPicker.fixture)');
   const originalDestination = await evaluate("exportPicker.safe = exportPicker.destination; exportPicker.safe.name");
@@ -176,6 +222,9 @@ export async function checkExport(send) {
   await click('#export-refusal-pick');
   await until(el('#export-refusal') + '.hidden === true', 'The refusal survived a folder that was accepted');
   await until(focused('export-pick'), 'Focus did not return to the destination control');
+  // The bar above the gallery learned the same destination the panel did.
+  assert.match(await evaluate(el('#export-save-bar-destination') + '.textContent'),
+    /^Destination · /, 'The save bar did not take the accepted destination');
   await click('button[aria-label="Preview Small.CR2"]');
   await until(el('#export-one') + '.disabled === false', 'One-off save was not enabled');
   assert.equal(await evaluate(el('#export-one-path') + '.textContent'), 'Small_small.jpg');
@@ -187,7 +236,8 @@ export async function checkExport(send) {
   await click('#photo-dialog-check');
   await click('#photo-close');
   assert((await paths()).includes('Small_small.jpg'));
-  assert.match(await evaluate(el('#export-total') + '.textContent'), /^13 JPEGs . [1-9][0-9,]* preview bytes$/);
+  assert.match(await evaluate(el('#export-total') + '.textContent'),
+    /^13 JPEGs . (\d+ B|\d+\.\d\d (kB|MB|GB)) of previews$/);
 
   // Hold Chromium's real write streams just before close so we can stop at
   // an observable in-flight boundary and verify that only committed files count.

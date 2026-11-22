@@ -2,9 +2,14 @@ import { pickFolder } from './app.js';
 import { readDestination, rememberDestination } from './destination.js';
 import { commitFile } from './seam/commit-file.js';
 import { log } from './diagnostics.js';
+import { formatBytes } from './size.js';
 import { mountReceipt } from './receipt.js';
+import { CALCULATING, approximate, createRate } from './rate.js';
 
 const MAX_WRITES = 8;
+
+/** How many planned paths the dialog renders at once (`#192`). */
+const PATH_CAP = 200;
 
 /**
  * One word for why a write did not land, from the error a browser handed us.
@@ -235,10 +240,25 @@ export function mountExport(document) {
   const stop = el('stop');
   const end = el('end');
   const save = el('one');
-  const details = el('paths');
   const refusal = el('refusal');
   const refusalMessage = el('refusal-message');
   const refusalPick = el('refusal-pick');
+  const saveBar = el('save-bar');
+  const saveBarCount = el('save-bar-count');
+  const saveBarDestination = el('save-bar-destination');
+  const saveBarSave = el('save-bar-save');
+  const pathsOpen = el('paths-open');
+  const pathsSummary = el('paths-summary');
+  const pathsDialog = el('paths-dialog');
+  const pathsNote = el('paths-note');
+  const pathsSearch = el('paths-search');
+  const pathsShown = el('paths-shown');
+  const bar = el('bar');
+  const progress = el('progress');
+  const announceNode = el('announce');
+  /** The batch's estimate, its node, and the one milestone already announced. */
+  const rate = createRate();
+  let milestone = 0;
   const receipt = mountReceipt(document, { saveVerification });
   let run;
 
@@ -275,8 +295,10 @@ export function mountExport(document) {
     if (run?.batch) run.batch.stopping = true;
     run = null;
     section.hidden = true;
-    details.open = false;
+    saveBar.hidden = true;
     clearRefusal();
+    resetProgress();
+    if (pathsDialog.open) pathsDialog.close();
     el('status').textContent = '';
     el('errors').replaceChildren();
     el('one-status').textContent = '';
@@ -339,7 +361,7 @@ export function mountExport(document) {
     if (!run) return;
     const rows = run.batch?.rows ?? selected(run);
     const bytes = rows.reduce((sum, row) => sum + row.bytes, 0);
-    el('total').textContent = rows.length + ' JPEGs · ' + bytes.toLocaleString() + ' preview bytes';
+    el('total').textContent = `${rows.length} JPEGs · ${formatBytes(bytes)} of previews`;
     el('destination').textContent = run.target ? 'Destination · ' + run.target.handle.name : '';
     layout.disabled = run.busy || Boolean(run.batch);
     picker.disabled = run.busy || Boolean(run.batch);
@@ -351,18 +373,113 @@ export function mountExport(document) {
     stop.hidden = !run.busy || !run.batch;
     stop.disabled = !run.batch || run.batch.stopping || run.batch.reporting;
     end.hidden = !run.batch || run.busy;
+    // The same state, above the gallery: one destination, one count, one start
+    // and stop (`#192`). Nothing here decides anything the panel below does not.
+    saveBar.hidden = false;
+    saveBarCount.textContent = `${rows.length} selected`;
+    saveBarDestination.textContent = run.target
+      ? 'Destination · ' + run.target.handle.name
+      : 'No destination chosen yet';
+    saveBarSave.disabled = start.disabled;
+    saveBarSave.textContent = start.textContent;
+    pathsSummary.textContent = rows.length
+      ? `${rows.length} paths planned · ${formatBytes(bytes)}`
+      : '';
+    pathsOpen.disabled = rows.length === 0;
     renderOne();
-    if (details.open) renderPaths(rows);
+    if (pathsDialog.open) {
+      pathsNote.textContent = pathsNoteFor(run, rows);
+      renderPaths(rows);
+    }
+  }
+
+  /**
+   * A short account of what the plan decided, for the dialog's head.
+   *
+   * The collision count is derived from the names rather than reported by the
+   * planner: a path whose name ends in ` (n)` was numbered, either because two
+   * photos wanted the same name or because the photo's own name already carried
+   * that shape. The sentence says "numbered to avoid a clash" rather than "renamed
+   * by the app", which is the part that stays true either way.
+   */
+  function pathsNoteFor(current, rows) {
+    const numbered = rows.filter(({ path }) => / \(\d+\)(\.[^./]+)?$/.test(path)).length;
+    const where = current.target ? current.target.handle.name : 'no destination yet';
+    const layout = current.flat ? 'all in one folder' : 'original folders mirrored';
+    return `${rows.length} planned paths, ${layout}, into ${where}` +
+      (numbered ? `, ${numbered} of them numbered to avoid a clash` : '');
   }
 
   function renderPaths(rows) {
     const list = el('path-list');
     list.replaceChildren();
-    for (const { path } of rows) {
+    const needle = pathsSearch.value.trim().toLowerCase();
+    const matches = needle ? rows.filter(({ path }) => path.toLowerCase().includes(needle)) : rows;
+    for (const { path } of matches.slice(0, PATH_CAP)) {
       const item = document.createElement('li');
       item.textContent = path;
       list.append(item);
     }
+    pathsShown.textContent = matches.length > PATH_CAP
+      ? `Showing the first ${PATH_CAP} of ${matches.length} matching paths.`
+      : `${matches.length} matching ${matches.length === 1 ? 'path' : 'paths'}.`;
+  }
+
+  function openPaths(current) {
+    const rows = current.batch?.rows ?? selected(current);
+    pathsSearch.value = '';
+    pathsNote.textContent = pathsNoteFor(current, rows);
+    renderPaths(rows);
+    pathsDialog.showModal();
+    pathsSearch.focus();
+  }
+
+  /**
+   * The batch's readout, from zero: the bar, the sentence and the milestone.
+   *
+   * The arithmetic is `rate.js`'s, the module the scanning readout uses, so a
+   * second estimate with its own warm-up cannot drift from the first (`#192`).
+   */
+  function resetProgress(total = 0) {
+    rate.reset();
+    milestone = 0;
+    bar.hidden = total === 0;
+    bar.removeAttribute('value');
+    bar.max = total || 1;
+    progress.hidden = total === 0;
+    progress.textContent = '';
+    announceNode.textContent = '';
+  }
+
+  /**
+   * One paint of the batch's progress: a percentage from completed writes, and an
+   * estimate from observed throughput.
+   *
+   * The one live region announces each quarter, not each write: a 2,659-file
+   * batch crosses the boundary thousands of times and a screen reader has to hear
+   * about four of them.
+   */
+  function paintProgress(total, done, stopping) {
+    if (total === 0) return;
+    bar.max = total;
+    bar.value = done;
+    const percent = done === total ? 100 : Math.min(99, Math.floor((100 * done) / total));
+    const seconds = rate.add(done, total, performance.now());
+    const eta = seconds === null ? CALCULATING : approximate(seconds);
+    progress.hidden = false;
+    const counts = `${done} of ${total} written`;
+    progress.textContent = `${percent}% · ${counts} · ${stopping ? 'stopping' : eta}`;
+    const quarter = Math.floor(percent / 25);
+    if (quarter > milestone) {
+      milestone = quarter;
+      announce(`${percent}% — ${counts}${done === total ? ' · finished' : ''}`);
+    }
+  }
+
+  function announce(text) {
+    // A repeat is not a change: writing the same string again is a DOM mutation a
+    // screen reader has to decide about.
+    if (announceNode.textContent !== text) announceNode.textContent = text;
   }
 
   async function choose(current) {
@@ -547,10 +664,13 @@ export function mountExport(document) {
     });
     let next = 0;
     el('errors').replaceChildren();
+    resetProgress(batch.rows.length);
     const paint = () => {
+      const done = totals.written + totals.skipped + totals.failed;
       el('status').textContent = totals.written + ' saved of ' + batch.rows.length +
         (totals.skipped ? ' · ' + totals.skipped + ' already recovered' : '') +
         (totals.failed ? ' · ' + totals.failed + ' failed' : '');
+      paintProgress(batch.rows.length, done, batch.stopping);
     };
     paint();
 
@@ -664,9 +784,11 @@ export function mountExport(document) {
     }
   }
 
-  details.addEventListener('toggle', () => {
-    if (run && details.open) renderPaths(run.batch?.rows ?? selected(run));
-    else el('path-list').replaceChildren();
+  pathsOpen.addEventListener('click', () => {
+    if (run) openPaths(run);
+  });
+  pathsSearch.addEventListener('input', () => {
+    if (run) renderPaths(run.batch?.rows ?? selected(run));
   });
   layout.addEventListener('change', () => {
     if (run && !run.busy && !run.batch) void loadLayout(run, layout.value === 'flat');
@@ -739,12 +861,18 @@ export function mountExport(document) {
   start.addEventListener('click', () => {
     if (run) void locked(run, () => saveBatch(run), el('status'));
   });
+  saveBarSave.addEventListener('click', () => {
+    if (run) void locked(run, () => saveBatch(run), el('status'));
+  });
   stop.addEventListener('click', () => {
     if (!run?.batch || run.batch.reporting) return;
     run.batch.stopping = true;
     log.stopped();
     stop.disabled = true;
+    saveBarSave.disabled = true;
     el('status').textContent += ' · Stopping after current writes';
+    if (!progress.hidden) progress.textContent += ' · stopping';
+    announce('Stopping after the current writes.');
   });
   end.addEventListener('click', () => {
     if (!run || run.busy) return;
