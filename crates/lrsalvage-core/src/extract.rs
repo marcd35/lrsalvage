@@ -694,7 +694,7 @@ fn capture_time_mtime(raw: &str, zone: &TimeZone) -> Option<i64> {
     // Spelled out rather than the loose ISO parser, which reads a bare date as
     // midnight: a time of day the catalog did not record must not be invented.
     let civil = jiff::civil::DateTime::strptime("%Y-%m-%dT%H:%M:%S", trimmed).ok()?;
-    let zoned = zone.to_ambiguous_zoned(civil).unambiguous().ok()?;
+    let zoned = zone.to_ambiguous_zoned_datetime(civil).unambiguous().ok()?;
     Some(zoned.timestamp().as_second())
 }
 
@@ -1166,7 +1166,7 @@ mod tests {
         // mtime a UTC answer would write is a different number on every machine
         // that is not at UTC.
         let instant = zone
-            .to_zoned(
+            .to_zoned_datetime(
                 "2024-07-01T12:00:00"
                     .parse::<jiff::civil::DateTime>()
                     .expect("a civil datetime"),
