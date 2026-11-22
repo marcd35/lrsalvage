@@ -26,15 +26,14 @@ pending.
 - [ ] Run the applicable gates in [scripts/check.sh](../scripts/check.sh)
       on that commit. Record the output parity gate required by ADR 0012 D12
       for the actual browser writer and CLI.
-- [ ] Record the [synthetic writer result](https://github.com/marcd35/lrsalvage/issues/171).
-      The 5,000-file run proves output parity, visible progress, safe stop
-      and continuation. Record elapsed time and the longest gap between
-      completed writes against the performance target recorded there.
 - [ ] The release maintainer builds the static candidate from trusted `main`
       and deploys it to Cloudflare Pages over HTTPS. Record the build commit
       and preview URL on [#172](https://github.com/marcd35/lrsalvage/issues/172).
       Verify cross-origin isolation, the app and core versions on the page and
       receipt, the four practice cases, and the guide and screenshots.
+- [ ] Record the [synthetic writer result](https://github.com/marcd35/lrsalvage/issues/171).
+      Follow the [release-scale writer protocol](agents/browser-app-deployment.md#verify-the-writer-at-release-scale)
+      and link the dated result for the tested candidate.
 - [ ] Record the [deployed browser and accessibility results](https://github.com/marcd35/lrsalvage/issues/172).
       Exercise the actual folder pickers in Windows Chrome and Edge.
       Link the accessibility statement with observed and unchecked criteria.
