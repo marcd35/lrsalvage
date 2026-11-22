@@ -4,7 +4,7 @@ import argparse
 import json
 from pathlib import Path
 from urllib.parse import quote, urlparse
-from urllib.request import urlopen
+from urllib.request import Request, urlopen
 
 
 ROUTES = {"index.html": "", "recovery.html": "recovery?sample=working"}
@@ -24,7 +24,11 @@ def verify(root, static):
         if relative == "_headers":
             continue
         route = ROUTES.get(relative, quote(relative))
-        with urlopen(f"{root}/{route}", timeout=20) as response:
+        # Cloudflare Pages rejects the default urllib user agent with error 1010.
+        request = Request(
+            f"{root}/{route}", headers={"User-Agent": "lrsalvage-deployment-verifier/1.0"}
+        )
+        with urlopen(request, timeout=20) as response:
             final = urlparse(response.url)
             if (final.scheme, final.netloc) != (origin.scheme, origin.netloc):
                 raise SystemExit(f"{route} redirected away from the deployment")

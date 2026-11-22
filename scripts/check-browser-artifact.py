@@ -90,8 +90,12 @@ class DeploymentTests(unittest.TestCase):
     def verify(self, replacements=None):
         replacements = replacements or {}
 
-        def serve(url, *, timeout):
+        def serve(request, *, timeout):
             del timeout
+            self.assertEqual(
+                request.get_header("User-agent"), "lrsalvage-deployment-verifier/1.0"
+            )
+            url = request.full_url
             route = unquote(urlparse(url).path).removeprefix("/")
             relative = {"": "index.html", "recovery": "recovery.html"}.get(route, route)
             file = self.static / relative
