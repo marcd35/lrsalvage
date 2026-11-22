@@ -308,12 +308,43 @@ async function theCacheSuggestionIsExact() {
   }
 }
 
+/**
+ * Sizes a person reads: decimal units, two places, the same rule everywhere.
+ *
+ * `#192` asked for decimal units because a drive's capacity and File Explorer's
+ * MB are decimal; a binary reading of the same batch is a different number from
+ * the one the disk reports.
+ */
+async function theSizesRead() {
+  const { formatBytes } = await import('../crates/lrsalvage-app/web/size.js');
+  const fail = (message) => problems.push(`web/size.js: ${message}`);
+  const cases = [
+    [0, '0 B'],
+    [999, '999 B'],
+    [1_000, '1.00 kB'],
+    [12_345, '12.35 kB'],
+    [1_500_000, '1.50 MB'],
+    [999_999_999, '1000.00 MB'],
+    [1_200_000_000, '1.20 GB'],
+  ];
+  for (const [bytes, expected] of cases) {
+    if (formatBytes(bytes) !== expected) {
+      fail(`${bytes} bytes reads "${formatBytes(bytes)}", not "${expected}"`);
+    }
+  }
+  // A number the page could not have must not reach a person as "NaN MB".
+  for (const odd of [-1, Number.NaN, undefined]) {
+    if (formatBytes(odd) !== '0 B') fail(`${odd} reads "${formatBytes(odd)}"`);
+  }
+}
+
 const scanned = await files();
 for (const file of scanned) parse(file, await readFile(file, 'utf8'));
 await diagnosticsMatchTheSpec();
 await phasesMatchTheSeam();
 await theEstimateHoldsSteady();
 await theCacheSuggestionIsExact();
+await theSizesRead();
 
 if (problems.length) {
   for (const problem of problems) console.error(problem);
@@ -322,6 +353,6 @@ if (problems.length) {
 }
 console.log(
   `${scanned.length} modules parse, the diagnostics list matches its spec, ` +
-    'the phase list matches the seam, the estimate holds steady, and the cache ' +
-    'suggestion is exact',
+    'the phase list matches the seam, the estimate holds steady, the cache ' +
+    'suggestion is exact, and the sizes read in decimal units',
 );

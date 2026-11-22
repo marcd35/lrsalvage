@@ -298,6 +298,11 @@
           <button id="photo-uncheck-visible" type="button">Uncheck visible previews</button>
         </div>
       </div>
+      <div id="export-save-bar" class="review-save" hidden>
+        <p id="export-save-bar-count"></p>
+        <p id="export-save-bar-destination"></p>
+        <button id="export-save-bar-save" type="button" disabled>Save selected JPEGs</button>
+      </div>
       <div class="review-split">
         <div id="photo-groups"></div>
         <aside id="photo-pane" aria-labelledby="photo-pane-title" hidden>
@@ -329,18 +334,32 @@
       </div>
       <p id="export-total"></p>
       <p>Free space on the destination is unavailable to the browser. Browser storage estimates describe this site’s private storage. <span id="export-metadata-total">The selected byte total is measured before adding metadata.</span></p>
-      <details id="export-paths">
-        <summary>Planned paths</summary>
-        <ul id="export-path-list"></ul>
-      </details>
+      <div class="review-tools">
+        <button id="export-paths-open" type="button">Planned paths…</button>
+        <span id="export-paths-summary"></span>
+      </div>
+      <progress id="export-bar" aria-labelledby="export-title" aria-describedby="export-progress" hidden></progress>
+      <p id="export-progress" hidden></p>
+      <p id="export-announce" class="visually-hidden" role="status" aria-atomic="true"></p>
       <div class="review-tools">
         <button id="export-start" type="button" disabled>Save selected JPEGs</button>
         <button id="export-stop" type="button" hidden>Stop saving</button>
         <button id="export-end" type="button" hidden>End batch</button>
       </div>
-      <p id="export-status" role="status"></p>
+      <p id="export-status"></p>
       <ul id="export-errors" aria-label="Save errors"></ul>
     </section>
+    <dialog id="export-paths-dialog" aria-labelledby="export-paths-title">
+      <div class="dialog-header">
+        <h2 id="export-paths-title">Planned paths</h2>
+        <form method="dialog"><button id="export-paths-close" type="submit" autofocus>Close</button></form>
+      </div>
+      <p id="export-paths-note"></p>
+      <label for="export-paths-search">Search planned paths</label>
+      <input id="export-paths-search" type="search">
+      <p id="export-paths-shown"></p>
+      <ul id="export-path-list"></ul>
+    </dialog>
     <section id="receipt-section" aria-labelledby="receipt-title" hidden>
       <h3 id="receipt-title" tabindex="-1">Recovery receipt</h3>
       <p id="receipt-headline" role="status"></p>

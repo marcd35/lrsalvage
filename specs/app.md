@@ -217,6 +217,15 @@ catalog-backed browser and CLI output parity remains a release check.
   review session. Dismissing the enlarged view restores focus to the same
   photo or pane control when it can receive focus. Otherwise focus moves to
   search.
+- The floor that left a preview unchecked is stated where those previews are: the
+  small-previews section carries one sentence saying they are below the 640 px
+  long edge and start unchecked so they can be included deliberately (`#192`). A
+  folder the page could not look in says that in the same words — the page can
+  only see a folder it was handed — rather than describing a connection.
+- The save controls also sit above the gallery: one sticky bar carrying the
+  checked count, the destination and the start or continue action, sharing one
+  state with the panel below it, so scrolling the grid does not put saving out of
+  reach.
 
 ## JPEG export
 
@@ -225,7 +234,10 @@ page projects its checked set. Both layouts keep paths stable across selections.
 Mirrored folders are the default. Flat layout uses only the planned filename.
 Previews below the default floor carry an _small suffix. Their ordinary names
 stay reserved so the default mirrored batch retains the CLI paths. The planned byte total
-measures the selected payloads before metadata injection. Origin storage estimates
+measures the selected payloads before metadata injection, and every size the page
+shows is decimal units to two places — `web/size.js`, one rounding rule for the
+batch total and the receipt, because a binary reading of the same batch is a
+different number from the one a disk reports. Origin storage estimates
 describe browser storage and cannot measure the destination's disk space.
 
 The page checks a picked destination against the source handles in both
@@ -247,11 +259,24 @@ is suggested for the batch. A remembered handle requires another permission
 request from a user gesture when reopened.
 
 The batch fixes its layout, selected paths and destination when started. It
-schedules at most eight files at a time. Stop leaves pending work unscheduled and
+schedules at most eight files at a time. Its readout is a percentage from
+completed writes, a bar at the same figure, and an estimate from observed
+throughput using `web/rate.js`'s warm-up, steadiness and stall rules rather than a
+second estimator; saved, already recovered and failed counts stay visible beside
+it, and stopping is said in words rather than implied by a stopped bar. One polite
+live region announces each quarter, completion and a stop request — never each
+write, which on a 2,659-file batch would be thousands of announcements. Stop
+leaves pending work unscheduled and
 allows in-flight writes to settle. Continue uses the same batch and committed
 paths. The page surfaces exceptions by relative output path and keeps successful
 writes in the open run. A finished batch writes the reports the next section
 lists into its destination. An occupied report name gets the next free number.
+
+**The planned paths are a bounded, searchable dialog.** It opens with a summary —
+count, layout, destination and how many paths were numbered to avoid a clash — and
+renders at most two hundred matching paths inside a scroll region, saying so when
+there are more. Search filters the planned rows. Closing it returns focus to the
+button that opened it, which is the browser's own behaviour for a modal dialog.
 
 ## Receipt, reports and diagnostics
 
@@ -394,6 +419,9 @@ the deployed candidate.
   companion folders rejected, the exact cache winning between same-stem
   siblings, one renamed candidate still offered, and two ambiguous ones
   suggesting nothing.
+- `web/size.js` is the one size formatter (`#192`), and the same gate runs it on
+  the boundaries: bytes below a kilobyte, each unit's two places, and a number
+  the page could not have never reaching a person as `NaN`.
 - What the browser run cannot prove, and does not claim: that a human's accepted
   pick returns a handle. The mechanism is the browser's, one `await` deep, and the
   value it returns is the value the test supplies.
@@ -412,7 +440,10 @@ the deployed candidate.
   byte must agree. In reports the check maps the sandbox output and cache roots
   to their browser mount paths and ignores the generation timestamp. The embedded
   core version is the same in both builds, so the JPEG marker, hash and manifest
-  version are compared exactly.
+  version are compared exactly. The same run asserts the surfaces #192 added: the
+  save bar agreeing with the panel below it, the planned-path dialog's summary,
+  its search and its row cap, and the batch readout reaching 100% with the
+  milestone announced.
 - `scripts/check-scan-progress.mjs` is the scanning readout's phase of that
   script (`#185`). It drives the page's own progress module with made-up reports
   — the range and its maximum, the 99% ceiling, the estimate's warm-up and its

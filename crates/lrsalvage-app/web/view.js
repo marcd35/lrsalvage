@@ -560,7 +560,13 @@ export function mount(document) {
       if (root.in_reach) {
         row.append(document.createTextNode('available from this page'));
       } else {
-        row.append(document.createTextNode('not connected from this page'));
+        // Said in terms of what the page could not do, rather than of a
+        // connection: a page can only see a folder it was handed, so this is the
+        // reason a photo looks unavailable when its original is fine (`#192`).
+        row.append(document.createTextNode(
+          'not checked — this page can only look in a folder you give it, so it ' +
+            'cannot tell whether the originals are there',
+        ));
         const again = document.createElement('button');
         again.type = 'button';
         again.textContent = 'Check again…';

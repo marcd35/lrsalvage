@@ -377,3 +377,69 @@ main:has(#photo-review:not([hidden])) {
 #receipt-support a {
   color: var(--accent);
 }
+
+/* The save controls above the gallery (`#192`): the same state as the panel
+   below, carried to where the scrolling happens. Sticky rather than fixed, so it
+   covers nothing when the page is short and stops at the end of the review. */
+.review-save {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.8rem;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--bg);
+  border-block: 1px solid var(--line);
+  padding-block: 0.5rem;
+  margin-block: 0.3rem 0.6rem;
+}
+
+.review-save p {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+#export-save-bar-count {
+  font-weight: 600;
+}
+
+#export-save-bar-destination {
+  color: var(--muted);
+  flex: 1 1 12rem;
+}
+
+/* The planned-path list (`#192`): bounded in height and in rows, with the search
+   and the count saying what is on screen. */
+#export-paths-dialog {
+  width: min(46rem, calc(100% - 2rem));
+  max-width: none;
+  max-height: calc(100% - 1.5rem);
+  color: var(--ink);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  padding: clamp(0.65rem, 2vw, 1.25rem);
+}
+
+#export-paths-dialog::backdrop {
+  background: rgb(0 0 0 / 65%);
+}
+
+#export-paths-dialog input[type="search"] {
+  width: 100%;
+}
+
+#export-paths-shown,
+#export-paths-note {
+  color: var(--muted);
+  margin-block: 0.45rem;
+}
+
+#export-path-list {
+  margin: 0;
+  padding: 0 0 0 1.1rem;
+  max-height: min(50vh, calc(100dvh - 18rem));
+  overflow: auto;
+  font-variant-numeric: tabular-nums;
+}
