@@ -283,8 +283,8 @@ pub enum Progress {
     /// A catalog image the plan has finished with.
     ///
     /// The last report carries `done == total` and is sent as soon as the last
-    /// image is decided, before the sweep's tail and path assignment: it is the
-    /// matching stage's end, and what follows it is preparation rather than
+    /// image is decided, before the orphan sweep and the path assignment: it is
+    /// the matching stage's end, and what follows it is preparation rather than
     /// another unit. Its answer is not consulted, because there is nothing left
     /// to stop.
     Images { done: u64, total: u64 },

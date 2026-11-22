@@ -102,10 +102,10 @@ reverse — so the seam is registered one way for both pages.
   says *No catalog images to match* with neither a bar nor an estimate. The last
   image's count is the end of the matching stage: one browser frame later the
   page clears the count and the estimate and says *Preparing scan results…* with
-  the bar indeterminate, until the report arrives. Nothing in Rust announces that
-  second boundary — `Progress` gains no finalization variant, because a new
-  variant breaks exhaustive matches in a published enum — so the page reads it
-  from the last stage's completion (`specs/modules/plan.md`). A stop clears the
+  the bar indeterminate, until the report arrives. The page reads that second
+  boundary from the last stage's completion rather than from an event, because
+  `Progress` reports no finalization (`specs/modules/plan.md`, *Decisions*). A
+  stop clears the
   readout immediately and a report queued behind it cannot repaint it; a stop
   that arrives once the last image's count has been reported cannot land, so the
   completed result opens. The bar is named by the stage sentence and described by
