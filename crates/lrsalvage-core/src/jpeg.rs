@@ -145,7 +145,18 @@ fn read_header(bytes: &[u8]) -> Result<(Certified, usize)> {
 /// For cache recovery, require framed scans through the terminating EOI.
 pub(crate) fn certify_recovery(bytes: &[u8]) -> Result<Certified> {
     let (mut frame, scan_start) = read_header(bytes)?;
-    frame.complete = frame.complete && complete_scans(&bytes[scan_start..]).is_some();
+    let complete_frame = frame
+        .segments
+        .iter()
+        .find(|segment| is_frame_marker(segment.marker))
+        .map(|segment| segment.payload(bytes))
+        .is_some_and(|payload| {
+            payload
+                .get(5)
+                .is_some_and(|&count| count > 0 && payload.len() == 6 + 3 * usize::from(count))
+        });
+    frame.complete =
+        frame.complete && complete_frame && complete_scans(&bytes[scan_start..]).is_some();
     Ok(frame)
 }
 

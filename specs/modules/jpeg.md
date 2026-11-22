@@ -67,8 +67,8 @@ means.
 
 ## Cache-only structural certification
 
-The cache-only reader follows every scan to the terminal EOI. It validates each
-SOS header's declared length, permits byte stuffing and restart markers inside
+The cache-only reader follows every scan to the terminal EOI. It validates the
+SOF component table and each SOS header's declared length, permits byte stuffing and restart markers inside
 scan data, and checks the framing of segments between scans without decoding
 samples. A frame with only a header cannot displace a usable smaller level.
 A separate prefix check recognizes other image signatures for the unsupported

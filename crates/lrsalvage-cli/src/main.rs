@@ -40,6 +40,7 @@ fn exit_code_for(error: &Error) -> u8 {
         | Error::Sqlite(_)
         | Error::NotACatalog { .. }
         | Error::NotAPreviewCache { .. }
+        | Error::RequiredPreviewIndex { .. }
         | Error::PayloadMissing { .. }
         | Error::PreviewUnavailable
         | Error::PreviewLevelMissing { .. }
