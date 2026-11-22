@@ -192,6 +192,19 @@ async function reconcile(destination, ledger, verifyBytes) {
   return { ok: true, reason: null, present: [...present.values()], missing, changed };
 }
 
+async function reconcileCache(ledger) {
+  const settled = { ok: true, present: [], missing: [], changed: [] };
+  for (const [target, entries] of Map.groupBy(ledger.values(), (entry) => entry.target)) {
+    const group = new Map(entries.map((entry) => [entry.id, entry]));
+    const result = await reconcile(target.handle, group, true);
+    if (!result.ok) return result;
+    settled.present = settled.present.concat(result.present);
+    settled.missing = settled.missing.concat(result.missing);
+    settled.changed = settled.changed.concat(result.changed);
+  }
+  return settled;
+}
+
 export function mountExport(document) {
   const el = (name) => document.getElementById('export-' + name);
   const section = el('section');
@@ -495,7 +508,9 @@ export function mountExport(document) {
     if (run !== current) return;
 
     // The destination's own answer, not the writer's recollection of it.
-    current.reconciled = await reconcile(target.handle, current.ledger, current.cacheOnly);
+    current.reconciled = current.cacheOnly
+      ? await reconcileCache(current.ledger)
+      : await reconcile(target.handle, current.ledger, false);
     log.confirmed(current.reconciled.ok ? current.reconciled.present.length : null);
     if (run !== current) return;
     if (next < pending.length) {
@@ -628,6 +643,10 @@ export function mountExport(document) {
       // The receipt counts this run's photos, so a one-off save is a photo saved
       // even when no batch ever runs (`#117`, user story 27).
       promote(current, row, outcome, target);
+      if (current.cacheOnly) {
+        current.reconciled = await reconcileCache(current.ledger);
+        log.confirmed(current.reconciled.ok ? current.reconciled.present.length : null);
+      }
       updateReceipt(current);
     }, status);
   });

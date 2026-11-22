@@ -154,7 +154,7 @@ fn cache_only(out: &Path) -> Vec<serde_json::Value> {
                     "manifest": outcomes,
                 })
             }
-            Err(error) => json!({"name": name, "files": files, "error": error.kind()}),
+            Err(error) => json!({"name": name, "files": files, "error": error.kind}),
         }
     })
     .collect()

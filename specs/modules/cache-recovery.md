@@ -18,7 +18,7 @@ missing, unreadable, or unsupported index.
 
 Rank complete JPEGs by measured SOF pixel area. Equal sizes prefer the modern
 level file, then the cache-relative path and the legacy chunk order. Only
-consider files belonging to the exact indexed identity. Read legacy chunks by
+open paths whose spelling in the cache walk matches the exact indexed identity. Read legacy chunks by
 their declared boundaries. The intact prefix of a damaged container can still
 supply certified JPEGs. The scan reports one outcome per indexed pyramid:
 recoverable, invalid, unsupported, or missing, in that order. A recoverable

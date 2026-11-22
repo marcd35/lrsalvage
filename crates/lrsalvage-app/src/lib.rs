@@ -68,6 +68,8 @@ pub enum Stage {
     Open,
     /// Copying the index into the pool, and reading it.
     Index,
+    /// Opening the required index for cache-only recovery.
+    CacheIndex,
     /// The reported build over the catalog and the cache.
     Scan,
 }
@@ -79,6 +81,7 @@ impl Stage {
             Stage::Copy => "copy",
             Stage::Open => "open",
             Stage::Index => "index",
+            Stage::CacheIndex => "cache-index",
             Stage::Scan => "scan",
         }
     }
@@ -106,6 +109,7 @@ impl Failure {
     pub fn of(stage: Stage, error: &lrsalvage_core::Error) -> Self {
         use lrsalvage_core::Error;
         let kind = match error {
+            Error::RequiredPreviewIndex { kind, .. } => kind.as_str(),
             Error::NotACatalog { .. } => "not-a-catalog",
             Error::SourceChanged { .. } => "catalog-changed",
             Error::Sqlite(_) => "unreadable",
@@ -238,8 +242,10 @@ pub fn scan_for_review(
 pub fn scan_cache(
     cache: &Path,
     progress: &mut dyn FnMut(Progress) -> Control,
-) -> Result<ScanResult, previews_db::RequiredIndexProblem> {
-    let Some(plan) = lrsalvage_core::cache_recovery::CacheRecovery::scan(cache, progress)? else {
+) -> Result<ScanResult, Failure> {
+    let plan = lrsalvage_core::cache_recovery::CacheRecovery::scan(cache, progress)
+        .map_err(|error| Failure::of(Stage::CacheIndex, &error))?;
+    let Some(plan) = plan else {
         return Ok(ScanResult {
             report: json!({ "ok": true, "stopped": true }),
             review: Review::default(),

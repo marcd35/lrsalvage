@@ -63,6 +63,14 @@ pub fn sized_jpeg(jpeg: &[u8], size: usize, id: i64) -> Vec<u8> {
     bytes
 }
 
+/// A frame with SOF and EOI but no scan.
+pub fn header_only_jpeg(width: u16, height: u16) -> Vec<u8> {
+    let mut bytes = vec![0xff, 0xd8];
+    bytes.extend_from_slice(&frame_header(width, height));
+    bytes.extend_from_slice(&[0xff, 0xd9]);
+    bytes
+}
+
 /// A frame with no EOI: complete header, cut-off scan.
 pub fn truncated_jpeg(width: u16, height: u16) -> Vec<u8> {
     let mut bytes = jpeg(width, height);

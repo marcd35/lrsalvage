@@ -11,7 +11,10 @@ fn recovers_the_largest_complete_level_across_both_formats() {
         .pyramid(PyramidRow::new(KEY).level(1600, 1000))
         .container(&[Level::sized(KEY, 1200, 800)])
         .level_file(Level::sized(KEY, 900, 600))
-        .level_file(Level::sized(KEY, 1600, 1000).raw(b"truncated"))
+        .level_file(
+            Level::sized(KEY, 1600, 1000)
+                .raw(&lrsalvage_fixtures::bytes::header_only_jpeg(1600, 1000)),
+        )
         .write();
 
     let scan = CacheRecovery::scan(vault.previews(), &mut |_| Control::Continue)
@@ -72,26 +75,42 @@ fn only_positive_index_rows_add_pyramids() {
 
 #[test]
 fn distinguishes_missing_damaged_and_unsupported_indexes_from_an_empty_index() {
-    use lrsalvage_core::previews_db::RequiredIndexProblem;
+    use lrsalvage_core::{Error, error::IndexProblemKind};
     let empty = Vault::modern().write();
     let unsupported_db = std::fs::read(empty.catalog()).expect("synthetic catalog SQLite bytes");
     for (vault, expected) in [
-        (Vault::unindexed(), RequiredIndexProblem::Missing),
+        (Vault::unindexed(), IndexProblemKind::Missing),
         (
             Vault::modern().raw_index(b"not SQLite"),
-            RequiredIndexProblem::Unreadable,
+            IndexProblemKind::Unreadable,
         ),
         (
             Vault::modern().raw_index(&unsupported_db),
-            RequiredIndexProblem::Unsupported,
+            IndexProblemKind::Unsupported,
         ),
     ] {
         let vault = vault.write();
         let error = CacheRecovery::scan(vault.previews(), &mut |_| Control::Continue).unwrap_err();
-        assert_eq!(error, expected);
+        assert!(
+            matches!(error, Error::RequiredPreviewIndex { path, kind, .. }
+            if path == vault.previews().join("previews.db") && kind == expected)
+        );
     }
     let scan = CacheRecovery::scan(empty.previews(), &mut |_| Control::Continue)
         .unwrap()
         .unwrap();
     assert!(scan.items.is_empty());
+}
+
+#[test]
+fn a_differently_cased_disk_key_does_not_match_an_indexed_pyramid() {
+    let vault = Vault::modern()
+        .pyramid(PyramidRow::new(&KEY.to_ascii_lowercase()).level(640, 400))
+        .level_file(Level::sized(KEY, 640, 400))
+        .write();
+    let scan = CacheRecovery::scan(vault.previews(), &mut |_| Control::Continue)
+        .unwrap()
+        .unwrap();
+    assert_eq!(scan.counts.indexed, 1);
+    assert_eq!(scan.counts.missing, 1);
 }

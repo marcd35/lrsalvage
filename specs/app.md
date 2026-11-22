@@ -172,7 +172,7 @@ Use the same destination checks and batch writer. Stop lets in-flight writes
 settle, and Continue keeps the selection, paths, and destination fixed. The
 receipt separates scan outcomes from the batch's saved, already recovered,
 and failed counts and verifies the destination files against their planned
-bytes. The local report CSVs and manifest identify the cache-only mode. The
+bytes in each folder the run used. The local report CSVs and manifest identify the cache-only mode. The
 shareable verification report and copied diagnostics use aggregate counts
 without paths, filenames, or cache identities.
 

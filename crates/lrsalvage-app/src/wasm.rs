@@ -137,8 +137,7 @@ pub fn scan(catalog: &str, cache: &str) -> String {
 #[wasm_bindgen]
 pub fn scan_cache(cache: &str) -> String {
     scan_with(|progress| {
-        crate::scan_cache(Path::new(cache), progress)
-        .map_err(|error| json!({ "stage": "cache-index", "kind": error.kind(), "message": error.to_string() }))
+        crate::scan_cache(Path::new(cache), progress).map_err(|failure| failure.to_json())
     })
 }
 

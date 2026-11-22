@@ -106,6 +106,32 @@ export async function checkCacheOnly(send) {
     await click('restart');
   }
 
+  await call(mount, 'cache-modern', true);
+  await click('recover-cache');
+  await until('!' + el('result') + '.hidden', 'Two-destination scan failed');
+  await click('export-pick');
+  await until('!' + el('export-start') + '.disabled', 'Could not set the first destination');
+  await evaluate('document.querySelector(".review-open").click()');
+  await until('!' + el('export-one') + '.disabled', 'The one-off save did not open');
+  await click('export-one');
+  await until(el('receipt-reconciled') + '.textContent.includes("Every file above was found")',
+    'The one-off receipt did not reconcile the destination');
+  await click('photo-close');
+  await call(async () => {
+    const { freshDirectory } = await import('./mount.js');
+    cacheCheck.target = await freshDirectory(await navigator.storage.getDirectory(), 'cache-other-output');
+  });
+  await click('export-pick');
+  await until(el('export-destination') + '.textContent.includes("cache-other-output")',
+    'Could not set the second destination');
+  await click('photo-uncheck-visible');
+  await evaluate('document.querySelectorAll(".review-tile input")[1].click()');
+  await click('export-start');
+  await until(el('receipt-report-list') + '.children.length === 3', 'Second destination reports were not saved');
+  assert.equal(await text('receipt-headline'), '2 previews saved');
+  assert.match(await text('receipt-reconciled'), /Every file above was found/);
+  await click('restart');
+
   const repeat = await call(mount, 'cache-mixed', false);
   await call(async (path) => {
     const { writeFile } = await import('./mount.js');

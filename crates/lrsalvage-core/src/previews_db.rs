@@ -394,51 +394,44 @@ pub(crate) fn order_candidates(named: &mut Vec<Candidate<'_>>) {
     named.dedup_by(|a, b| a.path == b.path);
 }
 
-/// Why the required index could not be opened for cache-only recovery.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
-pub enum RequiredIndexProblem {
-    #[error("The preview folder is missing previews.db.")]
-    Missing,
-    #[error("The preview index could not be read.")]
-    Unreadable,
-    #[error("This preview index has an unsupported schema.")]
-    Unsupported,
-}
-
-impl RequiredIndexProblem {
-    pub fn kind(self) -> &'static str {
-        match self {
-            Self::Missing => "missing",
-            Self::Unreadable => "unreadable",
-            Self::Unsupported => "unsupported",
-        }
-    }
-}
-
 /// Read from a private copy, including any SQLite WAL, so neither SQLite
 /// recovery nor copying metadata can write into the preview folder.
-pub(crate) fn open_required(cache: &Path) -> Result<PreviewIndex, RequiredIndexProblem> {
+pub(crate) fn open_required(cache: &Path) -> Result<PreviewIndex> {
+    use crate::error::IndexProblemKind::{Missing, Unreadable, Unsupported};
     let path = cache.join(INDEX_FILE);
+    let problem = |kind, source: Option<crate::Error>| crate::Error::RequiredPreviewIndex {
+        path: path.clone(),
+        kind,
+        source: source.map(Box::new),
+    };
     match fs::exists(&path) {
         Ok(true) => {}
-        Ok(false) => return Err(RequiredIndexProblem::Missing),
-        Err(_) => return Err(RequiredIndexProblem::Unreadable),
+        Ok(false) => return Err(problem(Missing, None)),
+        Err(source) => {
+            let error = crate::Error::Io {
+                path: path.clone(),
+                source,
+            };
+            return Err(problem(Unreadable, Some(error)));
+        }
     }
     let snapshot = crate::snapshot::CatalogSnapshot::capture(&path)
-        .map_err(|_| RequiredIndexProblem::Unreadable)?;
+        .map_err(|error| problem(Unreadable, Some(error)))?;
     let conn = crate::snapshot::open_readonly(snapshot.path())
-        .map_err(|_| RequiredIndexProblem::Unreadable)?;
+        .map_err(|error| problem(Unreadable, Some(error)))?;
     conn.query_row("PRAGMA schema_version", [], |row| row.get::<_, i64>(0))
-        .map_err(|_| RequiredIndexProblem::Unreadable)?;
-    PreviewIndex::read_connection(&conn).map_err(|error| match error {
-        // Once SQLite can read its schema, an SQL statement that references
-        // a missing table or column is a schema mismatch.
-        crate::Error::Sqlite(rusqlite::Error::SqliteFailure(code, _))
-            if code.extended_code == rusqlite::ffi::SQLITE_ERROR =>
-        {
-            RequiredIndexProblem::Unsupported
-        }
-        _ => RequiredIndexProblem::Unreadable,
+        .map_err(|error| problem(Unreadable, Some(error.into())))?;
+    PreviewIndex::read_connection(&conn).map_err(|error| {
+        let kind = match &error {
+            // SQLite could read its schema but an index query was rejected.
+            crate::Error::Sqlite(rusqlite::Error::SqliteFailure(code, _))
+                if code.extended_code == rusqlite::ffi::SQLITE_ERROR =>
+            {
+                Unsupported
+            }
+            _ => Unreadable,
+        };
+        problem(kind, Some(error))
     })
 }
 

@@ -48,6 +48,10 @@ pub struct Certified {
 /// embedded EXIF thumbnail is never on the chain and can never be mistaken for
 /// the frame.
 pub fn certify(bytes: &[u8]) -> Result<Certified> {
+    read_header(bytes).map(|(frame, _)| frame)
+}
+
+fn read_header(bytes: &[u8]) -> Result<(Certified, usize)> {
     // SOI is the only legal opening; anything else cannot hold a frame.
     if bytes.len() < 2 || bytes[0] != 0xFF || bytes[1] != 0xD8 {
         return Err(crate::error::Error::JpegMalformed);
@@ -128,11 +132,72 @@ pub fn certify(bytes: &[u8]) -> Result<Certified> {
         return Err(crate::error::Error::JpegMalformed);
     };
 
-    Ok(Certified {
-        dimensions,
-        complete: bytes.ends_with(&[0xFF, 0xD9]),
-        segments,
-    })
+    Ok((
+        Certified {
+            dimensions,
+            complete: bytes.ends_with(&[0xFF, 0xD9]),
+            segments,
+        },
+        pos,
+    ))
+}
+
+/// For cache recovery, require framed scans through the terminating EOI.
+pub(crate) fn certify_recovery(bytes: &[u8]) -> Result<Certified> {
+    let (mut frame, scan_start) = read_header(bytes)?;
+    frame.complete = frame.complete && complete_scans(&bytes[scan_start..]).is_some();
+    Ok(frame)
+}
+
+// Follow markers between scans and skip stuffed bytes and restart markers in
+// entropy data. This checks framing without decoding the compressed samples.
+fn complete_scans(mut bytes: &[u8]) -> Option<()> {
+    let mut in_scan = false;
+    let mut has_data = false;
+    let mut saw_scan = false;
+    loop {
+        if in_scan {
+            let marker_start = bytes.iter().position(|&byte| byte == 0xff)?;
+            has_data |= marker_start > 0;
+            bytes = &bytes[marker_start..];
+        }
+        let marker = bytes
+            .strip_prefix(&[0xff])?
+            .iter()
+            .position(|&byte| byte != 0xff)?
+            + 1;
+        let tag = bytes[marker];
+        bytes = &bytes[marker + 1..];
+        if in_scan {
+            match tag {
+                0x00 => {
+                    has_data = true;
+                    continue;
+                }
+                0xd0..=0xd7 => continue,
+                _ if !has_data => return None,
+                _ => in_scan = false,
+            }
+        }
+        match tag {
+            0xd9 => return (saw_scan && bytes.is_empty()).then_some(()),
+            0x00 | 0xd0..=0xd8 => return None,
+            0x01 => continue,
+            _ => {}
+        }
+        let length = usize::from(u16::from_be_bytes([*bytes.first()?, *bytes.get(1)?]));
+        let segment = bytes.get(..length).filter(|_| length >= 2)?;
+        if tag == 0xda {
+            let components = usize::from(*segment.get(2)?);
+            if components == 0 || length != 6 + 2 * components {
+                return None;
+            }
+            saw_scan = true;
+            in_scan = true;
+            has_data = false;
+        }
+        bytes = &bytes[length..];
+    }
 }
 
 /// A recognized non-JPEG image, rather than arbitrary damaged bytes.

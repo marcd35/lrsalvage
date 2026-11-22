@@ -63,3 +63,13 @@ means.
   chose and `extract` re-certifies the bytes it is about to write; neither has to
   teach this module about files, and a bounded read could never be allowed to
   misjudge a large `APP1` as a broken frame.
+
+
+## Cache-only structural certification
+
+The cache-only reader follows every scan to the terminal EOI. It validates each
+SOS header's declared length, permits byte stuffing and restart markers inside
+scan data, and checks the framing of segments between scans without decoding
+samples. A frame with only a header cannot displace a usable smaller level.
+A separate prefix check recognizes other image signatures for the unsupported
+outcome. The catalog-backed reader keeps its existing certification contract.

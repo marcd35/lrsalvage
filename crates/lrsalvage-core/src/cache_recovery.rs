@@ -9,7 +9,7 @@ use sha2::{Digest, Sha256};
 
 use crate::error::IoContext;
 use crate::plan::{Control, Progress};
-use crate::previews_db::{self, Layout, PyramidKey, RequiredIndexProblem};
+use crate::previews_db::{self, Layout, PyramidKey};
 use crate::{Error, Result, fs, jpeg, lrprev};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -62,7 +62,7 @@ impl CacheRecovery {
     pub fn scan(
         cache: &Path,
         progress: &mut dyn FnMut(Progress) -> Control,
-    ) -> Result<Option<Self>, RequiredIndexProblem> {
+    ) -> Result<Option<Self>> {
         let index = previews_db::open_required(cache)?;
         let Some(sweep) = previews_db::sweep(cache, &mut |files| {
             progress(Progress::Cache { files }) == Control::Continue
@@ -92,27 +92,33 @@ impl CacheRecovery {
             }
             let mut selection = Selection::default();
             if key.has_supported_address() {
-                let found = on_disk.remove(&key);
-                let mut levels = index.row_candidates(cache, &key);
-                if let Some(found) = found {
-                    levels.extend(
-                        found
-                            .levels
-                            .into_iter()
-                            .map(|level| previews_db::Candidate {
-                                path: level.path,
-                                row: None,
-                                long_edge: level.long_edge,
-                            }),
-                    );
+                let mut declared = index.row_candidates(cache, &key);
+                previews_db::order_candidates(&mut declared);
+                let mut declared: HashMap<_, _> = declared
+                    .into_iter()
+                    .map(|candidate| (candidate.path.clone(), candidate))
+                    .collect();
+                if let Some(found) = on_disk.remove(&key) {
+                    // Only open paths whose literal spelling the cache walk
+                    // observed. An OS may resolve a differently cased name.
+                    for level in found.levels {
+                        let candidate =
+                            declared
+                                .remove(&level.path)
+                                .unwrap_or(previews_db::Candidate {
+                                    path: level.path,
+                                    row: None,
+                                    long_edge: level.long_edge,
+                                });
+                        selection.inspect_level(candidate);
+                    }
+                    if let Some(container) = found.container {
+                        selection.inspect_container(&container, index.levels(&key));
+                    }
                 }
-                // Keep the row when a file was found both ways. Iteration order
-                // breaks ties after size and representation.
-                previews_db::order_candidates(&mut levels);
-                for level in levels {
-                    selection.inspect_level(level);
+                for candidate in declared.into_values() {
+                    selection.missing_level(candidate);
                 }
-                selection.inspect_container(&index.payload_path(cache, &key), index.levels(&key));
             } else {
                 selection.unsupported = true;
             }
@@ -202,13 +208,17 @@ impl Selection {
     fn inspect_level(&mut self, level: previews_db::Candidate<'_>) {
         let expected = level.row.map(|row| (row.width, row.height));
         let Some(bytes) = self.bytes(&level.path) else {
-            if let Some(row) = level.row {
-                self.missing_level_rows
-                    .push((row.level, area((row.width, row.height))));
-            }
+            self.missing_level(level);
             return;
         };
         self.inspect_jpeg(&level.path, None, &bytes, expected, Some(level.long_edge));
+    }
+
+    fn missing_level(&mut self, level: previews_db::Candidate<'_>) {
+        if let Some(row) = level.row {
+            self.missing_level_rows
+                .push((row.level, area((row.width, row.height))));
+        }
     }
 
     fn inspect_container(&mut self, path: &Path, rows: &[crate::model::PyramidLevel]) {
@@ -244,7 +254,7 @@ impl Selection {
         expected: Option<(u32, u32)>,
         long_edge: Option<u32>,
     ) -> bool {
-        let certified = jpeg::certify(bytes).ok();
+        let certified = jpeg::certify_recovery(bytes).ok();
         let dimensions = certified.as_ref().map(|frame| frame.dimensions);
         let Some(dimensions) = dimensions.filter(|&size| {
             area(size) > 0 && certified.as_ref().is_some_and(|frame| frame.complete)
