@@ -272,6 +272,14 @@ pub struct Plan {
 /// a tree walk knows a file when it sees one, and the two stages that have a
 /// denominator say what it is. A report always carries the number of units
 /// **finished**, so a stop at a report leaves exactly that many done.
+///
+/// This enum is a seam item of a published crate (`specs/architecture.md`,
+/// `adr-0010-what-0-2-promises`), so a variant is a decision rather than an
+/// addition: a fourth one is additive in this crate's release terms and still
+/// stops compiling for every consumer that matches the enum exhaustively. A
+/// surface that needs another boundary inside a stage reads it from the stage's
+/// own last unit; `specs/modules/plan.md` records why the boundary before result
+/// preparation is the app entry's.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Progress {
     /// A cache file the one tree walk has looked at. There is no total: nobody
