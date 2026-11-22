@@ -33,6 +33,36 @@ pub fn jpeg_with(width: u16, height: u16, segments: &[Vec<u8>]) -> Vec<u8> {
     bytes
 }
 
+/// Size an existing decodable frame with legal JPEG comments. The first
+/// comment identifies this payload without changing the compressed pixels.
+pub fn sized_jpeg(jpeg: &[u8], size: usize, id: i64) -> Vec<u8> {
+    let mut remaining = size - jpeg.len();
+    assert!(remaining >= 12, "room for a comment and its identifier");
+    let mut bytes = Vec::with_capacity(size);
+    bytes.extend_from_slice(&jpeg[..2]);
+    while remaining > 0 {
+        // A comment has a two-byte marker and a 16-bit length including itself.
+        // Leave room for a final header if the remainder is less than four bytes.
+        let max = usize::from(u16::MAX) + 2;
+        let segment = if (max + 1..max + 4).contains(&remaining) {
+            remaining - 4
+        } else {
+            remaining.min(max)
+        };
+        let length = u16::try_from(segment - 2).expect("JPEG comment length");
+        let end = bytes.len() + segment;
+        bytes.extend_from_slice(&[0xff, 0xfe]);
+        bytes.extend_from_slice(&length.to_be_bytes());
+        if remaining == size - jpeg.len() {
+            bytes.extend_from_slice(&id.to_be_bytes());
+        }
+        bytes.resize(end, 0);
+        remaining -= segment;
+    }
+    bytes.extend_from_slice(&jpeg[2..]);
+    bytes
+}
+
 /// A frame with no EOI: complete header, cut-off scan.
 pub fn truncated_jpeg(width: u16, height: u16) -> Vec<u8> {
     let mut bytes = jpeg(width, height);

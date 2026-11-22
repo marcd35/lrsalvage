@@ -5,6 +5,28 @@ use crate::vault::{ImageRow, Level, PyramidRow, Vault};
 
 pub const BOUNDARY: &[u8] = include_bytes!("../assets/review/bridge.jpg");
 
+/// The release writer workload. Each group of five includes a large payload,
+/// and the comment identifier makes a swap between equal-sized files observable.
+pub fn writer_scale() -> Vault {
+    let mut vault = Vault::modern()
+        .catalog_name("Writer Scale")
+        .root_folder("X:/Synthetic writer/");
+    for id in 1..=5_000 {
+        let uuid = format!("{id:08X}-1111-4111-8111-{id:012}");
+        let size = if id % 5 == 0 { 417_019 } else { 28_059 };
+        let folder = format!("Set {:02}/Roll {:02}/", (id - 1) / 500, (id - 1) / 50 % 10);
+        vault = vault
+            .image(
+                ImageRow::new(id, &format!("Frame {id:04}"))
+                    .path_from_root(&folder)
+                    .cache(&uuid),
+            )
+            .pyramid(PyramidRow::new(&uuid).level(640, 480))
+            .level_file(Level::sized(&uuid, 640, 480).raw(&bytes::sized_jpeg(BOUNDARY, size, id)));
+    }
+    vault
+}
+
 /// Ten catalog rows that distinguish selection, availability and JPEG decoding.
 pub fn vault() -> Vault {
     let mut vault = Vault::modern().root_folder("X:/Synthetic review/");
