@@ -1,10 +1,14 @@
 //! Cache-only projections for the existing review and destination writer.
+//!
+//! The three published files are `report`'s to write, as the catalog run's are:
+//! this module hands it the scan and the batch's counts and keeps the page-side
+//! projections (`summary`, `rows`) that no file shape freezes.
 
-use std::fmt::Write;
 use std::path::Path;
 
 use lrsalvage_core::cache_recovery::{CacheRecovery, Item, Preview};
 use lrsalvage_core::extract::{self, Outcome, OutcomeStatus};
+use lrsalvage_core::report::{self, CacheBatch};
 use lrsalvage_core::{Error, Result, VERSION};
 use serde_json::{Value, json};
 
@@ -91,49 +95,46 @@ impl CacheReview {
         Ok(Some(outcome(item, preview, OutcomeStatus::Skipped)))
     }
 
+    /// The three published files, from `report`'s encoders.
+    ///
+    /// `report.csv` is the scan: one row per indexed pyramid. `extract.csv` and
+    /// the manifest describe the batch that was committed, so their counts are
+    /// the outcomes' — the same three files, one encoder each, that a
+    /// catalog-backed run writes (`specs/modules/report.md`).
     pub(crate) fn reports(&self, outcomes: &[Outcome], now: u64) -> Value {
-        let mut scan_csv =
-            String::from("mode,filename,status,width,height,fallback,dimension_mismatch\r\n");
-        for item in &self.0.items {
-            let (width, height) = item.preview.as_ref().map_or_else(
-                || (String::new(), String::new()),
-                |preview| {
-                    (
-                        preview.dimensions.0.to_string(),
-                        preview.dimensions.1.to_string(),
-                    )
-                },
-            );
-            let _ = write!(
-                scan_csv,
-                "cache-only,{},{},{width},{height},{},{}\r\n",
-                item.filename,
-                item.status.as_str(),
-                item.fallback,
-                item.dimension_mismatch
-            );
-        }
-        let mut manifest = self.summary();
-        manifest["version"] = json!(VERSION);
-        manifest["generated_unix"] = json!(now);
-        manifest["outputs"] = json!(outcomes);
-        manifest["batch"] = json!({
-            "saved": outcomes.iter().filter(|item| item.status == OutcomeStatus::Written).count(),
-            "already_recovered": outcomes.iter().filter(|item| item.status == OutcomeStatus::Skipped).count(),
-            "failed": outcomes.iter().filter(|item| item.status == OutcomeStatus::Failed).count(),
-        });
+        let batch = batch(outcomes, None);
         json!({
-            "report.csv": scan_csv,
+            "report.csv": report::cache_csv(&self.0),
             "extract.csv": extract::cache_only_outcomes_csv(outcomes),
-            "manifest.json": serde_json::to_string_pretty(&manifest).expect("serializable manifest"),
+            "manifest.json": report::cache_manifest_json(
+                &self.0,
+                &json!(outcomes),
+                batch,
+                VERSION,
+                now,
+            ),
         })
     }
 
-    pub(crate) fn verification(&self, now: u64) -> String {
-        let mut report = self.summary();
-        report["version"] = json!(VERSION);
-        report["generated_unix"] = json!(now);
-        serde_json::to_string_pretty(&report).expect("serializable verification report")
+    /// The path-free verification report, on the host's clock.
+    ///
+    /// `writes` is the batch's own account, which the page measured: this module
+    /// never sees the destination, so the counts arrive with the request rather
+    /// than being guessed here.
+    pub(crate) fn verification(&self, writes: CacheBatch, now: u64) -> String {
+        report::cache_verification_json(&self.0, writes, VERSION, now)
+    }
+}
+
+/// The batch's counts, from the outcomes the page prepared.
+fn batch(outcomes: &[Outcome], confirmed_on_disk: Option<usize>) -> CacheBatch {
+    let count =
+        |status: OutcomeStatus| outcomes.iter().filter(|item| item.status == status).count();
+    CacheBatch {
+        saved: count(OutcomeStatus::Written),
+        already_recovered: count(OutcomeStatus::Skipped),
+        failed: count(OutcomeStatus::Failed),
+        confirmed_on_disk,
     }
 }
 

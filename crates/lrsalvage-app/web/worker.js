@@ -63,8 +63,15 @@ self.onmessage = async (event) => {
     try {
       if (message.type === 'verification-report') {
         // The text, not a re-serialised value: the report's formatting is the
-        // report, and it goes straight into the file the page writes.
-        const text = verification_report(Math.floor(Date.now() / 1000));
+        // report, and it goes straight into the file the page writes. `writes`
+        // is the one member the page measured, so it crosses as data into the
+        // encoder rather than being written into the text afterwards.
+        const text = verification_report(
+          Math.floor(Date.now() / 1000),
+          JSON.stringify({
+            saved: 0, already_recovered: 0, failed: 0, confirmed_on_disk: null,
+            ...message.writes,
+          }));
         self.postMessage({ type: 'export', request, value: { text } });
       } else if (message.type === 'export-jpeg') {
         const jpeg = prepare_export(id, flat);

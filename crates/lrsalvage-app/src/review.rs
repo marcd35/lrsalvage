@@ -165,9 +165,12 @@ impl Review {
     ///
     /// The same object `scan --report` writes, from the same three facts: this
     /// run's plan, the options it applied, and the digest pair its copy proved.
-    pub fn verification(&self, now: u64) -> String {
+    /// A cache-only run measures none of those, so it publishes its own frozen
+    /// member set and takes the batch's counts from the page, which is the only
+    /// place the destination was seen.
+    pub fn verification(&self, writes: report::CacheBatch, now: u64) -> String {
         if let Some(cache) = &self.cache {
-            return cache.verification(now);
+            return cache.verification(writes, now);
         }
         report::verification_json(
             &self.plan,

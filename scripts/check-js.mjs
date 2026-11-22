@@ -84,7 +84,8 @@ async function diagnosticsMatchTheSpec() {
     return [...module.slice(at, end).matchAll(/'([a-z_]+)'/g)].map((match) => match[1]);
   };
 
-  for (const [name, key] of [['SCAN_COUNTS', 'scan'], ['FAILURE_CATEGORIES', 'failures']]) {
+  for (const [name, key] of [['SCAN_COUNTS', 'scan'], ['CACHE_SCAN_COUNTS', 'cache_scan'],
+    ['FAILURE_CATEGORIES', 'failures']]) {
     const list = declared(name);
     if (list === null) {
       problems.push(`web/diagnostics.js: no ${name} to compare with the spec's ${key}`);

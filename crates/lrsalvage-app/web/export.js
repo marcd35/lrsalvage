@@ -542,6 +542,17 @@ export function mountExport(document) {
     receipt.focus();
   }
 
+  /** The batch's own account, as the report's `writes` member publishes it. */
+  function writes() {
+    const entries = [...run.ledger.values()];
+    return {
+      saved: entries.filter((entry) => entry.status === 'written').length,
+      already_recovered: entries.filter((entry) => entry.status === 'skipped').length,
+      failed: run.failures.length,
+      confirmed_on_disk: run.reconciled?.ok ? run.reconciled.present.length : null,
+    };
+  }
+
   /**
    * Write the path-free verification report on request, and list it with the rest.
    *
@@ -556,18 +567,10 @@ export function mountExport(document) {
     render();
     status.textContent = 'Writing the report…';
     try {
-      let { text } = await current.scan.verificationReport();
-      if (current.cacheOnly) {
-        const report = JSON.parse(text);
-        const entries = [...current.ledger.values()];
-        report.writes = {
-          saved: entries.filter((entry) => entry.status === 'written').length,
-          already_recovered: entries.filter((entry) => entry.status === 'skipped').length,
-          failed: current.failures.length,
-          confirmed_on_disk: current.reconciled?.ok ? current.reconciled.present.length : null,
-        };
-        text = JSON.stringify(report, null, 2);
-      }
+      // The encoder writes the object, `writes` included: the page measures the
+      // batch and hands the counts over, and never re-serialises a published
+      // file (`specs/modules/report.md`).
+      const { text } = await current.scan.verificationReport(writes());
       const entry = await writeAndLink(
         current.target.handle, 'verification.json', text, DESCRIPTIONS['verification.json']);
       for (const gone of current.reports.filter((report) => report.name.startsWith('verification'))) {

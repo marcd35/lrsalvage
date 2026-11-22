@@ -8,7 +8,7 @@ parent: architecture
 
 # Preserve preview bytes
 
-**Status:** accepted · **Date:** 2026-11-12 · **Amended:** 2026-11-15, 2026-11-17
+**Status:** accepted · **Date:** 2026-11-12 · **Amended:** 2026-11-15, 2026-11-17, 2026-11-22
 
 ## Context
 
@@ -246,10 +246,16 @@ that report against fixture M15, not by adding one of the three mechanisms above
 
 ## Cache-only recovery
 
-[#186](https://github.com/marcd35/lrsalvage/issues/186) saves the selected JPEG
-byte for byte, including its embedded metadata. With the indexed pyramid and
-its certified bytes available, the writer can compare an occupied destination
-with that preview directly. A byte match counts as already recovered, and a
-mismatch leaves the existing file in place. This mode-specific verification
+**Amended 2026-11-22.** [#186](https://github.com/marcd35/lrsalvage/issues/186) saves
+the selected JPEG byte for byte, including its embedded metadata. With the indexed
+pyramid and its certified bytes available, the writer can compare an occupied
+destination with that preview directly. A byte match counts as already recovered,
+and a mismatch leaves the existing file in place. This mode-specific verification
 allows repeat recovery without inserting a Software marker. Catalog-backed
 verification and the CLI's `--no-metadata` behavior follow the rules above.
+
+Point 5 rules out a marker in cache-only output: no segment is added, replaced or
+dropped, and the index's digest pair — not a written tag — is what identifies the
+bytes. It also rules out a compatibility matrix for that mode's reports, because
+the verification report's `writes` counts describe one batch and never claim a
+reader can tell our output from another tool's.

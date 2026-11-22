@@ -1234,6 +1234,7 @@ fn r1_the_verification_report_is_the_frozen_field_set() {
             "db_version",
             "generated_unix",
             "layout",
+            "mode",
             "options",
             "schema",
             "shapes",
@@ -1242,10 +1243,11 @@ fn r1_the_verification_report_is_the_frozen_field_set() {
             "stats",
             "version",
         ],
-        "the report's keys are frozen at eleven: no path-bearing member exists"
+        "the report's keys are frozen at twelve: no path-bearing member exists"
     );
 
     assert_eq!(report["schema"], "lrsalvage.verification");
+    assert_eq!(report["mode"], "catalog");
     assert_eq!(report["version"], env!("CARGO_PKG_VERSION"));
     assert!(
         report["generated_unix"].as_u64().expect("an epoch second") > 1_600_000_000,

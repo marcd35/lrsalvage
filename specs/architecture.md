@@ -122,6 +122,7 @@ field.
 | `extract::ensure_safe_destination` | convenience | its own doc points at `ensure_safe_destination_create`, which supersedes it |
 | `extract::DESTINATION_NOT_OURS` | not supported | the note text a refusal writes; no caller outside the module |
 | `report::summary`, `item_lines`, `write_csv`, `write_json`, `write_verification`, `write_contact_sheet`, `tiers_json`, `shapes_json` | seam | the surfaces a second front-end prints instead of inventing: the summary, the CSV, the manifest, the verification report and the sheet. The summary takes the run's `Options`, so the bounds it names are the ones the caller applied |
+| `report::cache_csv`, `cache_manifest_json`, `cache_verification_json`, `CacheBatch` (+ fields) | seam | the same three published files for a cache-only run, from `CacheRecovery` and the batch's counts. `CacheBatch` exists because `extract` owns the outcomes and renders through this module: the counts cross as values, and the manifest's three and the verification report's four are one value |
 | `report::escape_csv` | not supported | public so `extract`'s per-file CSV quotes by the same rules, as `report`'s own spec says |
 | `report::mebibytes`, `with_thousands` | convenience | the one home for the human and the exact forms of a count: the terminal summary and the free-space refusal both print through them, so one quantity is not spelled two ways |
 | `masks::Mask` (+ fields), `decode_dat`, `to_png`, `list` | seam | the third command's whole surface: decode a layer, encode it, find the layers |

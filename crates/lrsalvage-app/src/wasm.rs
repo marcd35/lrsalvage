@@ -252,10 +252,15 @@ pub fn export_reports(flat: bool, outcomes: &str, now: f64) -> Result<String, Js
 ///
 /// The page's clock rather than the module's, for the same reason the manifest
 /// takes one: a browser has a `Date` and this target has no trustworthy
-/// `SystemTime` (`specs/modules/report.md`).
+/// `SystemTime` (`specs/modules/report.md`). `writes` is the batch's own account
+/// and the only fact here the page measured — a catalog run ignores it, and the
+/// encoder is still the one that writes the object, so no JavaScript
+/// re-serialises a published file.
 #[wasm_bindgen]
-pub fn verification_report(now: f64) -> String {
-    REVIEW.with(|review| review.borrow().verification(now as u64))
+pub fn verification_report(now: f64, writes: &str) -> Result<String, JsValue> {
+    let writes: lrsalvage_core::report::CacheBatch =
+        serde_json::from_str(writes).map_err(|error| JsValue::from_str(&error.to_string()))?;
+    Ok(REVIEW.with(|review| review.borrow().verification(writes, now as u64)))
 }
 
 /// The two release numbers ADR 0012 D2 puts on the receipt.

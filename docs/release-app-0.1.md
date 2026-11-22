@@ -27,20 +27,17 @@ pending.
       on that commit. Record the output parity gate required by ADR 0012 D12
       for the actual browser writer and CLI.
 - [ ] Close [#186](https://github.com/marcd35/lrsalvage/issues/186) before tagging.
-      On the accepted candidate, compare native and browser generated filenames,
-      exact JPEG bytes, scan counts, and batch outcomes on synthetic legacy,
-      modern, and mixed caches. Cover missing and damaged input, fallback,
-      destination overlap, occupied paths, and Stop/Continue. Record the existing
-      catalog-backed CLI parity result from `sh scripts/check.sh browser` on the same
-      commit. Complete the hosted cache-only practice case in Windows Chrome and
-      Edge and reconcile the receipt against saved files. Record the tested commit
-      and results. The real-vault catalog-backed walkthrough below remains its
-      own release check.
+      On the accepted candidate, run the native and browser comparison and the
+      existing catalog-backed CLI parity gate, then record the tested commit and
+      results. [The app spec](../specs/app.md#recover-from-preview-cache) is the
+      one home for what that comparison covers. The real-vault catalog-backed
+      walkthrough below remains its own release check.
 - [ ] The release maintainer builds the static candidate from trusted `main`
       and deploys it to Cloudflare Pages over HTTPS. Record the build commit
       and preview URL on [#172](https://github.com/marcd35/lrsalvage/issues/172).
       Verify cross-origin isolation, the app and core versions on the page and
-      receipt, all practice cases, and the guide and screenshots.
+      receipt, all practice cases — including the cache-only one, whose receipt is
+      reconciled against the saved files — and the guide and screenshots.
 - [ ] Record the [synthetic writer result](https://github.com/marcd35/lrsalvage/issues/171).
       Follow the [release-scale writer protocol](agents/browser-app-deployment.md#verify-the-writer-at-release-scale)
       and link the dated result for the tested candidate.

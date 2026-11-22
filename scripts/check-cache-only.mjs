@@ -58,6 +58,48 @@ export async function checkCacheOnly(send) {
   }
 
   await until(el('source') + '?.hidden === false', 'The source screen did not load');
+
+  // The receipt's copied diagnostics, which a headless browser neither prompts
+  // for nor grants. The permission names have moved between Chromium versions,
+  // so the descriptor form is tried and the legacy names after it; the assertion
+  // reads the real clipboard, so an ungranted run fails loudly.
+  const origin = await evaluate('location.origin');
+  async function grantClipboard() {
+    const attempts = [
+      () => send('Browser.setPermission', {
+        origin,
+        permission: { name: 'clipboard-read', allowWithoutSanitization: true },
+        setting: 'granted',
+      }),
+      () => send('Browser.setPermission', {
+        origin,
+        permission: { name: 'clipboard-write', allowWithoutSanitization: true },
+        setting: 'granted',
+      }),
+      () => send('Browser.grantPermissions', {
+        origin,
+        permissions: ['clipboardReadWrite', 'clipboardSanitizedWrite'],
+      }),
+    ];
+    let granted = 0;
+    for (const attempt of attempts) {
+      try {
+        await attempt();
+        granted++;
+      } catch {
+        // The next spelling of the same request.
+      }
+    }
+    if (granted === 0) throw new Error('Chromium refused every clipboard permission request');
+  }
+  await grantClipboard();
+
+  // What the phase measured, returned as the runbook asks a check to: the object
+  // is the phase's printed result, not a number nobody reads.
+  const measured = {
+    layouts: 0, previewsSaved: 0, alreadyRecovered: 0, conflicts: 0, indexProblems: 0,
+    reusedCache: 0,
+  };
   for (const layout of ['legacy', 'modern', 'mixed']) {
     const entry = await call(mount, 'cache-' + layout, true);
     await click('recover-cache');
@@ -93,6 +135,7 @@ export async function checkCacheOnly(send) {
     assert.deepEqual(await call(savedFiles), Object.fromEntries(entry.manifest.map(({ output, bytes, sha256 }) =>
       [output, { bytes, sha256 }])));
     const manifest = JSON.parse(await call(report, 'manifest.json'));
+    assert.equal(manifest.schema, 'lrsalvage.manifest');
     assert.equal(manifest.mode, 'cache-only');
     assert.equal(manifest.layout, entry.report.layout);
     assert.deepEqual(manifest.scan, entry.report.scan);
@@ -100,8 +143,28 @@ export async function checkCacheOnly(send) {
     await click('receipt-verification');
     await until(el('receipt-report-status') + '.textContent.includes("Saved")', 'Verification report was not saved');
     const verification = JSON.parse(await call(report, 'verification.json'));
+    assert.equal(verification.schema, 'lrsalvage.verification');
+    assert.equal(verification.mode, 'cache-only');
     assert.deepEqual(verification.scan, entry.report.scan);
     assert.deepEqual(verification.writes, { saved: 13, already_recovered: 0, failed: 0, confirmed_on_disk: 13 });
+    if (layout === 'mixed') {
+      // The copied diagnostics: the same frozen object, saying which mode it
+      // came from and carrying the five cache counts under their own names.
+      await click('receipt-diagnostics');
+      await until(el('receipt-diagnostics-status') + '.textContent.length > 0',
+        'Copying diagnostics said nothing');
+      const diagnostics = JSON.parse(await evaluate('navigator.clipboard.readText()'));
+      assert.equal(diagnostics.mode, 'cache-only');
+      assert.equal(diagnostics.scan, null);
+      assert.deepEqual(Object.keys(diagnostics.cache_scan).sort(),
+        ['indexed', 'invalid', 'missing', 'recoverable', 'unsupported']);
+      assert.equal(diagnostics.cache_scan.indexed, 16);
+      assert.equal(diagnostics.cache_scan.recoverable, 13);
+      assert(!JSON.stringify(diagnostics).includes('preview-'),
+        'the copy names no generated filename');
+    }
+    measured.layouts++;
+    measured.previewsSaved += 13;
     assert(!JSON.stringify(verification).includes('preview-'));
     await click('restart');
   }
@@ -130,6 +193,7 @@ export async function checkCacheOnly(send) {
   await until(el('receipt-report-list') + '.children.length === 3', 'Second destination reports were not saved');
   assert.equal(await text('receipt-headline'), '2 previews saved');
   assert.match(await text('receipt-reconciled'), /Every file above was found/);
+  measured.previewsSaved += 2;
   await click('restart');
 
   const repeat = await call(mount, 'cache-mixed', false);
@@ -151,6 +215,8 @@ export async function checkCacheOnly(send) {
   assert.deepEqual(await call(savedFiles), occupied);
   assert.deepEqual(JSON.parse(await call(report, 'manifest (2).json')).batch,
     { saved: 0, already_recovered: 12, failed: 1 });
+  measured.alreadyRecovered += 12;
+  measured.conflicts += 1;
   await click('restart');
 
   for (const [name, message] of [
@@ -163,6 +229,7 @@ export async function checkCacheOnly(send) {
     await until('!' + el('result') + '.hidden', 'Bad index did not report a result');
     assert((await text('headline')).includes(message));
     assert.equal(await evaluate(el('export-section') + '.hidden'), true);
+    measured.indexProblems++;
     await click('restart');
   }
   // A supported index with no entries is its own answer, not a failure.
@@ -214,5 +281,7 @@ export async function checkCacheOnly(send) {
   await until(el('headline') + '.textContent.includes("indexed pyramids") || ' +
     el('headline') + '.textContent.includes("index is empty")', 'Selected cache was not reused');
   assert.deepEqual(await evaluate('cacheFallbackPicks'), ['lrsalvage-catalog', 'lrsalvage-cache']);
+  measured.reusedCache++;
   console.log('cache-only: legacy, modern and mixed output parity, index errors, overlap, stop/continue and occupied files agree');
+  return measured;
 }

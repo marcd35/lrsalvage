@@ -172,7 +172,7 @@ Use the same destination checks and batch writer. Stop lets in-flight writes
 settle, and Continue keeps the selection, paths, and destination fixed. The
 receipt separates scan outcomes from the batch's saved, already recovered,
 and failed counts and verifies the destination files against their planned
-bytes in each folder the run used. The local report CSVs and manifest identify the cache-only mode. The
+bytes in each folder the run used. The local report CSVs and manifest identify the cache-only mode, and the three published files come from the same encoders the catalog-backed run uses, under the same schema tags with `mode` naming the run ([report](modules/report.md)). The
 shareable verification report and copied diagnostics use aggregate counts
 without paths, filenames, or cache identities.
 
@@ -290,6 +290,7 @@ the catalog copy shareable. The object is:
 
 ```json
 { "schema": "lrsalvage.diagnostics",
+  "mode": "catalog",
   "versions": {"app": "0.1.0", "core": "0.4.0", "build": "4606440a1b2c",
                "browser": "Google Chrome 133.0.6943.99", "platform": "Windows", "platform_version": "15.0.0"},
   "timings": {"storage_setup_ms": 812, "catalog_copy_ms": 2140, "scan_ms": 9100,
@@ -301,6 +302,8 @@ the catalog copy shareable. The object is:
            "selected_items": 120, "selected_images": 120,
            "tiers": {"full": 120, "large": 3800, "standard": 1078, "small": 2, "thumbnail": 0},
            "superseded": 0, "deleted": 0, "unrecognised": 0},
+  "cache_scan": {"indexed": null, "recoverable": null, "missing": null,
+                 "invalid": null, "unsupported": null},
   "writes": {"planned": 120, "written": 118, "already_recovered": 2, "failed": 0,
              "confirmed_on_disk": 120},
   "events": {"stopped": 1, "settled": 1, "continued": 1},
@@ -309,14 +312,21 @@ the catalog copy shareable. The object is:
   "failure": null }
 ```
 
-The field list is frozen here. `versions` carries the two release numbers, the
+The field list is frozen here. `mode` names the run that produced the copy —
+`catalog` or `cache-only` — so a reader knows which scan object to read.
+`versions` carries the two release numbers, the
 checkout identity when a built page has one, and the browser and platform as the
 browser states them — a table mapping a platform version to a marketing name is a
 table that rots. `timings` are milliseconds since the page loaded and there is no
 absolute timestamp: the object describes a run's shape, not when its author was at
 their desk. `scan` carries exactly the eighteen `stats` members
 `specs/modules/report.md` freezes, so no second vocabulary is invented for a count
-the reports already name. `longest_write_gap_ms` measures consecutive commits
+the reports already name. A cache-only run measured none of those, so its `scan`
+is `null` and `cache_scan` carries the five counts it did measure — the same five
+names `specs/modules/report.md` freezes for that mode, never a cache count under a
+catalog name. On a catalog copy `cache_scan` is the same five members at `null`,
+because a fact the run did not measure is `null`, never absent.
+`longest_write_gap_ms` measures consecutive commits
 across the whole run, so a stop appears in `events` and never as a slow write.
 `catalog_copy_ms` covers the copy, the open and the index copy, because one
 synchronous wasm frame owns all three and no clock runs inside it; it ends at the
