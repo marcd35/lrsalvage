@@ -20,7 +20,7 @@ SCRIPTS = Path(__file__).resolve().parent
 package_web = runpy.run_path(str(SCRIPTS / "build-browser-app.py"))["package_web"]
 deployment = runpy.run_path(str(SCRIPTS / "verify-browser-deployment.py"))
 ORIGIN = "https://preview.example"
-CASES = {"working", "mixed", "unreadable-catalog", "unrecognized-layout"}
+CASES = {"working", "mixed", "unreadable-catalog", "unrecognized-layout", "cache-only"}
 
 
 class PackageTests(unittest.TestCase):

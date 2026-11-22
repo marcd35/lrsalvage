@@ -242,3 +242,14 @@ that report against fixture M15, not by adding one of the three mechanisms above
 - **Identify output by re-assembling it and comparing bytes.** No marker to
   write, but a rating edited in the catalog, or any change to the segment writer,
   makes our own past output foreign and impossible to keep without `--force`.
+
+
+## Cache-only recovery
+
+[#186](https://github.com/marcd35/lrsalvage/issues/186) saves the selected JPEG
+byte for byte, including its embedded metadata. With the indexed pyramid and
+its certified bytes available, the writer can compare an occupied destination
+with that preview directly. A byte match counts as already recovered, and a
+mismatch leaves the existing file in place. This mode-specific verification
+allows repeat recovery without inserting a Software marker. Catalog-backed
+verification and the CLI's `--no-metadata` behavior follow the rules above.

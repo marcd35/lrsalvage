@@ -734,9 +734,25 @@ pub fn write_outcomes_csv(outcomes: &[Outcome], path: &Path) -> Result<()> {
 
 /// Render the shared extraction outcomes without writing to a filesystem.
 pub fn outcomes_csv(outcomes: &[Outcome]) -> String {
+    encode_outcomes(outcomes, None)
+}
+
+/// Render cache-only extraction outcomes with an explicit recovery mode column.
+pub fn cache_only_outcomes_csv(outcomes: &[Outcome]) -> String {
+    encode_outcomes(outcomes, Some("cache-only"))
+}
+
+fn encode_outcomes(outcomes: &[Outcome], mode: Option<&str>) -> String {
     let mut text = String::with_capacity(outcomes.len() * 96);
+    if mode.is_some() {
+        text.push_str("mode,");
+    }
     text.push_str("status,bytes,sha256,output,note\r\n");
     for o in outcomes {
+        if let Some(mode) = mode {
+            text.push_str(mode);
+            text.push(',');
+        }
         text.push_str(o.status.as_str());
         text.push(',');
         text.push_str(&o.bytes.to_string());

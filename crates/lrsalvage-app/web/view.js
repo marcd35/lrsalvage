@@ -96,6 +96,8 @@ export function mount(document) {
   }
 
   showOnly(source);
+  el('recover-cache').addEventListener('click', () => void chooseRecoveryCache(pickerError));
+  el('recover-cache-after-error').addEventListener('click', () => void recoverAfterError());
   scanButton.addEventListener('click', scanChosenCatalog);
 
   function scanChosenCatalog() {
@@ -145,17 +147,59 @@ export function mount(document) {
 
   async function openPractice(name) {
     showOnly(scanning);
-    scanProgress.reset('Loading the practice catalog…');
+    scanProgress.reset('Loading the practice files…');
     stopButton.hidden = true;
     try {
       const handle = await loadPractice(name);
+      if (name === 'cache-only') {
+        await runScan(cacheSource(handle));
+        return;
+      }
       await acceptCatalogue(handle);
       if (!chosenCatalog()) throw new Error('The practice folder has no catalog.');
       scanChosenCatalog();
     } catch (error) {
       showOnly(source);
-      say(pickerError, `The practice catalog could not open. ${error.message}`);
+      say(pickerError, `The practice files could not open. ${error.message}`);
     }
+  }
+
+  function cacheSource(handle) {
+    return { mounts: [{ path: '/cache', handle }], catalog: null, cache: '/cache' };
+  }
+
+  async function chooseRecoveryCache(message) {
+    const answer = await pickFolder({ id: 'lrsalvage-cache', mode: 'read' });
+    if (answer.cancelled) {
+      say(message, 'Nothing was chosen, so nothing changed.');
+    } else if (answer.refused) {
+      say(message, `This browser refused the folder: ${answer.refused.message}`);
+    } else {
+      await runScan(cacheSource(answer.handle));
+    }
+  }
+
+  async function recoverAfterError() {
+    const chosen = state.source;
+    if (chosen) {
+      const mount = chosen.mounts.find(({ path }) =>
+        chosen.cache === path || chosen.cache.startsWith(path + '/'));
+      if (mount) {
+        let handle = mount.handle;
+        try {
+          for (const component of chosen.cache.slice(mount.path.length).split('/').filter(Boolean)) {
+            handle = await handle.getDirectoryHandle(component);
+          }
+        } catch {
+          handle = null;
+        }
+        if (handle) {
+          await runScan(cacheSource(handle));
+          return;
+        }
+      }
+    }
+    await chooseRecoveryCache(headline);
   }
 
   async function chooseCatalogue() {
@@ -260,12 +304,13 @@ export function mount(document) {
   // -- scanning -----------------------------------------------------------
 
   async function runScan(chosen) {
-    if (exports.busy()) return;
+    if (running || exports.busy()) return;
     state.source = chosen;
+    const cacheOnly = !chosen.catalog;
     pickerError.hidden = true;
     // A run's diagnostics start here: a failure at the copy has no receipt to
     // attach them to, and it is the one somebody wants to hand over.
-    log.run();
+    log.run(cacheOnly);
     clearReview();
     showOnly(scanning);
     scanProgress.reset();
@@ -277,6 +322,14 @@ export function mount(document) {
       },
       stage(name) {
         log.stage(name);
+        // The cache-only run has no catalog to copy, so it names its own wait
+        // instead of the catalog copy's sentence; everything else about the
+        // readout is `scan-progress.js`'s (#185), including the cache walk's
+        // "files checked" and the stopping state.
+        if (cacheOnly && name === 'copy') {
+          scanProgress.reset('Opening the preview index…');
+          return;
+        }
         scanProgress.stage(name);
       },
       progress: scanProgress.progress,
@@ -311,10 +364,12 @@ export function mount(document) {
     render(report, chosen);
     showOnly(result);
     if (report.ok) {
-      log.scanCounts(report.stats);
+      log.scanCounts(cacheOnly ? report.scan : report.stats);
       completed = scan;
-      if (report.photos.some((photo) => photo.preview)) exports.open(scan, chosen.mounts);
-      review.show(report.photos, scan.preview);
+      if (report.photos.some((photo) => photo.preview)) {
+        exports.open(scan, chosen.mounts, cacheOnly);
+      }
+      if (!cacheOnly || report.photos.length) review.show(report.photos, scan.preview, cacheOnly);
     }
     resultTitle.focus();
   }
@@ -328,6 +383,10 @@ export function mount(document) {
     roots.replaceChildren();
 
     resultTitle.textContent = report.ok ? '3. Review previews' : 'The scan could not finish';
+    const cacheOnly = !chosen.catalog;
+    el('cache-notice').hidden = !cacheOnly || !report.ok || !report.photos.length;
+    el('recover-cache-after-error').hidden = report.ok || cacheOnly ||
+      !['open', 'copy'].includes(report.problem.stage);
     el('scan-details').hidden = !report.ok;
     if (!report.ok) {
       log.viewFailure(report.problem.stage, report.problem.kind);
@@ -352,6 +411,25 @@ export function mount(document) {
       const item = document.createElement('li');
       item.append(detail, copy, status);
       causes.append(item);
+      rootsSection.hidden = true;
+      return;
+    }
+
+    if (cacheOnly) {
+      const { indexed, recoverable, missing, invalid, unsupported } = report.scan;
+      headline.textContent = indexed === 0 ? 'This preview index is empty.' :
+        `${counted(recoverable)} of ${counted(indexed)} indexed pyramids have a recoverable preview.`;
+      fact('Indexed pyramids', counted(indexed));
+      fact('Recoverable', counted(recoverable));
+      fact('Missing', counted(missing));
+      fact('Invalid', counted(invalid));
+      fact('Unsupported', counted(unsupported));
+      fact('Cache layout', report.layout);
+      if (missing || invalid || unsupported) {
+        const item = document.createElement('li');
+        item.textContent = `${counted(missing)} missing · ${counted(invalid)} invalid · ${counted(unsupported)} unsupported`;
+        causes.append(item);
+      }
       rootsSection.hidden = true;
       return;
     }
@@ -547,6 +625,13 @@ export function mount(document) {
  * details toggle for whoever is helping them.
  */
 function failureSentence(stage, kind) {
+  if (stage === 'cache-index') {
+    return {
+      missing: 'This folder has no previews.db. Choose the preview cache folder that contains it.',
+      unreadable: 'The preview index could not be read. Try another copy of the preview cache.',
+      unsupported: 'This preview index has an unsupported schema.',
+    }[kind];
+  }
   if (kind === 'catalog-changed') {
     return (
       'The catalog changed while it was being copied, so the copy is not the catalog. ' +

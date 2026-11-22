@@ -33,7 +33,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use lrsalvage_app::vault::{Compare, copy_tree, export, vaults};
+use lrsalvage_core::plan::Control;
 use lrsalvage_fixtures::review;
+use lrsalvage_fixtures::vault::{Level, PyramidRow, Vault};
 use serde_json::json;
 
 fn main() {
@@ -102,6 +104,7 @@ fn main() {
         "target": "native",
         "separator": std::path::MAIN_SEPARATOR.to_string(),
         "vaults": reported,
+        "cache_only": cache_only(&out),
     });
     let path = out.join("native.json");
     fs::write(
@@ -110,4 +113,74 @@ fn main() {
     )
     .expect("write the native report");
     println!("{}", path.display());
+}
+
+fn cache_only(out: &Path) -> Vec<serde_json::Value> {
+    [
+        ("cache-legacy", recovery_vault(Vault::legacy())),
+        ("cache-modern", recovery_vault(Vault::modern())),
+        (
+            "cache-mixed",
+            recovery_vault(Vault::mixed()).container(&[Level::sized(&key(1), 1200, 800)]),
+        ),
+        ("cache-no-index", Vault::unindexed()),
+        ("cache-bad-index", Vault::modern().raw_index(b"not SQLite")),
+    ]
+    .into_iter()
+    .map(|(name, vault)| {
+        let vault = vault.write();
+        let root = out.join(name);
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).expect("create an isolated recovery fixture");
+        let files = copy_tree(vault.previews(), &root);
+        match lrsalvage_app::scan_cache(&root, &mut |_| Control::Continue) {
+            Ok(scan) => {
+                let paths = scan.review.export_paths(true);
+                let outcomes: Vec<_> = paths
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|row| {
+                        let id = row["id"].as_str().unwrap().parse().unwrap();
+                        let (_, outcome) = scan
+                            .review
+                            .prepare(id, true)
+                            .expect("prepare indexed preview");
+                        outcome
+                    })
+                    .collect();
+                json!({
+                    "name": name, "files": files, "report": scan.report,
+                    "manifest": outcomes,
+                })
+            }
+            Err(error) => json!({"name": name, "files": files, "error": error.kind()}),
+        }
+    })
+    .collect()
+}
+
+fn recovery_vault(mut vault: Vault) -> Vault {
+    // More candidates than the product writer can schedule concurrently.
+    for number in 1..=12 {
+        let uuid = key(number);
+        vault = vault
+            .pyramid(PyramidRow::new(&uuid).level(960, 640))
+            .level_file(Level::sized(&uuid, 960, 640));
+    }
+    let pruned = key(13);
+    let corrupt = key(14);
+    let unsupported = key(15);
+    vault
+        .pyramid(PyramidRow::new(&pruned).level(800, 600).level(320, 213))
+        .level_file(Level::sized(&pruned, 320, 213))
+        .pyramid(PyramidRow::new(&corrupt).level(960, 640))
+        .level_file(Level::sized(&corrupt, 960, 640).raw(b"damaged"))
+        .pyramid(PyramidRow::new(&unsupported).level(960, 640))
+        .level_file(Level::sized(&unsupported, 960, 640).raw(b"GIF89a"))
+        .pyramid(PyramidRow::new(&key(16)).level(960, 640))
+}
+
+fn key(id: u32) -> String {
+    format!("A{id:07}-1111-4111-8111-{id:012}")
 }

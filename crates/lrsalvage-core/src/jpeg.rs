@@ -135,6 +135,16 @@ pub fn certify(bytes: &[u8]) -> Result<Certified> {
     })
 }
 
+/// A recognized non-JPEG image, rather than arbitrary damaged bytes.
+pub(crate) fn is_other_image(bytes: &[u8]) -> bool {
+    bytes.starts_with(b"\x89PNG\r\n\x1a\n")
+        || bytes.starts_with(b"GIF87a")
+        || bytes.starts_with(b"GIF89a")
+        || (bytes.starts_with(b"RIFF") && bytes.get(8..12) == Some(b"WEBP"))
+        || bytes.starts_with(b"II*\0")
+        || bytes.starts_with(b"MM\0*")
+}
+
 /// Read `(width, height)` from the first start-of-frame marker.
 pub fn dimensions(bytes: &[u8]) -> Result<(u32, u32)> {
     certify(bytes).map(|certified| certified.dimensions)

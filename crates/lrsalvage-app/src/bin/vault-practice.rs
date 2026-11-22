@@ -102,6 +102,39 @@ fn main() {
         }
         println!("{name}: expected scan outcome");
     }
+    let folder = out.join("cache-only");
+    let vault = cache_only().write();
+    fs::create_dir(&folder).expect("create cache-only sample");
+    copy_tree(vault.previews(), &folder);
+    let cache = lrsalvage_app::scan_cache(&folder, &mut |_| Control::Continue)
+        .expect("cache-only sample scans");
+    assert_eq!(cache.report["scan"]["indexed"], 3);
+    assert_eq!(cache.report["scan"]["recoverable"], 2);
+    assert_eq!(cache.report["scan"]["missing"], 1);
+    assert!(
+        cache.report["photos"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|row| row["fallback"] == true)
+    );
+    println!("cache-only: expected scan outcome");
+}
+
+fn cache_only() -> Vault {
+    let healthy = uuid(1);
+    let pruned = uuid(2);
+    let missing = uuid(3);
+    Vault::modern()
+        .pyramid(PyramidRow::new(&healthy).level(CANYON.width, CANYON.height))
+        .level_file(Level::sized(&healthy, CANYON.width, CANYON.height).raw(CANYON.jpeg))
+        .pyramid(
+            PyramidRow::new(&pruned)
+                .level(SNOW.width, SNOW.height)
+                .level(SNOW_SMALL.width, SNOW_SMALL.height),
+        )
+        .level_file(Level::sized(&pruned, SNOW_SMALL.width, SNOW_SMALL.height).raw(SNOW_SMALL.jpeg))
+        .pyramid(PyramidRow::new(&missing).level(PLATEAU.width, PLATEAU.height))
 }
 
 fn base(vault: Vault) -> Vault {

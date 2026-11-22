@@ -53,3 +53,11 @@ module: a level file is one JPEG, certified and written as a file by `plan` and
 `extract` (`adr-0005-discover-payloads-by-index`). Parse a container only for a
 `Payload::Container` item, which `plan` produces only when the container is that
 pyramid's sole representation.
+
+
+## Recovering from a damaged container
+
+A cache-only scan may certify a level whose full chunk was parsed before a
+later framing error. The prefix reader stops at the first bad boundary and
+returns the complete chunks it already walked. The catalog-backed parser
+continues to require the whole container to parse.

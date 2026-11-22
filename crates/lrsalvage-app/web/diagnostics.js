@@ -28,6 +28,8 @@ const SCAN_COUNTS = [
   'selected_items', 'selected_images', 'tiers', 'superseded', 'deleted', 'unrecognised',
 ];
 
+const CACHE_SCAN_COUNTS = ['indexed', 'recoverable', 'missing', 'invalid', 'unsupported'];
+
 /** The seven categories a failed write is counted under, aimed at a person. */
 const FAILURE_CATEGORIES = [
   'destination_gone', 'permission', 'out_of_room', 'occupied_foreign',
@@ -106,10 +108,11 @@ let state = blank();
  */
 export const log = {
   /** A new run begins: the receipt's counters start again, the versions do not. */
-  run() {
+  run(cacheOnly = false) {
     const versions = state.versions;
     state = blank();
     state.versions = versions;
+    state.cacheOnly = cacheOnly;
   },
 
   /**
@@ -148,7 +151,8 @@ export const log = {
   /** The scan's frozen counts, copied member by member and by name. */
   scanCounts(stats) {
     if (!stats) return;
-    state.scan = Object.fromEntries(SCAN_COUNTS.map((name) => [name, stats[name] ?? null]));
+    const fields = state.cacheOnly ? CACHE_SCAN_COUNTS : SCAN_COUNTS;
+    state.scan = Object.fromEntries(fields.map((name) => [name, stats[name] ?? null]));
   },
 
   /** How many files the batch fixed when it started. */
@@ -232,7 +236,7 @@ export const log = {
       },
       timings: {
         storage_setup_ms: marks.storage_setup ?? null,
-        catalog_copy_ms: marks.catalog_copy ?? null,
+        catalog_copy_ms: state.cacheOnly ? null : marks.catalog_copy ?? null,
         scan_ms: marks.scan_ms ?? null,
         first_thumbnail_ms: marks.first_thumbnail ?? null,
         first_saved_jpeg_ms: marks.first_saved_jpeg ?? null,

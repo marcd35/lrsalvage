@@ -20,7 +20,7 @@
 
 import { installBridge } from './seam/lrsalvage-fs.js';
 import init, {
-  pause_store, poll_install, read_preview, scan, start_install,
+  pause_store, poll_install, read_preview, scan, scan_cache, start_install,
   export_paths, prepare_export, existing_export, export_reports,
   verification_report, versions,
 } from './pkg/lrsalvage_app.js';
@@ -144,7 +144,7 @@ async function run({ sab, stop, mounts, catalog, cache, capacity }) {
   self.postMessage({ type: 'stage', stage: 'copy' });
 
   const began = performance.now();
-  const report = JSON.parse(scan(catalog, cache));
+  const report = JSON.parse(catalog ? scan(catalog, cache) : scan_cache(cache));
   // Preview reads address the picked cache through the bridge. Release the
   // SQLite pool before reporting so a restart or recheck can install it again.
   pause_store();

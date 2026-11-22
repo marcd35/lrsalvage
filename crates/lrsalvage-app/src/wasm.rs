@@ -127,6 +127,24 @@ pub fn poll() -> String {
 /// a person gets a sentence instead of an exception.
 #[wasm_bindgen]
 pub fn scan(catalog: &str, cache: &str) -> String {
+    scan_with(|progress| {
+        crate::scan_for_review(Path::new(catalog), Path::new(cache), progress)
+            .map_err(|failure| failure.to_json())
+    })
+}
+
+/// Scan a cache without mounting or opening a catalog.
+#[wasm_bindgen]
+pub fn scan_cache(cache: &str) -> String {
+    scan_with(|progress| {
+        crate::scan_cache(Path::new(cache), progress)
+        .map_err(|error| json!({ "stage": "cache-index", "kind": error.kind(), "message": error.to_string() }))
+    })
+}
+
+fn scan_with(
+    run: impl FnOnce(&mut dyn FnMut(Progress) -> Control) -> Result<crate::ScanResult, Value>,
+) -> String {
     let mut progress = |progress: Progress| {
         let (phase, done, total) = match progress {
             Progress::Cache { files } => (PHASE_CACHE, files, 0),
@@ -141,12 +159,12 @@ pub fn scan(catalog: &str, cache: &str) -> String {
     };
 
     REVIEW.with(|review| review.replace(crate::Review::default()));
-    match crate::scan_for_review(Path::new(catalog), Path::new(cache), &mut progress) {
+    match run(&mut progress) {
         Ok(result) => {
             REVIEW.with(|review| review.replace(result.review));
             result.report.to_string()
         }
-        Err(failure) => json!({ "ok": false, "problem": failure.to_json() }).to_string(),
+        Err(problem) => json!({ "ok": false, "problem": problem }).to_string(),
     }
 }
 
@@ -196,15 +214,12 @@ pub fn prepare_export(id: &str, flat: bool) -> Result<ExportJpeg, JsValue> {
         .map_err(|_| JsValue::from_str("This preview is unavailable."))?;
     REVIEW.with(|review| {
         let review = review.borrow();
-        let (jpeg, output) = review
+        let (bytes, outcome) = review
             .prepare(id, flat)
             .map_err(|error| JsValue::from_str(&error))?;
-        let outcome = serde_json::to_string(&jpeg.written(output))
+        let outcome = serde_json::to_string(&outcome)
             .map_err(|error| JsValue::from_str(&error.to_string()))?;
-        Ok(ExportJpeg {
-            bytes: jpeg.bytes,
-            outcome,
-        })
+        Ok(ExportJpeg { bytes, outcome })
     })
 }
 
@@ -214,8 +229,11 @@ pub fn existing_export(id: &str, flat: bool, bytes: &[u8]) -> Result<String, JsV
         .parse()
         .map_err(|_| JsValue::from_str("This preview is unavailable."))?;
     REVIEW.with(|review| {
-        serde_json::to_string(&review.borrow().existing(id, flat, bytes))
-            .map_err(|error| JsValue::from_str(&error.to_string()))
+        let outcome = review
+            .borrow()
+            .existing(id, flat, bytes)
+            .map_err(|_| JsValue::from_str("This preview is unavailable."))?;
+        serde_json::to_string(&outcome).map_err(|error| JsValue::from_str(&error.to_string()))
     })
 }
 

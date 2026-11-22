@@ -95,7 +95,9 @@ export function mountReceipt(document, actions) {
     // The number a person came for: distinct catalog images this run saved, each
     // counted once however many times a one-off and a batch reached it.
     headline.textContent = `${counted(written.length)} ` +
-      (written.length === 1 ? 'photo saved' : 'photos saved');
+      (state.cacheOnly
+        ? (written.length === 1 ? 'preview saved' : 'previews saved')
+        : (written.length === 1 ? 'photo saved' : 'photos saved'));
 
     const parts = [];
     if (skipped.length) parts.push(`${counted(skipped.length)} already recovered`);
@@ -163,6 +165,11 @@ export function mountReceipt(document, actions) {
       reconciled.textContent =
         'The folder could not be read back just now, so the counts above are this run’s ' +
         'own record rather than what is on the disk.';
+      return;
+    }
+    if (settled.changed?.length) {
+      const missing = settled.missing.length ? ' Missing: ' + settled.missing.join(', ') + '.' : '';
+      reconciled.textContent = 'Changed in the destination: ' + settled.changed.join(', ') + '.' + missing;
       return;
     }
     if (settled.missing.length === 0) {

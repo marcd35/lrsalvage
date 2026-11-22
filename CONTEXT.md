@@ -30,6 +30,10 @@ _Avoid_: cache folder, preview folder, lrdata
 The cache's unit for one image: an index row naming the levels that image's renders consist of, and the payloads those levels live in. A *converted* cache keeps one per image; a *render* keeps two — see below.
 _Avoid_: preview set, preview file, image cache
 
+**Indexed pyramid**:
+A distinct pyramid named by a preview cache's index. The same photo can have
+several indexed pyramids, including a separate thumbnail pyramid.
+
 **Preview pyramid**:
 The pyramid a cache entry claims: the levels an image is displayed and edited from.
 _Avoid_: main pyramid, primary pyramid

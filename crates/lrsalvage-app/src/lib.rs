@@ -33,6 +33,7 @@ use lrsalvage_core::previews_db::{self, IndexProblem};
 use lrsalvage_core::snapshot::CatalogSnapshot;
 use serde_json::{Value, json};
 
+mod cache_review;
 mod review;
 
 pub use review::Review;
@@ -228,6 +229,27 @@ pub fn scan_for_review(
         &catalog_db,
     );
     let review = Review::new(plan, options, digests);
+    report["photos"] = review.rows();
+    Ok(ScanResult { report, review })
+}
+
+/// Open a preview cache directly, with the same review and writer protocol as
+/// the catalog-backed entry point.
+pub fn scan_cache(
+    cache: &Path,
+    progress: &mut dyn FnMut(Progress) -> Control,
+) -> Result<ScanResult, previews_db::RequiredIndexProblem> {
+    let Some(plan) = lrsalvage_core::cache_recovery::CacheRecovery::scan(cache, progress)? else {
+        return Ok(ScanResult {
+            report: json!({ "ok": true, "stopped": true }),
+            review: Review::default(),
+        });
+    };
+    let cache = cache_review::CacheReview(plan);
+    let mut report = cache.summary();
+    let review = Review::from_cache(cache);
+    report["ok"] = json!(true);
+    report["stopped"] = json!(false);
     report["photos"] = review.rows();
     Ok(ScanResult { report, review })
 }

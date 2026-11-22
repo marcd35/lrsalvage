@@ -241,6 +241,7 @@
     <p id="picker-error" role="alert" hidden></p>
     <div class="actions">
       <button id="scan" type="button" disabled>Scan this catalog</button>
+      <button id="recover-cache" type="button">Recover from preview cache</button>
     </div>
   </section>
 
@@ -260,6 +261,7 @@
     <h2 id="result-title" tabindex="-1">3. Review previews</h2>
     <p id="headline"></p>
     <ul id="causes"></ul>
+    <p id="cache-notice" hidden>These JPEGs are previews. Original files, filenames, folder structure, and catalog metadata are unavailable.</p>
     <section id="photo-review" aria-label="Photo review" hidden>
       <div class="review-controls">
         <label for="photo-search">Search photos</label>
@@ -286,7 +288,7 @@
           </label>
         </div>
         <div class="review-tools">
-          <label><input id="photo-group" type="checkbox"> Group by original folder</label>
+          <label id="photo-group-control"><input id="photo-group" type="checkbox"> Group by original folder</label>
           <label><input id="photo-selected" type="checkbox"> Checked photos only</label>
           <label><input id="photo-pane-toggle" type="checkbox"> Preview pane</label>
         </div>
@@ -311,7 +313,7 @@
     <section id="export-section" aria-labelledby="export-title" hidden>
       <h3 id="export-title">Save JPEGs</h3>
       <div class="review-tools">
-        <label>Folder layout
+        <label id="export-layout-control">Folder layout
           <select id="export-layout">
             <option value="mirrored">Mirror original folders</option>
             <option value="flat">All JPEGs in one folder</option>
@@ -322,7 +324,7 @@
       </div>
       <p id="export-destination"></p>
       <p id="export-total"></p>
-      <p>Free space on the destination is unavailable to the browser. Browser storage estimates describe this site’s private storage. The selected byte total is measured before adding metadata.</p>
+      <p>Free space on the destination is unavailable to the browser. Browser storage estimates describe this site’s private storage. <span id="export-metadata-total">The selected byte total is measured before adding metadata.</span></p>
       <details id="export-paths">
         <summary>Planned paths</summary>
         <ul id="export-path-list"></ul>
@@ -388,6 +390,7 @@
       <ul id="roots"></ul>
     </div>
     <div class="actions">
+      <button id="recover-cache-after-error" type="button" hidden>Recover from preview cache</button>
       <button id="restart" type="button">Start over</button>
     </div>
   </section>

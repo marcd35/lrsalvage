@@ -4,8 +4,8 @@
 #   sh scripts/browser-app.sh [--chrome <path>] [--attach <port>] [--verbose]
 #                             [--only <phase>] [--work <dir>]
 #
-# `--only` runs one phase — `parity`, `review`, `export`, `receipt` or
-# `progress` — and `--work` reuses a fixture directory: the native run, the
+# `--only` runs one phase — `parity`, `review`, `export`, `receipt`, `progress`
+# or `cache-only` — and `--work` reuses a fixture directory: the native run, the
 # vaults and the CLI's own files are made only when they are missing, and the
 # directory is left in place. Together they turn iterating on one phase from a
 # rebuild into a rerun.
@@ -108,9 +108,9 @@ while [ "$#" -gt 0 ]; do
             shift
             phase=${1:-}
             case "$phase" in
-                parity | review | export | receipt | progress) ;;
+                parity | review | export | receipt | progress | cache-only) ;;
                 *)
-                    printf '%s\n' '--only needs one of: parity review export receipt progress' >&2
+                    printf '%s\n' '--only needs one of: parity review export receipt progress cache-only' >&2
                     exit 2
                     ;;
             esac
@@ -157,7 +157,8 @@ want() {
 }
 
 printf '%s\n' '== native'
-if [ -f "$work/native.json" ]; then
+if [ -f "$work/native.json" ] &&
+    { ! want cache-only || grep -q '"cache_only":' "$work/native.json"; }; then
     printf '%s\n' "reusing $work/native.json"
 else
     cargo run -q -p lrsalvage-app --bin vault-app -- "$work"
@@ -241,11 +242,22 @@ fi
 
 printf '%s\n' '== #185 scan progress readout'
 if want progress; then
-if [ -n "$chrome" ]; then
-    # shellcheck disable=SC2086
-    node scripts/drive-browser.mjs "$work" --chrome "$chrome" --check-scan-progress $driver_args
-else
-    # shellcheck disable=SC2086
-    node scripts/drive-browser.mjs "$work" --check-scan-progress $driver_args
+    if [ -n "$chrome" ]; then
+        # shellcheck disable=SC2086
+        node scripts/drive-browser.mjs "$work" --chrome "$chrome" --check-scan-progress $driver_args
+    else
+        # shellcheck disable=SC2086
+        node scripts/drive-browser.mjs "$work" --check-scan-progress $driver_args
+    fi
 fi
+
+if want cache-only; then
+    printf '%s\n' '== cache-only preview recovery'
+    if [ -n "$chrome" ]; then
+        # shellcheck disable=SC2086
+        node scripts/drive-browser.mjs "$work" --chrome "$chrome" --check-cache-only $driver_args
+    else
+        # shellcheck disable=SC2086
+        node scripts/drive-browser.mjs "$work" --check-cache-only $driver_args
+    fi
 fi

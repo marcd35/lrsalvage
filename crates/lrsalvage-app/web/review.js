@@ -19,6 +19,7 @@ export function mountReview(document, exports) {
   const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
 
   let photos = [];
+  let cacheOnly = false;
   let checked = new Set();
   let collapsed = new Set();
   let displayed = [];
@@ -144,8 +145,13 @@ export function mountReview(document, exports) {
     inFlight.clear();
   }
 
-  function show(rows, readPreview) {
+  function show(rows, readPreview, fromCache = false) {
     clear();
+    cacheOnly = fromCache;
+    el('group-control').hidden = cacheOnly;
+    el('sort').querySelector('[value="folder"]').hidden = cacheOnly;
+    if (cacheOnly && el('sort').value === 'folder') el('sort').value = 'name';
+    search.placeholder = cacheOnly ? 'Generated filename' : 'Name or original folder';
     photos = rows;
     read = readPreview;
     checked = new Set(photos.filter((photo) => photo.checked).map((photo) => photo.id));
@@ -190,7 +196,7 @@ export function mountReview(document, exports) {
       if (!rows.length) continue;
       const group = element('section', 'review-group');
       group.append(element('h3', '', name));
-      if (el('group').checked) {
+      if (!cacheOnly && el('group').checked) {
         const folders = Map.groupBy(rows, (photo) => photo.folder);
         for (const [folder, photos] of folders) {
           const key = JSON.stringify([name, folder]);
@@ -215,7 +221,7 @@ export function mountReview(document, exports) {
     }
     if (!matches.length) {
       groups.append(element('p', '', photos.length
-        ? 'No photos match these filters.'
+        ? (cacheOnly ? 'No previews match these filters.' : 'No photos match these filters.')
         : 'This catalog does not contain any photos.'));
     }
     updateCounts();
@@ -266,6 +272,8 @@ export function mountReview(document, exports) {
       });
       label.append(checkbox, document.createTextNode(' Include'));
       tile.append(button, element('small', 'review-detail', dimensions(photo)), label);
+      if (photo.fallback) tile.append(element('small', 'review-detail', 'Recovered a smaller level'));
+      if (photo.dimension_mismatch) tile.append(element('small', 'review-detail', 'Size differs from the index'));
       list.append(tile);
       tiles.set(photo.id, { button, checkbox });
     }

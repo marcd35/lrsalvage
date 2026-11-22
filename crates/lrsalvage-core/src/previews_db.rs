@@ -89,6 +89,10 @@ impl PyramidKey {
         }
     }
 
+    pub(crate) fn has_supported_address(&self) -> bool {
+        is_uuid(&self.uuid) && is_digest(&self.digest)
+    }
+
     /// The pyramid a cache entry claims: both halves read from the one row
     /// (`adr-0005-discover-payloads-by-index` ¶1).
     pub fn of(entry: &CacheEntry) -> Self {
@@ -149,6 +153,10 @@ impl PreviewIndex {
     /// (`adr-0006-degrade-without-guessing` ¶1–¶2).
     fn read(db: &Path) -> Result<Self> {
         let conn = crate::snapshot::open_readonly(db)?;
+        Self::read_connection(&conn)
+    }
+
+    fn read_connection(conn: &rusqlite::Connection) -> Result<Self> {
         let mut index = Self::default();
 
         {
@@ -224,7 +232,7 @@ impl PreviewIndex {
         {
             // A store that predates the table reports no tombstones rather than
             // refusing a cache whose payloads are all readable.
-            if table_exists(&conn, "DeletedPyramid")? {
+            if table_exists(conn, "DeletedPyramid")? {
                 let mut stmt =
                     conn.prepare("SELECT uuid, digest, deletedTimeStamp FROM DeletedPyramid")?;
                 let mut rows = stmt.query([])?;
@@ -283,20 +291,7 @@ impl PreviewIndex {
     /// stats no file and reads no payload, so `plan` decides existence.
     pub fn candidates(&self, cache_root: &Path, key: &PyramidKey) -> Vec<Candidate<'_>> {
         let (uuid, digest) = (key.uuid(), key.digest());
-        let mut named: Vec<Candidate<'_>> = self
-            .levels
-            .get(key)
-            .map(|rows| {
-                rows.iter()
-                    .map(|row| Candidate {
-                        path: shard(cache_root, uuid)
-                            .join(format!("{uuid}-{digest}_{}", row.long_dimension)),
-                        row: Some(row),
-                        long_edge: row.long_dimension,
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
+        let mut named = self.row_candidates(cache_root, key);
 
         // The widening, inside the row's own identity: this pyramid's shard
         // folder and nothing else. A level the index forgot is a file here.
@@ -315,17 +310,34 @@ impl PreviewIndex {
             }
         }
 
-        // Path first so the order never depends on the database's row order or
-        // on `read_dir`; a row keeps a path the widening also found, and the
-        // level number breaks a tie between two rows naming one leaf.
-        named.sort_by(|a, b| {
-            a.path
-                .cmp(&b.path)
-                .then_with(|| a.row.is_none().cmp(&b.row.is_none()))
-                .then_with(|| a.row.map(|row| row.level).cmp(&b.row.map(|row| row.level)))
-        });
-        named.dedup_by(|a, b| a.path == b.path);
+        order_candidates(&mut named);
         named
+    }
+
+    pub(crate) fn keys(&self) -> std::collections::HashSet<PyramidKey> {
+        self.pyramids
+            .keys()
+            .chain(self.levels.keys())
+            .cloned()
+            .chain(self.all_entries.iter().map(PyramidKey::of))
+            .collect()
+    }
+
+    pub(crate) fn row_candidates(&self, cache_root: &Path, key: &PyramidKey) -> Vec<Candidate<'_>> {
+        let (uuid, digest) = (key.uuid(), key.digest());
+        self.levels
+            .get(key)
+            .map(|rows| {
+                rows.iter()
+                    .map(|row| Candidate {
+                        path: shard(cache_root, uuid)
+                            .join(format!("{uuid}-{digest}_{}", row.long_dimension)),
+                        row: Some(row),
+                        long_edge: row.long_dimension,
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 
     /// Largest level for a pyramid by pixel area (`width * height`), keeping
@@ -367,6 +379,67 @@ pub struct PyramidOnDisk {
     pub levels: Vec<LevelOnDisk>,
     /// The coexisting `<UUID>-<digest>.lrprev`, when there is one.
     pub container: Option<PathBuf>,
+}
+
+pub(crate) fn order_candidates(named: &mut Vec<Candidate<'_>>) {
+    // Path first so the order never depends on the database's row order or
+    // on `read_dir`; a row keeps a path the widening also found, and the
+    // level number breaks a tie between two rows naming one leaf.
+    named.sort_by(|a, b| {
+        a.path
+            .cmp(&b.path)
+            .then_with(|| a.row.is_none().cmp(&b.row.is_none()))
+            .then_with(|| a.row.map(|row| row.level).cmp(&b.row.map(|row| row.level)))
+    });
+    named.dedup_by(|a, b| a.path == b.path);
+}
+
+/// Why the required index could not be opened for cache-only recovery.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum RequiredIndexProblem {
+    #[error("The preview folder is missing previews.db.")]
+    Missing,
+    #[error("The preview index could not be read.")]
+    Unreadable,
+    #[error("This preview index has an unsupported schema.")]
+    Unsupported,
+}
+
+impl RequiredIndexProblem {
+    pub fn kind(self) -> &'static str {
+        match self {
+            Self::Missing => "missing",
+            Self::Unreadable => "unreadable",
+            Self::Unsupported => "unsupported",
+        }
+    }
+}
+
+/// Read from a private copy, including any SQLite WAL, so neither SQLite
+/// recovery nor copying metadata can write into the preview folder.
+pub(crate) fn open_required(cache: &Path) -> Result<PreviewIndex, RequiredIndexProblem> {
+    let path = cache.join(INDEX_FILE);
+    match fs::exists(&path) {
+        Ok(true) => {}
+        Ok(false) => return Err(RequiredIndexProblem::Missing),
+        Err(_) => return Err(RequiredIndexProblem::Unreadable),
+    }
+    let snapshot = crate::snapshot::CatalogSnapshot::capture(&path)
+        .map_err(|_| RequiredIndexProblem::Unreadable)?;
+    let conn = crate::snapshot::open_readonly(snapshot.path())
+        .map_err(|_| RequiredIndexProblem::Unreadable)?;
+    conn.query_row("PRAGMA schema_version", [], |row| row.get::<_, i64>(0))
+        .map_err(|_| RequiredIndexProblem::Unreadable)?;
+    PreviewIndex::read_connection(&conn).map_err(|error| match error {
+        // Once SQLite can read its schema, an SQL statement that references
+        // a missing table or column is a schema mismatch.
+        crate::Error::Sqlite(rusqlite::Error::SqliteFailure(code, _))
+            if code.extended_code == rusqlite::ffi::SQLITE_ERROR =>
+        {
+            RequiredIndexProblem::Unsupported
+        }
+        _ => RequiredIndexProblem::Unreadable,
+    })
 }
 
 /// Why a cache has no usable index.

@@ -4,7 +4,7 @@ type: module-design
 title: "app: browser scan, review and export"
 status: draft
 parent: architecture
-depends-on: [catalog, previews-db, plan, snapshot, fs, error, extract, exif, model, report]
+depends-on: [cache-recovery, catalog, previews-db, plan, snapshot, fs, error, extract, exif, model, report]
 references: [adr-0012-two-release-lines, browser-spike, glossary]
 ---
 
@@ -149,6 +149,38 @@ reverse — so the seam is registered one way for both pages.
   the browser run asserts the report, so its evidence stays valid either way. The
   prototype itself is in this tree as `docs/prototype/` (#149), so the port has a
   reference a checkout can open.
+
+## Recover from preview cache
+
+The start screen offers **Recover from preview cache** and asks for the cache
+folder. The same action appears after an unreadable-catalog error, reusing the
+selected cache when available. The [cache recovery module](modules/cache-recovery.md)
+requires a supported index and plans one output per recoverable indexed pyramid.
+The page shows separate missing, invalid, and unsupported counts, and gives a
+supported index with zero entries its own empty result.
+
+Review uses a flat list with dimensions and includes every recoverable preview
+in the initial selection, including small ones. The user can deselect individual
+previews. Before either save action the page explains that the JPEGs are previews
+and that originals, original filenames and folders, and catalog metadata are
+unavailable. Use the core's deterministic filenames and write the JPEGs byte
+for byte. An occupied path counts as already recovered only when its bytes
+match the selected preview. A mismatch leaves the file in place and counts
+as a conflict.
+
+Use the same destination checks and batch writer. Stop lets in-flight writes
+settle, and Continue keeps the selection, paths, and destination fixed. The
+receipt separates scan outcomes from the batch's saved, already recovered,
+and failed counts and verifies the destination files against their planned
+bytes. The local report CSVs and manifest identify the cache-only mode. The
+shareable verification report and copied diagnostics use aggregate counts
+without paths, filenames, or cache identities.
+
+The downloadable and in-app practice case contains only a synthetic cache.
+It shows a healthy pyramid, a smaller surviving level, and a missing preview.
+The native and browser product checks compare generated filenames, JPEG bytes,
+scan counts, and batch outcomes on legacy, modern, and mixed layouts. The
+catalog-backed browser and CLI output parity remains a release check.
 
 ## Preview review
 
@@ -307,7 +339,7 @@ hands that directory to the same folder inspection and scan as a picked
 backup. A lock serializes installation of each revision. Once installed, its
 files stay available to other tabs using the same sample.
 
-The shared fixture builder generates the four downloadable ZIPs from
+The shared fixture builder generates the four catalog-backed downloadable ZIPs from
 synthetic catalogs and redistributable JPEGs. The ZIP and in-app route for each
 case use the same catalog and cache. The native app scan checks each case
 during packaging.
