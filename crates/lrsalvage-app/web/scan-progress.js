@@ -1,6 +1,6 @@
 // What the scanning screen shows while a scan runs, and when it says so.
 //
-// `plan::Progress` arrives as a phase number and a count (§185), and this module
+// `plan::Progress` arrives as a phase number and a count (#185), and this module
 // is the only place that turns one into the four things a person reads: the stage
 // sentence, the processed count and percentage, the estimate, and the live-region
 // announcement. `view.js` owns the rest of the page and calls this; the decisions
@@ -11,6 +11,7 @@
 // at most paints ten times a second and the page decodes nothing — an estimate
 // built from arrival times would be an estimate of the DOM.
 import { PHASES } from './app.js';
+import { counted } from './count.js';
 
 /**
  * The stage that is matching, named rather than positional: it is the one stage
@@ -184,12 +185,19 @@ export function createScanProgress(document) {
    * Matching is over and everything left is result preparation: plan the
    * transition for after the completion has had a frame, so a person sees the
    * full count and the 100% rather than a screen that skipped them.
+   *
+   * The live region keeps the completion sentence it was just given. Preparation
+   * is the absence of units rather than another milestone, and a second
+   * announcement in the same breath is what makes a screen reader say neither.
    */
   function preparing() {
     const armed = generation;
     completion = afterPaint().then(() => {
       if (armed !== generation) return;
-      enter('preparing', 'Preparing scan results…');
+      clear();
+      phase = 'preparing';
+      setText(stage, 'Preparing scan results…');
+      stop.disabled = true;
     });
     return completion;
   }
@@ -204,8 +212,6 @@ export function createScanProgress(document) {
       stopping = false;
       enter('start', label);
     },
-    /** Every paragraph that is not a stage: the practice catalog's own load. */
-    notice: (label) => enter('notice', label),
     /** The copy is the one stage this page names from the worker's own message. */
     stage(name) {
       if (stopping) return;
@@ -227,7 +233,7 @@ export function createScanProgress(document) {
       const name = PHASES[number] ?? 'cache';
       if (name === 'cache') {
         enter(name, 'Reading the preview folder…', true);
-        setText(count, `${done.toLocaleString()} files checked`);
+        setText(count, `${counted(done)} files checked`);
         return;
       }
       if (name === MATCHING && total === 0) {
@@ -241,7 +247,7 @@ export function createScanProgress(document) {
       const matching = name === MATCHING;
       enter(name, matching ? 'Matching catalog images…' : 'Reading preview files…', true);
       const percent = done === total ? 100 : Math.min(99, Math.floor((100 * done) / total));
-      const counts = `${done.toLocaleString()} of ${total.toLocaleString()}`;
+      const counts = `${counted(done)} of ${counted(total)}`;
       setText(count, matching ? `${counts} (${percent}%)` : counts);
       if (total > 0) {
         bar.max = total;

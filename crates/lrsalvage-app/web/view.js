@@ -10,7 +10,6 @@
 // decisions.
 
 import {
-  PHASES,
   capability,
   folderSource,
   pickFolder,
@@ -20,6 +19,8 @@ import {
 } from './app.js';
 import { loadPractice } from './practice.js';
 import { log } from './diagnostics.js';
+import { counted } from './count.js';
+import { createScanProgress } from './scan-progress.js';
 
 import { mountReview } from './review.js';
 import { mountExport } from './export.js';
@@ -54,10 +55,8 @@ export function mount(document) {
   const scanButton = el('scan');
   const pickerError = el('picker-error');
   const scanning = el('scanning');
-  const stage = el('stage');
-  const bar = el('bar');
-  const count = el('count');
   const stopButton = el('stop');
+  const scanProgress = createScanProgress(document);
   const result = el('result');
   const headline = el('headline');
   const causes = el('causes');
@@ -117,9 +116,7 @@ export function mount(document) {
   stopButton.addEventListener('click', () => {
     if (!running) return;
     running.stop();
-    stopButton.disabled = true;
-    stage.textContent = 'Stopping…';
-    bar.removeAttribute('value');
+    scanProgress.stop();
   });
   restart.addEventListener('click', () => {
     if (exports.busy()) return;
@@ -148,7 +145,7 @@ export function mount(document) {
 
   async function openPractice(name) {
     showOnly(scanning);
-    stage.textContent = 'Loading the practice catalog…';
+    scanProgress.reset('Loading the practice catalog…');
     stopButton.hidden = true;
     try {
       const handle = await loadPractice(name);
@@ -271,10 +268,7 @@ export function mount(document) {
     log.run();
     clearReview();
     showOnly(scanning);
-    bar.removeAttribute('value');
-    stage.textContent = 'Preparing this browser’s storage…';
-    count.textContent = '';
-    stopButton.disabled = false;
+    scanProgress.reset();
     stopButton.hidden = false;
 
     const ui = {
@@ -283,29 +277,9 @@ export function mount(document) {
       },
       stage(name) {
         log.stage(name);
-        if (name === 'install') stage.textContent = 'Preparing this browser’s storage…';
-        if (name === 'copy') {
-          // One call, no unit inside it: named, not pretended to move.
-          stage.textContent =
-            'Copying the catalog into this browser’s storage. This takes a few seconds ' +
-            'for a large catalog, and it cannot be stopped part-way.';
-          bar.removeAttribute('value');
-          count.textContent = '';
-        }
+        scanProgress.stage(name);
       },
-      progress({ phase, done, total }) {
-        const name = PHASES[phase] ?? 'cache';
-        if (name === 'cache') {
-          stage.textContent = 'Reading the preview folder…';
-          count.textContent = `${counted(done)} files checked`;
-          bar.removeAttribute('value');
-          return;
-        }
-        stage.textContent =
-          name === 'payloads' ? 'Reading preview files…' : 'Matching catalog images…';
-        count.textContent = `${counted(done)} of ${counted(total)}`;
-        if (total > 0) bar.value = done;
-      },
+      progress: scanProgress.progress,
     };
 
     const scan = start(chosen, ui, { review: true });
@@ -313,13 +287,18 @@ export function mount(document) {
     let report;
     try {
       report = await scan.done;
+      // A completed scan may have reached 100% on the frame before this one. The
+      // result replaces the readout, so the readout gets its paint first.
+      await scanProgress.painted();
     } catch (error) {
       running = null;
+      scanProgress.clear();
       showOnly(source);
       say(pickerError, `The scan could not finish: ${error.message}`);
       return;
     }
     running = null;
+    scanProgress.clear();
     stopButton.hidden = true;
 
     if (report.stopped) {
@@ -558,11 +537,6 @@ export function mount(document) {
     paragraph.append(document.createTextNode(text));
     return paragraph;
   }
-}
-
-/** A count with its thousands separators, so 100078 reads as a number. */
-function counted(value) {
-  return typeof value === 'number' ? value.toLocaleString('en') : String(value ?? 0);
 }
 
 /**
