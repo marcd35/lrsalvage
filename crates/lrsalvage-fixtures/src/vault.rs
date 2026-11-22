@@ -881,7 +881,7 @@ impl Vault {
             fs::write(self.catalog(), bytes).expect("raw catalog");
             return;
         }
-        let conn = Connection::open(self.catalog()).expect("create the catalog");
+        let mut conn = Connection::open(self.catalog()).expect("create the catalog");
         conn.execute_batch(CATALOG_SCHEMA).expect("catalog schema");
         if self.metadata_table {
             conn.execute_batch(METADATA_SCHEMA)
@@ -918,7 +918,9 @@ impl Vault {
         }
 
         if !self.wal {
-            self.write_image_rows(&conn, &self.images, FOLDER_IDS);
+            let rows = conn.transaction().expect("start catalog rows");
+            self.write_image_rows(&rows, &self.images, FOLDER_IDS);
+            rows.commit().expect("commit catalog rows");
             return;
         }
 
@@ -1018,7 +1020,8 @@ impl Vault {
             write_file(&db, bytes);
             return;
         }
-        let conn = Connection::open(db).expect("create previews.db");
+        let mut database = Connection::open(db).expect("create previews.db");
+        let conn = database.transaction().expect("start preview index");
         let modern = self.layout != Layout::Legacy;
         conn.execute_batch(
             &PREVIEWS_SCHEMA.replace("{FILE_SIZE}", if modern { ", fileSize" } else { "" }),
@@ -1124,6 +1127,7 @@ impl Vault {
             )
             .expect("tombstone");
         }
+        conn.commit().expect("commit preview index");
     }
 
     fn write_payloads(&mut self) {

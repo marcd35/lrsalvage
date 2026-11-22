@@ -468,3 +468,12 @@ portrait, an index dimension disagreement, a recoverable preview with no
 recorded folder, and catalog entries with missing previews. It also includes a
 JPEG that passes structural certification but has no decodable image data.
 These inputs assert the app's review behavior.
+
+## Browser writer at release scale
+
+`lrsalvage_fixtures::review::writer_scale` composes the modern vault for the
+[release writer check](../docs/agents/browser-app-deployment.md#verify-the-writer-at-release-scale).
+Every image has one eligible, decodable level. The shared bridge raster has a
+distinct JPEG comment per image, which makes swaps visible in the CLI comparison.
+The two payload sizes model write volume with synthetic comment bytes. The vault
+does not establish the size distribution of a real preview cache.
