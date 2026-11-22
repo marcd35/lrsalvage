@@ -38,6 +38,12 @@ pending.
       Exercise the actual folder pickers in Windows Chrome and Edge.
       Link the accessibility statement with observed and unchecked criteria.
       Limit the support claim to the combinations that passed.
+- [ ] Record the [matching progress evidence](https://github.com/marcd35/lrsalvage/issues/185)
+      on the same candidate, following
+      [the release-scale progress protocol](agents/browser-app-deployment.md#verify-matching-progress-at-release-scale).
+      The local Chromium run and the accessible progress bar it reads are one
+      result. The hosted 5,000-image scan and the hands-on screen-reader pass are
+      two more: record each on its own, and never as implied by the local one.
 - [ ] Record the [maintainer recovery result](https://github.com/marcd35/lrsalvage/issues/173)
       on the same candidate. The recovery ends in usable JPEGs and a receipt
       reconciled with disk after a batch stop and continuation, listing the

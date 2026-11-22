@@ -170,18 +170,33 @@ applies decides whether a disagreement is `suspect`.
   and answers `Result<Option<Plan>>`; `Plan::build` is that call with
   `|_| Control::Continue` and drops the impossible `None`, so the two cannot
   diverge and no caller can reach a second, unreported path. `Progress` is
-  `Cache { files }` for the one walk and `Images { done, total }` for the catalog's
-  images, and the unit of each is the smallest thing its stage has: a file the walk
-  has seen, and an image the plan has finished with. The callback fires once per
+  `Cache { files }` for the one walk, `Payloads { done, total }` for the level
+  reads, and `Images { done, total }` for the catalog images. The unit of each is
+  the smallest thing its stage has: a file the walk has seen, a level file
+  measured, and an image the plan has finished with. The callback fires once per
   unit; **how often a surface paints is the surface's decision**, because a
   100,000-image catalog crosses this boundary that many times and a DOM update does
-  not cost the same as a `u64`. A stopped build is `None` rather than a partial
+  not cost the same as a `u64`. The last image's report carries `done == total`
+  and is sent as soon as that image is decided — before the orphan sweep and the
+  path assignment, and for a catalog with no images as well — and its answer is
+  not consulted: there is no unit left to stop, so a stop asked for there cannot
+  land and the build finishes. A stopped build is `None` rather than a partial
   `Plan`: a plan carrying *k* statuses would be a plan about a catalog whose other
   images do not exist, and `#117` stops a scan back to source selection rather than
   presenting one. Nothing is added to `fs` for this — a stop is a callback's return
   value, not an operation — and `previews_db`'s own walk reports through its own
   callback because this module may not be reached from it
   (`specs/modules/previews-db.md`, *Decisions*).
+- **`Progress` gains no finalization variant.** It is a seam item of a published
+  crate, so a fourth variant — or marking the enum `#[non_exhaustive]`, which is
+  the same break by another name — would stop compiling for every library
+  consumer that matches it exhaustively. The boundary between matching and
+  result preparation is therefore the app entry's rather than the plan's:
+  `lrsalvage-app` prepares the report and the review rows after the build returns
+  and reports no further unit of the scan, so a surface reads the last image's
+  count as "matching is over and a result is being prepared" (`specs/app.md`,
+  *Decisions*). A third boundary inside this stage is a decision about the seam,
+  not another variant.
 - **A suspect payload is recovered, not discarded.** Width and height may be
   swapped before calling it a disagreement, because the stored render is
   unrotated; a real photograph at the wrong declared size is still worth having,
