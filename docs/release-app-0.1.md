@@ -49,7 +49,8 @@ pending.
       and link the dated result for the tested candidate.
 - [ ] Record the [deployed browser and accessibility results](https://github.com/marcd35/lrsalvage/issues/172).
       Exercise the actual folder pickers in Windows Chrome and Edge.
-      Link the accessibility statement with observed and unchecked criteria.
+      Review the [app 0.1.0 accessibility statement](app-0.1-accessibility.md)
+      for observed and unchecked criteria.
       Limit the support claim to the combinations that passed.
 - [ ] Record the [matching progress evidence](https://github.com/marcd35/lrsalvage/issues/185)
       on the same candidate, following
