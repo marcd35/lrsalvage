@@ -38,4 +38,3 @@ Describe the step, what you expected, and what happened. If available, include
 your browser and Windows versions and the assistive technology you used. Use
 practice data or a synthetic example to reproduce the problem.
 [Report an issue](https://github.com/marcd35/lrsalvage/issues/new)
-
