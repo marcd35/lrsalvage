@@ -108,7 +108,9 @@ export async function checkPreviewReview(send) {
       await click(lookup('#pick-cache'));
       await until(lookup('#picked') + '.textContent.includes("(itself)")', 'The split cache was not attached');
     }
-    await click(lookup('#scan'));
+    assert.match(await evaluate(
+      lookup('#scan') + '.click(); ' + lookup('#scanning-title') + '.textContent',
+    ), /^2\. Scanning - .+\/[^/]+\.lrcat$/);
     await until(lookup('#result') + '?.hidden === false', 'The review screen did not open');
   }
   await scan();
@@ -139,6 +141,20 @@ export async function checkPreviewReview(send) {
   assert.match(await text(element('groups')), /Unknown folder/);
   const folder = lookup('#photo-groups details summary');
   assert.match(await text(folder), /2023/);
+  const folderCheck = '(' + folder + ').querySelector("input.review-folder-check")';
+  assert.equal(await evaluate(folderCheck + '.checked'), true);
+  await click(checkbox('Bridge.CR2'));
+  assert.equal(await evaluate(folderCheck + '.indeterminate'), true);
+  await set('search', 'Bridge', 'input');
+  await click(folderCheck);
+  assert.match(await count(), /1 shown . 6 checked/);
+  assert.equal(await evaluate('(' + folder + ').parentElement.open'), true);
+  await click(folderCheck);
+  assert.match(await count(), /1 shown . 3 checked/);
+  await click(folderCheck);
+  await set('search', '', 'input');
+  assert.equal(await evaluate(checkbox('Island.CR2') + '.checked'), false);
+
   await click(folder);
   await until(element('count') + '.textContent.includes("7 shown")', 'The folder did not collapse');
   assert.match(await count(), /7 shown . 6 checked/);

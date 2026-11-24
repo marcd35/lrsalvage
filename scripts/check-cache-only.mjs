@@ -104,6 +104,7 @@ export async function checkCacheOnly(send) {
     const entry = await call(mount, 'cache-' + layout, true);
     await click('recover-cache');
     await until('!' + el('result') + '.hidden', 'Cache-only recovery did not reach review');
+    assert.equal(await text('scanning-title'), '2. Scanning - cache-' + layout);
     assert.match(await text('headline'), /13 of 16 indexed pyramids/);
     assert.match(await text('causes'), /1 missing · 1 invalid · 1 unsupported/);
     assert.match(await text('cache-notice'), /original files, filenames, folder structure, and catalog metadata/i);

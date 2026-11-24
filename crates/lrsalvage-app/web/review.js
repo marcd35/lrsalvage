@@ -35,6 +35,7 @@ export function mountReview(document, exports) {
   let clearLoupeImage;
   const inFlight = new Map();
   const tiles = new Map();
+  const folderChecks = new Map();
   const tileImages = new Map();
   const thumbnailQueue = new Set();
   let thumbnailReads = 0;
@@ -125,6 +126,7 @@ export function mountReview(document, exports) {
     for (const tile of tileImages.values()) tile.clear?.();
     tileImages.clear();
     tiles.clear();
+    folderChecks.clear();
   }
 
   function clear() {
@@ -194,7 +196,13 @@ export function mountReview(document, exports) {
     groups.replaceChildren();
     displayed = [];
     const matches = filteredPhotos();
-    for (const { name, matches: isInSection } of sections) {
+    const grouped = !cacheOnly && el('group').checked;
+    const previews = sections[0];
+    const previewFolders = grouped
+      ? Map.groupBy(photos.filter(previews.matches), (photo) => photo.folder)
+      : null;
+    for (const section of sections) {
+      const { name, matches: isInSection } = section;
       const rows = matches.filter(isInSection);
       if (!rows.length) continue;
       const group = element('section', 'review-group');
@@ -209,7 +217,7 @@ export function mountReview(document, exports) {
             'unchecked. Include them if a small copy is worth more than nothing.',
         ));
       }
-      if (!cacheOnly && el('group').checked) {
+      if (grouped) {
         const folders = Map.groupBy(rows, (photo) => photo.folder);
         for (const [folder, photos] of folders) {
           const key = JSON.stringify([name, folder]);
@@ -223,7 +231,22 @@ export function mountReview(document, exports) {
             updatePane();
             updateNavigation();
           });
-          details.append(element('summary', '', folderName(photos[0]) + ' (' + photos.length + ')'));
+          const summary = element('summary', '', folderName(photos[0]) + ' (' + photos.length + ')');
+          if (section === previews) {
+            const folderRows = previewFolders.get(folder);
+            const checkbox = element('input', 'review-folder-check');
+            checkbox.type = 'checkbox';
+            checkbox.setAttribute('aria-label', 'Include all previews in ' + folderName(photos[0]));
+            checkbox.addEventListener('click', (event) => event.stopPropagation());
+            checkbox.addEventListener('change', () => {
+              mark(folderRows, checkbox.checked);
+              if (!checkbox.isConnected) (folderChecks.get(folder)?.checkbox ?? search).focus();
+            });
+            folderChecks.set(folder, { checkbox, rows: folderRows });
+            summary.classList.add('with-folder-check');
+            summary.append(checkbox);
+          }
+          details.append(summary);
           details.append(tilesFor(photos, details));
           group.append(details);
         }
@@ -298,6 +321,11 @@ export function mountReview(document, exports) {
   }
 
   function updateCounts() {
+    for (const { checkbox, rows } of folderChecks.values()) {
+      const selected = rows.reduce((count, photo) => count + Number(checked.has(photo.id)), 0);
+      checkbox.checked = selected === rows.length;
+      checkbox.indeterminate = selected > 0 && selected < rows.length;
+    }
     const shown = visible();
     el('count').textContent = shown.length + ' shown · ' + checked.size + ' checked';
     el('check-visible').disabled = !shown.some((photo) => photo.preview && !checked.has(photo.id));
