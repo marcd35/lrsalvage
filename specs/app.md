@@ -160,6 +160,9 @@ reverse — so the seam is registered one way for both pages.
   prototype itself is in this tree as `docs/prototype/` (#149), so the port has a
   reference a checkout can open.
 
+The scanning heading shows the chosen catalog or cache path relative to what
+the browser exposes through the picked folder handle.
+
 ## Recover from preview cache
 
 The start screen offers **Recover from preview cache** and asks for the cache
@@ -201,6 +204,9 @@ catalog-backed browser and CLI output parity remains a release check.
   The checked set starts with the ready previews. Search, grouping, sorting,
   collapsing folders and switching views leave that set intact. Bulk inclusion
   applies to previews visible within the current filters and open groups.
+  When grouped by original folder, the Previews folder checkbox includes or
+  excludes all ready previews in that folder, including filtered-out rows.
+  The checkbox shows a mixed state for a partial selection.
 - Gallery and List share the same rows and selection. The optional Preview pane
   and enlarged dialog read one photo by its ID. The review allows two
   thumbnail reads at a time and drops queued tiles when they leave the

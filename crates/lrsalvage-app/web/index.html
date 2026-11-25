@@ -63,6 +63,9 @@
     font-size: 1rem;
     margin: 2rem 0 0.5rem;
   }
+  #scanning-title {
+    overflow-wrap: anywhere;
+  }
   section[hidden] {
     display: none;
   }
@@ -246,7 +249,7 @@
   </section>
 
   <section id="scanning" class="step" hidden>
-    <h2>2. Scanning</h2>
+    <h2 id="scanning-title">2. Scanning</h2>
     <p id="stage"></p>
     <progress id="bar" aria-labelledby="stage" aria-describedby="count eta"></progress>
     <p id="count"></p>

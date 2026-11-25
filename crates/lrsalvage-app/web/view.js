@@ -56,6 +56,7 @@ export function mount(document) {
   const scanButton = el('scan');
   const pickerError = el('picker-error');
   const scanning = el('scanning');
+  const scanningTitle = el('scanning-title');
   const stopButton = el('stop');
   const scanProgress = createScanProgress(document);
   const result = el('result');
@@ -147,6 +148,7 @@ export function mount(document) {
   // -- picking ------------------------------------------------------------
 
   async function openPractice(name) {
+    scanningTitle.textContent = '2. Scanning';
     showOnly(scanning);
     scanProgress.reset('Loading the practice files…');
     stopButton.hidden = true;
@@ -316,6 +318,10 @@ export function mount(document) {
     // attach them to, and it is the one somebody wants to hand over.
     log.run(cacheOnly);
     clearReview();
+    const path = chosen.catalog ?? chosen.cache;
+    const mount = chosen.mounts.find(({ path: root }) => path === root || path.startsWith(root + '/'));
+    const label = mount ? mount.handle.name + path.slice(mount.path.length) : chosen.label;
+    scanningTitle.textContent = label ? '2. Scanning - ' + label : '2. Scanning';
     showOnly(scanning);
     scanProgress.reset();
     stopButton.hidden = false;
