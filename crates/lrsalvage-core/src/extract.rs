@@ -742,6 +742,12 @@ pub fn cache_only_outcomes_csv(outcomes: &[Outcome]) -> String {
     encode_outcomes(outcomes, Some("cache-only"))
 }
 
+/// Render indexless extraction outcomes with their own mode column, so a batch
+/// file says which recovery produced it.
+pub fn legacy_outcomes_csv(outcomes: &[Outcome]) -> String {
+    encode_outcomes(outcomes, Some("legacy"))
+}
+
 fn encode_outcomes(outcomes: &[Outcome], mode: Option<&str>) -> String {
     let mut text = String::with_capacity(outcomes.len() * 96);
     if mode.is_some() {

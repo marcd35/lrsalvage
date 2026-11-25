@@ -103,6 +103,7 @@ field.
 |---|---|---|
 | `snapshot::CatalogSnapshot`, `.capture`, `.path` | seam | the stable copy every other opener takes by reference |
 | `cache_recovery::CacheRecovery` (+ fields, `scan`), `Counts`, `Item`, `Status` (+ `as_str`), `Preview` (+ public fields, `read`, `matches`) | seam | the browser's cache-only plan, its outcomes, and the verified payload reader |
+| `cache_recovery::LegacyRecovery` (+ fields, `scan`), `ContainerCounts`, `ContainerItem`, `ContainerStatus` (+ `as_str`) | seam | the browser's indexless plan (#198): one item per `.lrprev` container, its outcome, and the generated name that came from where the container sits |
 | `catalog::Catalog`, `::from_snapshot`, `::images`, `::xmp`, `::versions`, `::root_folders` | seam | the catalog queries a run begins with, over a snapshot. `root_folders` is the recorded root folders with their image counts — the "last known folder" a front end shows, and a query rather than a derivation of a joined path |
 | `catalog::RootFolder` (+ `path`, `images`) | seam | what `root_folders` hands back |
 | `catalog::CatalogVersions` (+ `db_version`, `crs_version`) | seam | what `versions` hands back; `CacheFacts` carries the same two strings |
@@ -117,12 +118,14 @@ field.
 | `plan::Tier::from_long_edge` | convenience | the mapping behind a tier a front-end only ever reads |
 | `extract::extract`, `ExtractOptions`, `Outcome`, `OutcomeStatus` (+ `as_str`), `outcome_summary`, `write_outcomes_csv`, `below_floor` | seam | the writer and what it reports; `extract` is the only module that writes user-visible output |
 | `extract::cache_only_outcomes_csv` | seam | the browser's mode-marked extraction report |
+| `extract::legacy_outcomes_csv` | seam | the same report for an indexless run, marked `legacy` |
 | `extract::ensure_safe_destination_pending`, `ensure_safe_destination_create`, `ensure_create_outside` | seam | the refusal that must happen before the first write, on the destination and on `.lrcat-data` |
 | `extract::pending_bytes`, `ensure_room`, `Room` (+ `needed`, `available`, `left`, `is_nearly_full`, `nearly_full_note`), `Preflight` | seam | the free-space pre-flight a front-end runs before writing. `pending_bytes` is what the run has left to write (the plan's total less outputs the destination already holds); `ensure_room` answers `Preflight::Fits(Room)` when that fits — `nearly_full_note` says when the destination is left nearly full — or `Preflight::Unmeasured`, and *refuses* through `error::Error::Destination` rather than as a third variant, so a front-end learns no new failure and scripts no new code |
 | `extract::ensure_safe_destination` | convenience | its own doc points at `ensure_safe_destination_create`, which supersedes it |
 | `extract::DESTINATION_NOT_OURS` | not supported | the note text a refusal writes; no caller outside the module |
 | `report::summary`, `item_lines`, `write_csv`, `write_json`, `write_verification`, `write_contact_sheet`, `tiers_json`, `shapes_json` | seam | the surfaces a second front-end prints instead of inventing: the summary, the CSV, the manifest, the verification report and the sheet. The summary takes the run's `Options`, so the bounds it names are the ones the caller applied |
 | `report::cache_csv`, `cache_manifest_json`, `cache_verification_json`, `CacheBatch` (+ fields) | seam | the same three published files for a cache-only run, from `CacheRecovery` and the batch's counts. `CacheBatch` exists because `extract` owns the outcomes and renders through this module: the counts cross as values, and the manifest's three and the verification report's four are one value |
+| `report::legacy_csv`, `legacy_manifest_json`, `legacy_verification_json` | seam | the three published files for an indexless run, from `LegacyRecovery`: the same schemas under `mode` `legacy`, with the container counts and no `layout` to publish |
 | `report::escape_csv` | not supported | public so `extract`'s per-file CSV quotes by the same rules, as `report`'s own spec says |
 | `report::mebibytes`, `with_thousands` | convenience | the one home for the human and the exact forms of a count: the terminal summary and the free-space refusal both print through them, so one quantity is not spelled two ways |
 | `masks::Mask` (+ fields), `decode_dat`, `to_png`, `list` | seam | the third command's whole surface: decode a layer, encode it, find the layers |

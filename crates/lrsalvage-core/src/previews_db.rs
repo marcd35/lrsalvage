@@ -594,6 +594,50 @@ pub(crate) fn sweep_required(
     Ok(sweep_paths(cache_root, paths, progress))
 }
 
+/// Every `.lrprev` file under the cache root, **cache-relative**, in path order.
+///
+/// The indexless mode's inventory (#198). A container is a candidate wherever it
+/// sits — including outside the `<uuid[0]>/<uuid[0..4]>` shard folders
+/// [`sweep`] reads as an address — because with no index there is nothing to
+/// name a payload's place against, so the walk is by extension and never by the
+/// leaf grammar. The path comes back relative because that exact spelling is
+/// what the mode's generated name is derived from, and a name has to survive the
+/// cache being moved.
+///
+/// Enumeration is strict: a folder the walk cannot read ends it, because an
+/// incomplete inventory cannot be an answer. `progress` is called once per file,
+/// as [`sweep`]'s is — the count is files looked at, never a total — and `false`
+/// stops the walk, which is how the `None` is said.
+pub(crate) fn containers(
+    cache_root: &Path,
+    progress: &mut dyn FnMut(u64) -> bool,
+) -> Result<Option<Vec<PathBuf>>> {
+    let paths = fs::walk_files_strict(cache_root).at(cache_root)?;
+    let mut found = Vec::new();
+    for (walked, path) in paths.into_iter().enumerate() {
+        if !progress(walked as u64) {
+            return Ok(None);
+        }
+        let relative = path
+            .strip_prefix(cache_root)
+            .map_err(|_| crate::Error::Io {
+                path: path.clone(),
+                source: std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    "a walked file is outside the cache root",
+                ),
+            })?;
+        if path
+            .extension()
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("lrprev"))
+        {
+            found.push(relative.to_path_buf());
+        }
+    }
+    found.sort();
+    Ok(Some(found))
+}
+
 fn sweep_paths(
     cache_root: &Path,
     paths: Vec<PathBuf>,

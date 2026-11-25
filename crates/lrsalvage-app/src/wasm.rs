@@ -141,6 +141,14 @@ pub fn scan_cache(cache: &str) -> String {
     })
 }
 
+/// Scan a cache with no `previews.db`, one `.lrprev` at a time (#198).
+#[wasm_bindgen]
+pub fn scan_legacy(cache: &str) -> String {
+    scan_with(|progress| {
+        crate::scan_legacy(Path::new(cache), progress).map_err(|failure| failure.to_json())
+    })
+}
+
 fn scan_with(
     run: impl FnOnce(&mut dyn FnMut(Progress) -> Control) -> Result<crate::ScanResult, Value>,
 ) -> String {

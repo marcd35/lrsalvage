@@ -261,7 +261,34 @@ pub fn scan_cache(
             review: Review::default(),
         });
     };
-    let cache = cache_review::CacheReview(plan);
+    let cache = cache_review::CacheReview(cache_review::Recovery::Indexed(plan));
+    let mut report = cache.summary();
+    let review = Review::from_cache(cache);
+    report["ok"] = json!(true);
+    report["stopped"] = json!(false);
+    report["photos"] = review.rows();
+    Ok(ScanResult { report, review })
+}
+
+/// Recover from a preview cache that has no index at all (#198).
+///
+/// The same review and writer protocol as the indexed cache, over a different
+/// scan: every `.lrprev` under the chosen cache is a candidate, nothing opens
+/// `previews.db`, and a candidate's generated name comes from where the file
+/// sits rather than from an index row.
+pub fn scan_legacy(
+    cache: &Path,
+    progress: &mut dyn FnMut(Progress) -> Control,
+) -> Result<ScanResult, Failure> {
+    let scan = lrsalvage_core::cache_recovery::LegacyRecovery::scan(cache, progress)
+        .map_err(|error| Failure::of(Stage::CacheWalk, &error))?;
+    let Some(scan) = scan else {
+        return Ok(ScanResult {
+            report: json!({ "ok": true, "stopped": true }),
+            review: Review::default(),
+        });
+    };
+    let cache = cache_review::CacheReview(cache_review::Recovery::Legacy(scan));
     let mut report = cache.summary();
     let review = Review::from_cache(cache);
     report["ok"] = json!(true);

@@ -92,6 +92,7 @@ the artifact is the page — and not a claim about a released artifact.*
 |---|---|---|
 | Recover every usable preview in one run | yes | intended for `0.1.0` |
 | Recover previews with no catalog, from the preview cache alone | not planned for the CLI line — [the follow-up](https://github.com/marcd35/lrsalvage/issues/186) | intended for `0.1.0`, from the start screen or after an unreadable catalog |
+| Recover previews from a legacy cache whose `previews.db` is gone | not planned for the CLI line | intended for `0.1.0`: one JPEG per `.lrprev` container, with generated names and no original filenames ([#198](https://github.com/marcd35/lrsalvage/issues/198)) |
 | Choose where the JPEGs go | yes, with the destination safety rules in [Safety](../README.md#safety) | intended, through a folder picker |
 | Choose a folder layout | the catalog's tree only | the tree, or one flat folder, previewed before writing |
 | Take previews under the 640 px floor | [`--min-long-edge`](../README.md#quick-start) | intended, as an explicit small-preview group |

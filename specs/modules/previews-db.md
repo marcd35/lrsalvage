@@ -174,6 +174,18 @@ decision.
   `plan`'s `Control` because `plan` depends on this module and never the reverse
   (`specs/architecture.md`, *Module dependency edges*), and this operation stays
   out of the supported seam beside the `sweep` whose only caller it is.
+- **The indexless mode's inventory is the same walk, filtered by extension.**
+  A container is a candidate wherever it sits — including outside the shard
+  folders [`sweep`] reads as an address — because with no index there is nothing
+  to name a payload's place against. So `containers(cache_root, progress)` walks
+  the tree once with the strict enumeration `sweep_required` uses, keeps every
+  file whose extension is `.lrprev` (any case, because the extension is a name
+  and not an identity), and returns the **cache-relative** paths in path order:
+  the exact spelling is what `cache_recovery`'s indexless generated name derives
+  from, and a name has to survive the cache being moved. It is `pub(crate)`: one
+  caller, and the rule that makes a container a candidate belongs to
+  `cache_recovery`, not here. A folder the walk cannot read ends it, as it does
+  for `sweep_required`; a file it cannot read is one candidate's outcome upstream.
 
 
 ## Required index for cache-only recovery

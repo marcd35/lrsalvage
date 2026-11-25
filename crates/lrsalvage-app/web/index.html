@@ -242,7 +242,15 @@
     <div class="actions">
       <button id="scan" type="button" disabled>Scan this catalog</button>
       <button id="recover-cache" type="button">Recover from preview cache</button>
+      <button id="recover-legacy" type="button">Recover from a cache without an index…</button>
     </div>
+    <p class="review-note">
+      A preview folder whose <code>previews.db</code> is lost still holds its
+      <code>.lrprev</code> containers. The last option reads every container in a folder
+      you choose and offers its largest complete JPEG. The names are generated from where
+      each container sits, so move the whole folder freely — but the original filenames,
+      folders and catalog associations are gone with the index.
+    </p>
   </section>
 
   <section id="scanning" class="step" hidden>
@@ -261,7 +269,7 @@
     <h2 id="result-title" tabindex="-1">3. Review previews</h2>
     <p id="headline"></p>
     <ul id="causes"></ul>
-    <p id="cache-notice" hidden>These JPEGs are previews. Original files, filenames, folder structure, and catalog metadata are unavailable.</p>
+    <p id="cache-notice" hidden>These JPEGs are previews. Original files, filenames, folder structure, and catalog metadata are unavailable, and nothing links a preview back to a photo in a catalog.</p>
     <section id="photo-review" aria-label="Photo review" hidden>
       <div class="review-controls">
         <label for="photo-search">Search photos</label>
@@ -414,6 +422,7 @@
     </div>
     <div class="actions">
       <button id="recover-cache-after-error" type="button" hidden>Recover from preview cache</button>
+      <button id="recover-legacy-after-error" type="button" hidden>Recover from this cache without an index</button>
       <button id="restart" type="button">Start over</button>
     </div>
   </section>

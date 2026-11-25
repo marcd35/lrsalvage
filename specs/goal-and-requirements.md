@@ -77,7 +77,10 @@ without an Adobe toolchain.
    written for them — rather than refused, and no mapping is invented to fill the
    gap. See `adr-0006-degrade-without-guessing`. The same rule governs a resume: a
    file we cannot prove we wrote is not ours, and is never kept in place of a
-   recovery.
+   recovery. A cache with no index at all is a separate case rather than an
+   exception: one JPEG per container can be recovered without claiming which
+   photograph it is, and the result says the names are generated, the folders are
+   gone and no image-to-catalog association exists.
 6. **Only what the catalog recorded.** No invented timestamps, no substituted
    colour profile, no merged XMP packet — an absent fact stays absent.
 7. **Library first.** The core crate's public API is the supported seam; the CLI

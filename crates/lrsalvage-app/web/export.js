@@ -262,10 +262,13 @@ export function mountExport(document) {
   const receipt = mountReceipt(document, { saveVerification });
   let run;
 
-  function open(scan, inputs, cacheOnly = false) {
+  function open(scan, inputs, mode = 'catalog') {
     clear();
+    // No catalog means no original folders to mirror: the two cache modes share
+    // that, and differ in the mode word a report or a receipt carries.
+    const cacheOnly = mode !== 'catalog';
     run = {
-      scan, inputs, cacheOnly, checked: new Set(), layouts: new Map(), targets: [],
+      scan, inputs, mode, cacheOnly, checked: new Set(), layouts: new Map(), targets: [],
       flat: false, target: null, suggestion: null, batch: null, busy: false, photo: null,
       // The catalog's own folder, so the destination picker can start there: the
       // recovery folder belongs beside the source, and the page still holds the

@@ -202,6 +202,15 @@ that is deliberate — `previews.db` is authoritative for dimensions, the profil
 name and the mapping (ADR 0002), so a second source of the same facts would only
 create disagreement to resolve. Do not describe it as part of the read path.
 
+**A legacy cache with no index is still readable by these lengths** (**reported**
+— the probe recorded in #196, not re-run for #198). One real legacy cache whose
+`previews.db` was lost was inspected with the files opened read-only: 3,848
+`.lrprev` containers parsed by their declared chunk boundaries, and every one
+held at least one `level_N` chunk with valid SOF dimensions and complete framing,
+14,231 such levels in all. That is a container and level count. It establishes no
+original image identity and decodes no pixels, so it is evidence that containers
+survive an index rather than evidence about which photograph each one held.
+
 ---
 
 ## 2. `previews.db` — VERIFIED

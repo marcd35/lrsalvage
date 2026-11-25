@@ -191,7 +191,7 @@ export function withMount(source, path, handle) {
 }
 
 /**
- * Start one scan, and hand back what it needs to be stopped.
+ * One scan of one source, and hand back what it needs to be stopped.
  *
  * `ui.stage(name)` is called with `'install'`, `'copy'`, `'scan'` and `'report'`;
  * `ui.progress({phase, done, total, at})` with every report the worker forwards,
@@ -200,6 +200,12 @@ export function withMount(source, path, handle) {
  * `{ok: true, stopped: true}`, or `{ok: false, problem: {stage, kind, message}}`.
  * Scan failures are reports. Worker failures reject `done`.
  * In review mode a completed worker answers `preview(id)` until `close()`.
+ *
+ * `source.mode` names which entry the run takes — `catalog`, `cache-only` or
+ * `legacy`, the same words the report files carry — and the worker picks the
+ * module call from it. A source without one is the catalog-backed run when it
+ * has a catalog and the indexed cache one otherwise, which is what every caller
+ * written before the third mode said.
  */
 export function start(source, ui = {}, { review = false } = {}) {
   const answer = new SharedArrayBuffer(SAB_BYTES);
@@ -285,6 +291,7 @@ export function start(source, ui = {}, { review = false } = {}) {
       ],
       catalog: source.catalog,
       cache: source.cache,
+      mode: source.mode ?? (source.catalog ? 'catalog' : 'cache-only'),
       capacity: CAPACITY,
     });
   });

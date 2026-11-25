@@ -111,6 +111,28 @@ async function diagnosticsMatchTheSpec() {
     }
   }
 
+  // The indexless run's counts are not in the JSON block above, because that
+  // block is one copy's object: the four names are published in the sentence
+  // beside it, and a rename on either side has to fail here rather than wait
+  // for the browser phase to be someone's idea.
+  const legacy = /An indexless run's\s+`cache_scan` carries ([^\u2014]+)\u2014/.exec(spec.replace(/\s+/g, ' '));
+  const fromSpec = legacy
+    ? sorted([...legacy[1].matchAll(/`([a-z_]+)`/g)].map((match) => match[1]))
+    : null;
+  const container = declared('CONTAINER_SCAN_COUNTS');
+  if (fromSpec === null || container === null) {
+    problems.push(
+      'specs/app.md does not publish the indexless run\'s cache_scan names, or ' +
+        'web/diagnostics.js has no CONTAINER_SCAN_COUNTS to compare them with',
+    );
+  } else if (JSON.stringify(sorted(container)) !== JSON.stringify(fromSpec)) {
+    problems.push(
+      'CONTAINER_SCAN_COUNTS and specs/app.md disagree:\n' +
+        `  in the module: ${sorted(container).join(', ')}\n` +
+        `  in the spec:   ${fromSpec.join(', ')}`,
+    );
+  }
+
   // Every member the spec publishes has to exist in the module that writes it,
   // as a quoted key or a literal — the module builds the object by hand. The one
   // pass-through is `scan.tiers`: its five names are `plan::Stats`'s tier names,
@@ -338,10 +360,33 @@ async function theSizesRead() {
   }
 }
 
+/**
+ * Every id the flow asks for is an id the page has.
+ *
+ * `view.js` looks controls up by id and throws when one is missing, and a page
+ * whose markup and script disagree fails on the first click, in the browser
+ * gate, minutes later. The two lists are one fact in two files, so they are
+ * compared here — the same shape as the diagnostics list and the phase list.
+ * Only `view.js`'s literal `el('…')` lookups are checked: the review, export and
+ * receipt modules build their ids from a prefix, and `catalog-choice` is created
+ * by the flow itself.
+ */
+async function viewIdsExist() {
+  const html = await readFile(join(ROOT, 'crates', 'lrsalvage-app', 'web', 'index.html'), 'utf8');
+  const view = await readFile(join(ROOT, 'crates', 'lrsalvage-app', 'web', 'view.js'), 'utf8');
+  const declared = new Set([...html.matchAll(/\bid="([^"]+)"/g)].map((match) => match[1]));
+  const asked = new Set([...view.matchAll(/\bel\('([^']+)'\)/g)].map((match) => match[1]));
+  const missing = [...asked].filter((id) => !declared.has(id)).sort();
+  if (missing.length) {
+    problems.push(`web/view.js asks for ids index.html does not declare: ${missing.join(', ')}`);
+  }
+}
+
 const scanned = await files();
 for (const file of scanned) parse(file, await readFile(file, 'utf8'));
 await diagnosticsMatchTheSpec();
 await phasesMatchTheSeam();
+await viewIdsExist();
 await theEstimateHoldsSteady();
 await theCacheSuggestionIsExact();
 await theSizesRead();
@@ -352,7 +397,8 @@ if (problems.length) {
   process.exit(1);
 }
 console.log(
-  `${scanned.length} modules parse, the diagnostics list matches its spec, ` +
-    'the phase list matches the seam, the estimate holds steady, the cache ' +
-    'suggestion is exact, and the sizes read in decimal units',
+  `${scanned.length} modules parse, the diagnostics lists match their spec, ` +
+    'the phase list matches the seam, the page declares every id the flow asks for, ' +
+    'the estimate holds steady, the cache suggestion is exact, and the sizes read ' +
+    'in decimal units',
 );

@@ -88,6 +88,23 @@ pub fn not_a_jpeg() -> Vec<u8> {
     b"These bytes were never a JPEG preview.\n".to_vec()
 }
 
+/// A payload that is a recognized image format this reader does not decode.
+///
+/// The byte shapes `jpeg::is_other_image` names are that module's private list,
+/// so the one copy of a "known image, wrong format" payload lives here and a
+/// fixture composes it rather than writing its own.
+pub fn other_image() -> Vec<u8> {
+    let mut bytes = b"\x89PNG\r\n\x1a\n".to_vec();
+    bytes.extend_from_slice(b" a payload no JPEG reader knows");
+    bytes
+}
+
+/// Bytes that are not an `AgHg` chunk: the junk a container's declared lengths
+/// stop agreeing at, which the chunks proved before it survive.
+pub fn damaged_tail() -> Vec<u8> {
+    b"not an AgHg chunk".to_vec()
+}
+
 /// A destination we could have written: complete, SOF `(width, height)`, and
 /// IFD0 0x0131 (Software) = `lrsalvage <version>`.
 pub fn our_output(width: u16, height: u16, version: &str) -> Vec<u8> {

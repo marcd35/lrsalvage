@@ -54,8 +54,14 @@ encoders for the same three files: `cache_csv`, `cache_manifest_json` and
 `already_recovered`, `failed`, `confirmed_on_disk` — because outcomes are
 `extract`'s and `extract` renders its CSV through this module, so the counts cross
 as values rather than as types that would make a cycle. The member sets below are
-frozen for both modes and differ, because a cache has no catalog to measure; what
-they share is the schema tag and a `mode` member that says which one a file is.
+frozen per mode and differ, because a cache has no catalog to measure; what they
+share is the schema tag and a `mode` member that says which one a file is.
+
+A run that read no index at all (#198) plans `LegacyRecovery` and gets the third
+set: `legacy_csv`, `legacy_manifest_json` and `legacy_verification_json`, with
+`mode` `legacy` and the four container counts `containers`, `usable`, `invalid`
+and `unsupported`. `extract::legacy_outcomes_csv` marks the batch file the same
+way, so three files from one run agree about which run they came from.
 
 ## Decisions
 
@@ -69,8 +75,8 @@ they share is the schema tag and a `mode` member that says which one a file is.
   second renderer per artifact, is two grammars for one file
   (`specs/app.md`, *Receipt, reports and diagnostics*).
 - **Every published report says which mode wrote it, and each mode's member set is
-  frozen here.** `mode` is `catalog` or `cache-only`; it is the one member both
-  modes share besides `schema`, `version`, `generated_unix` and `layout`. A
+  frozen here.** `mode` is `catalog`, `cache-only` or `legacy`; it is the one
+  member all three modes share besides `schema`, `version` and `generated_unix`. A
   cache-only run measured no catalog, so it publishes none of the catalog
   objects' facts rather than a row of nulls a reader has to filter:
   - `manifest.json` (cache-only): `schema` `lrsalvage.manifest`, `version`,
@@ -88,12 +94,29 @@ they share is the schema tag and a `mode` member that says which one a file is.
     the catalog `stats` under other words: an indexed pyramid with no payload is
     a different fact from an image whose payload is missing, and one vocabulary
     for both would be a lie about whichever it was not measuring.
+  - `manifest.json` (legacy): the same members **less `layout`** — `schema`,
+    `version`, `generated_unix`, `mode` `legacy`, `scan`, `outputs`, `batch` —
+    and `verification.json` (legacy) likewise, with `writes` as above. An
+    indexless run classifies no representation: it reads every container the walk
+    finds, so the cache's `layout` word would be a fact it never measured.
+  - `scan` (legacy) is the four counts that mode measured — `containers`,
+    `usable`, `invalid`, `unsupported`. A container is a file, not an indexed
+    pyramid, so the indexed words would name different facts; `containers` and
+    `usable` are this mode's own.
 - **A cache-only `report.csv` has its own frozen columns.** `mode,filename,status,
   width,height,fallback,dimension_mismatch`: one row per indexed pyramid, the
   generated filename rather than an original, and an empty width and height when
   no preview survived. The catalog header's folder, tier, capture-time and
   original-path columns describe a catalog this run does not have, so reusing the
   header would publish sixteen empty cells and call them facts.
+- **A legacy `report.csv` carries the container, and `extract.csv` carries the
+  mode.** `mode,filename,status,width,height,container`: one row per `.lrprev`
+  found, the generated filename, and the cache-relative path that name is derived
+  from — the one identity this mode has, and the only way to tell two containers
+  holding identical previews apart. A cache-relative path is a folder tree of
+  uuids rather than a person's folder names, and this file is local to the run, so
+  the shareable artifacts stay the ones that name nothing: the verification
+  report has no filename, path or container.
 - **The batch's counts arrive as a value, not as a type this module would have to
   know.** `CacheBatch` carries `saved`, `already_recovered`, `failed` and
   `confirmed_on_disk`; `extract` owns the outcomes and renders its own CSV through

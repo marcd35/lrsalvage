@@ -55,7 +55,8 @@ capture_verified ─► from_snapshot ─► index copy + open ─► build_repo
 
 `src/wasm.rs` is the only file that mentions JavaScript: it declares the two host
 calls (the seam's `fs_call` and `scan_progress`) and exports `start_install`,
-`poll_install`, `scan`, and the review, export and report calls the page makes.
+`poll_install`, `scan`, `scan_cache`, `scan_legacy`, and the review, export and
+report calls the page makes.
 `web/` holds the page and the seam's page-side JavaScript. `src/vault.rs` and
 `src/bin/vault-app.rs` are native-only and compose
 the vaults the browser run needs, from `lrsalvage-fixtures`.
@@ -185,6 +186,31 @@ and failed counts and verifies the destination files against their planned
 bytes in each folder the run used. The local report CSVs and manifest identify the cache-only mode, and the three published files come from the same encoders the catalog-backed run uses, under the same schema tags with `mode` naming the run ([report](modules/report.md)). The
 shareable verification report and copied diagnostics use aggregate counts
 without paths, filenames, or cache identities.
+
+## Recover from a cache without an index
+
+The start screen offers **Recover from a cache without an index…** as its own
+choice (#198), beside the two that read an index. It asks for one cache folder
+and nothing else: no catalog, no `previews.db`, no index copy and no open. A
+run of the indexed mode that fails at `cache-index` — missing, unreadable or
+unsupported — offers this mode with the folder it already holds, because a cache
+whose index is gone still carries its containers; the offer is one button on the
+result and reuses the handle rather than asking for the folder again. The
+indexed mode's own behaviour is unchanged when the index is there.
+
+The scan is the [cache recovery module](modules/cache-recovery.md)'s indexless
+plan. The page reports one outcome per `.lrprev` container the walk found:
+**usable**, **invalid**, or **unsupported**, and gives a folder holding no
+container its own empty result with no save offered. Review is the same flat
+list as the indexed mode, with every usable container checked; a candidate's
+name is the core's generated one, and the page never invents one.
+
+Everything the indexed mode does after review is shared unchanged: the
+destination checks in both directions, the batch writer, Stop and Continue, the
+no-overwrite rule with its already-recovered and conflict outcomes, the receipt
+and the destination reconciliation. The three report files come from the same
+encoders under a `legacy` mode word and the container counts, with
+`report.csv`'s own frozen column set (`[report](modules/report.md)`).
 
 The downloadable and in-app practice case contains only a synthetic cache.
 It shows a healthy pyramid, a smaller surviving level, and a missing preview.
@@ -354,8 +380,8 @@ the catalog copy shareable. The object is:
 ```
 
 The field list is frozen here. `mode` names the run that produced the copy —
-`catalog` or `cache-only` — so a reader knows which scan object to read.
-`versions` carries the two release numbers, the
+`catalog`, `cache-only` or `legacy` — so a reader knows which scan object to
+read. `versions` carries the two release numbers, the
 checkout identity when a built page has one, and the browser and platform as the
 browser states them — a table mapping a platform version to a marketing name is a
 table that rots. `timings` are milliseconds since the page loaded and there is no
@@ -365,8 +391,11 @@ their desk. `scan` carries exactly the eighteen `stats` members
 the reports already name. A cache-only run measured none of those, so its `scan`
 is `null` and `cache_scan` carries the five counts it did measure — the same five
 names `specs/modules/report.md` freezes for that mode, never a cache count under a
-catalog name. On a catalog copy `cache_scan` is the same five members at `null`,
-because a fact the run did not measure is `null`, never absent.
+catalog name. An indexless run's `scan` is `null` too. An indexless run's
+`cache_scan` carries `containers`, `usable`, `invalid` and `unsupported` — the
+four names `specs/modules/report.md` freezes for that mode, never a translation of
+another mode's. On a catalog copy `cache_scan` is the five members at `null`,
+because a fact that run did not measure is `null`, never absent.
 `longest_write_gap_ms` measures consecutive commits
 across the whole run, so a stop appears in `events` and never as a slow write.
 `catalog_copy_ms` covers the copy, the open and the index copy, because one
@@ -374,7 +403,9 @@ synchronous wasm frame owns all three and no clock runs inside it; it ends at th
 first unit the plan reports, and `scan_ms` starts there. `failure` is a stage and
 one of the entry's own kinds — never the error's message, which can name a path —
 and is `null` for a run that got as far as a file. A fact the run did not measure
-is `null`, never `""` and never absent, so the same members are on every copy.
+is `null`, never `""` and never absent: every top-level member above is on every
+copy, and the names inside `cache_scan` are the ones the mode that produced the
+copy measured.
 
 The list is curated at its source rather than filtered afterwards: the serializer
 has no field a path, filename, identifier or message could occupy, which is what
@@ -407,6 +438,10 @@ the deployed candidate.
   the seven vaults, a stopped build with no plan, and an indexless cache still
   counting its payloads. It composes `lrsalvage-fixtures` vaults through
   `src/vault.rs`, so no fixture bytes live in this crate.
+- `crates/lrsalvage-app/tests/legacy.rs` is the third mode's gate: the report's
+  mode word and container counts, one JPEG per usable container exported byte for
+  byte, the published files' `legacy` mode, an empty folder with no save offered,
+  and a stopped scan that holds no plan.
 - The browser app workflow runs `scripts/browser-app.sh` on one headless
   Chromium runner for relevant pull requests. It compares the page's entry
   and native results field by field, including digests, and covers stop,
@@ -444,6 +479,17 @@ the deployed candidate.
   save bar agreeing with the panel below it, the planned-path dialog's summary,
   its search and its row cap, and the batch readout reaching 100% with the
   milestone announced.
+- `scripts/check-legacy.mjs` is the indexless mode's phase of that script
+  (#198). It drives the third start-screen choice over five synthetic caches —
+  multiple sizes, an equal-area tie, a usable prefix before damage, a damaged and
+  an unsupported container, an empty folder, and containers outside the shard
+  folders — and compares the saved names and bytes with the native
+  `scan_legacy` run over the same fixture. It asserts the destination refusal, a
+  stopped and continued batch, the already-recovered and conflict outcomes, the
+  empty result offering no save, the missing-index hand-off into this mode, and
+  an unreadable folder reported as an inventory error rather than a partial
+  list. The published files and copied diagnostics are read back and held to
+  `legacy` and the four container counts.
 - `scripts/check-scan-progress.mjs` is the scanning readout's phase of that
   script (`#185`). It drives the page's own progress module with made-up reports
   — the range and its maximum, the 99% ceiling, the estimate's warm-up and its

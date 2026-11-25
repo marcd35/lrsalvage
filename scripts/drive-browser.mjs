@@ -27,6 +27,7 @@
 import { createServer } from 'node:http';
 import { checkExport } from './check-export.mjs';
 import { checkCacheOnly } from './check-cache-only.mjs';
+import { checkLegacy } from './check-legacy.mjs';
 import { checkReceipt } from './check-receipt.mjs';
 import { checkPreviewReview } from './check-preview-review.mjs';
 import { checkScanProgress, checkScanProgressFixture } from './check-scan-progress.mjs';
@@ -69,7 +70,7 @@ const CHROME_CANDIDATES = [
 function usage(message) {
   if (message) console.error(message);
   console.error(
-    `usage: node scripts/drive-browser.mjs <out-dir> [--chrome <path>] [--timeout <s>] [--attach <port>] [--verbose] [--page <path>] [--check-review|--check-export|--check-receipt|--check-scan-progress|--check-scan-progress-fixture|--check-cache-only]\n` +
+    `usage: node scripts/drive-browser.mjs <out-dir> [--chrome <path>] [--timeout <s>] [--attach <port>] [--verbose] [--page <path>] [--check-review|--check-export|--check-receipt|--check-scan-progress|--check-scan-progress-fixture|--check-cache-only|--check-legacy]\n` +
       `  --page defaults to ${PARITY_PAGE}; the app's page is ${APP_PAGE}\n` +
       '  --check-scan-progress-fixture needs <out-dir> to hold a vault (fixture.json and its files);\n' +
       '  the other product checks need the native.json a vault-app run writes',
@@ -105,6 +106,7 @@ for (let index = 0; index < args.length; index += 1) {
     needsNative = false;
   }
   else if (arg === '--check-cache-only') productCheck = checkCacheOnly;
+  else if (arg === '--check-legacy') productCheck = checkLegacy;
   else if (arg === '--page') {
     // A leading slash is optional: `sh` on this machine rewrites an argument that
     // begins with one into a Windows path, so the script passes it without.
