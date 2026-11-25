@@ -59,11 +59,36 @@ pending.
       result. The hosted 5,000-image scan and the hands-on screen-reader pass are
       two more: record each on its own, and never as implied by the local one.
 - [ ] Record the [maintainer recovery result](https://github.com/marcd35/lrsalvage/issues/173)
-      on the same candidate. The recovery ends in usable JPEGs and a receipt
-      reconciled with disk after a batch stop and continuation, listing the
-      reports it wrote and offering the verification report. Share path-free
-      diagnostics manually and check that the copied text names no path.
-      Reverify a failed recovery after its fix.
+      on the same deployed candidate, using the pre-alpha catalog and preview
+      cache on the maintainer's test laptop. In a supported Windows browser,
+      scan and review the full default eligible selection, then save it to a
+      fresh destination with the default small-preview setting. Stop while work
+      remains pending, let in-flight saves settle, reconcile the partial receipt
+      with disk, and continue in the same tab.
+
+      Find the recovery folder from the receipt and reconcile final counts and
+      paths with disk. The fresh destination should yield one saved output per
+      selected preview, zero already recovered, zero final failures, and no
+      missing or duplicate outputs. Count scan exclusions separately. Open
+      samples across available preview sizes, orientations, and source folders;
+      each sample must open, show the expected photo, and be worth keeping.
+      Confirm the receipt lists its reports and offers the verification report;
+      record transient failures.
+
+      Record the candidate commit and URL, app and core versions, Windows and
+      browser versions, scan and write counts, timings, and failures. Compare
+      scan-to-first-visible-thumbnail time with the diagnostic first-thumbnail
+      time, which starts at page load. Check that the gallery scrolls, opens
+      previews, accepts selection changes, and proceeds to saving reliably;
+      restore the default selection before saving. File follow-up tuning for
+      slow but usable behavior. The diagnostic longest write gap includes the
+      deliberate stop and continuation pause.
+
+      Use **Copy diagnostics**, check that the copied text contains no private
+      paths, filenames, or catalog content, and share it manually. Keep the
+      receipt's CSV reports and manifest on the test machine. Fix and rerun a
+      failing recovery before release. Limit public claims to the tested recovery
+      and environment.
 
 ## Tag
 
