@@ -5,6 +5,7 @@ use std::path::PathBuf;
 
 use lrsalvage_app::vault::copy_tree;
 use lrsalvage_core::plan::Control;
+use lrsalvage_fixtures::bytes;
 use lrsalvage_fixtures::vault::{ImageRow, Level, PyramidRow, UnrecognisedFile, Vault};
 
 const NAME: &str = "Practice";
@@ -119,6 +120,40 @@ fn main() {
             .any(|row| row["fallback"] == true)
     );
     println!("cache-only: expected scan outcome");
+
+    let folder = out.join("legacy");
+    let vault = legacy().write();
+    fs::create_dir(&folder).expect("create legacy sample");
+    copy_tree(vault.previews(), &folder);
+    let legacy = lrsalvage_app::scan_legacy(&folder, &mut |_| Control::Continue)
+        .expect("legacy sample scans");
+    assert_eq!(legacy.report["scan"]["containers"], 4);
+    assert_eq!(legacy.report["scan"]["usable"], 2);
+    assert_eq!(legacy.report["scan"]["invalid"], 1);
+    assert_eq!(legacy.report["scan"]["unsupported"], 1);
+    println!("legacy: expected scan outcome");
+}
+
+fn legacy() -> Vault {
+    let mut prefix = bytes::chunk("header", &bytes::header(&[(480, 320)]), 0);
+    prefix.extend_from_slice(&bytes::chunk("level_1", SNOW_SMALL.jpeg, 0));
+    prefix.extend_from_slice(&bytes::damaged_tail());
+
+    let truncated = bytes::chunk("level_1", &bytes::truncated_jpeg(960, 640), 0);
+    let unsupported = bytes::chunk("level_1", &bytes::other_image(), 0);
+
+    Vault::unindexed_legacy()
+        .container_at(
+            "A/AAAA/practice.lrprev",
+            &[
+                Level::sized(&uuid(1), CANYON_SMALL.width, CANYON_SMALL.height)
+                    .raw(CANYON_SMALL.jpeg),
+                Level::sized(&uuid(1), CANYON.width, CANYON.height).raw(CANYON.jpeg),
+            ],
+        )
+        .raw_file("relocated/snow.lrprev", &prefix)
+        .raw_file("A/AAAA/damaged.lrprev", &truncated)
+        .raw_file("A/AAAA/unsupported.lrprev", &unsupported)
 }
 
 fn cache_only() -> Vault {

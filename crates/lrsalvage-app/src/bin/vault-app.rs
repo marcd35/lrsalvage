@@ -122,6 +122,8 @@ fn cache_only(out: &Path) -> Vec<serde_json::Value> {
     // looks like from the check's side.
     let other_schema = fs::read(Vault::modern().write().catalog())
         .expect("read the synthetic catalog's SQLite bytes");
+    let with_legacy_container =
+        |vault: Vault| vault.container_at("legacy.lrprev", &[Level::sized(&key(1), 960, 640)]);
     [
         ("cache-legacy", recovery_vault(Vault::legacy())),
         ("cache-modern", recovery_vault(Vault::modern())),
@@ -129,11 +131,14 @@ fn cache_only(out: &Path) -> Vec<serde_json::Value> {
             "cache-mixed",
             recovery_vault(Vault::mixed()).container(&[Level::sized(&key(1), 1200, 800)]),
         ),
-        ("cache-no-index", Vault::unindexed()),
-        ("cache-bad-index", Vault::modern().raw_index(b"not SQLite")),
+        ("cache-no-index", with_legacy_container(Vault::unindexed())),
+        (
+            "cache-bad-index",
+            with_legacy_container(Vault::modern().raw_index(b"not SQLite")),
+        ),
         (
             "cache-unsupported-index",
-            Vault::modern().raw_index(&other_schema),
+            with_legacy_container(Vault::modern().raw_index(&other_schema)),
         ),
         ("cache-empty-index", Vault::modern()),
     ]

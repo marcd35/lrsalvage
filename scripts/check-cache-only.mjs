@@ -248,6 +248,15 @@ export async function checkCacheOnly(send) {
     await until('!' + el('result') + '.hidden', 'Bad index did not report a result');
     assert((await text('headline')).includes(message));
     assert.equal(await evaluate(el('export-section') + '.hidden'), true);
+    assert.equal(await evaluate(el('recover-legacy-after-error') + '.closest("[hidden]") === null'), true);
+    assert.match(await text('legacy-handoff-note'), /reads \.lrprev containers/i);
+    assert.equal(await evaluate('document.activeElement.id'), 'result-title');
+
+    // A second source pick cannot supply the same handle and hide a regression.
+    await evaluate('globalThis.showDirectoryPicker = async () => { throw new Error("Unexpected picker"); }');
+    await click('recover-legacy-after-error');
+    await until(el('headline') + '.textContent.includes("1 of 1 preview containers")',
+      name + ': the handoff did not reuse the selected cache');
     measured.indexProblems++;
     await click('restart');
   }
@@ -256,6 +265,7 @@ export async function checkCacheOnly(send) {
   await click('recover-cache');
   await until('!' + el('result') + '.hidden', 'The empty index did not report a result');
   assert.equal(await text('headline'), 'This preview index is empty.');
+  assert.equal(await evaluate(el('recover-legacy-after-error') + '.closest("[hidden]") !== null'), true);
   assert.equal(await evaluate(el('export-section') + '.hidden'), true);
   await click('restart');
   await call(mount, 'cache-modern', true);

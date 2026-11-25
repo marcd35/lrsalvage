@@ -20,7 +20,7 @@ SCRIPTS = Path(__file__).resolve().parent
 package_web = runpy.run_path(str(SCRIPTS / "build-browser-app.py"))["package_web"]
 deployment = runpy.run_path(str(SCRIPTS / "verify-browser-deployment.py"))
 ORIGIN = "https://preview.example"
-CASES = {"working", "mixed", "unreadable-catalog", "unrecognized-layout", "cache-only"}
+CASES = {"working", "mixed", "unreadable-catalog", "unrecognized-layout", "cache-only", "legacy"}
 
 
 class PackageTests(unittest.TestCase):
@@ -78,6 +78,9 @@ class DeploymentTests(unittest.TestCase):
         practice = self.static / "practice"
         manifest = json.loads((practice / "samples.json").read_bytes())
         self.assertEqual(set(manifest), CASES)
+        legacy = manifest["legacy"]["files"]
+        self.assertEqual(len(legacy), 4)
+        self.assertTrue(all(file.endswith(".lrprev") for file in legacy))
         for name, case in manifest.items():
             with self.subTest(name=name), ZipFile(practice / f"{name}.zip") as archive:
                 self.assertTrue(case["files"])

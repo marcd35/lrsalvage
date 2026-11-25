@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
 import { setTimeout as wait } from 'node:timers/promises';
 import { pauseCloses } from './check-export.mjs';
 
@@ -50,7 +52,7 @@ async function report(name) {
   return (await handle.getFile()).text();
 }
 
-export async function checkLegacy(send) {
+function controls(send) {
   async function evaluate(expression) {
     const { result, exceptionDetails } = await send('Runtime.evaluate', {
       expression, returnByValue: true, awaitPromise: true,
@@ -72,6 +74,11 @@ export async function checkLegacy(send) {
     throw new Error(reason);
   }
 
+  return { evaluate, call, el, click, text, until };
+}
+
+export async function checkLegacy(send) {
+  const { evaluate, call, el, click, text, until } = controls(send);
   await until(el('source') + '?.hidden === false', 'The source screen did not load');
   assert.equal(await evaluate(el('recover-legacy') + '.hidden || ' + el('recover-legacy') + '.disabled'),
     false, 'The indexless mode is not offered on the start screen');
@@ -282,7 +289,7 @@ export async function checkLegacy(send) {
   await click('recover-cache');
   await until('!' + el('result') + '.hidden', 'The indexless folder did not report a result');
   assert.match(await text('headline'), /no previews\.db/);
-  assert.equal(await evaluate(el('recover-legacy-after-error') + '.hidden'), false,
+  assert.equal(await evaluate(el('recover-legacy-after-error') + '.closest("[hidden]") === null'), true,
     'a missing index did not offer the indexless mode');
   await click('recover-legacy-after-error');
   await until(el('headline') + '.textContent.includes("preview containers")',
@@ -290,6 +297,73 @@ export async function checkLegacy(send) {
   assert.match(await text('headline'), /2 of 2 preview containers/);
   measured.fallback++;
   await click('restart');
+
+  // A catalog run can report an index finding or stop when the index cannot be copied.
+  for (const [name, refusedCopy] of [
+    ['no-index', false],
+    ['unreadable-index', false],
+    ['unreadable-index', true],
+  ]) {
+    await call(async (name) => {
+      const { json, mountVault } = await import('./mount.js');
+      const fixtures = await json('/native.json');
+      const entry = fixtures.vaults.find((item) => item.name === name);
+      const legacy = fixtures.legacy.find((item) => item.name === 'legacy-tie');
+      const root = await navigator.storage.getDirectory();
+      const folder = await mountVault(root, name, '/' + name, entry.files);
+      const catalog = await folder.getDirectoryHandle(entry.catalog.split('/')[0]);
+      const cacheFiles = entry.files.filter((file) => file.startsWith(entry.cache + '/'))
+        .map((file) => file.slice(entry.cache.length + 1));
+      const cache = await mountVault(catalog, entry.cache,
+        '/' + name + '/' + encodeURIComponent(entry.cache), cacheFiles);
+      await mountVault(cache, 'legacy-containers', '/legacy-tie', legacy.files);
+      globalThis.showDirectoryPicker = async () => catalog;
+      globalThis.catalogSource = catalog;
+    }, name);
+    await click('pick');
+    await until('!' + el('scan') + '.disabled', 'The catalog was not selected');
+    if (refusedCopy) {
+      await call(() => {
+        const getFile = FileSystemFileHandle.prototype.getFile;
+        globalThis.restoreIndexRead = () => { FileSystemFileHandle.prototype.getFile = getFile; };
+        FileSystemFileHandle.prototype.getFile = function () {
+          if (this.name === 'previews.db') throw new DOMException('Test index refused', 'NotAllowedError');
+          return getFile.call(this);
+        };
+      });
+    }
+    await click('scan');
+    await until('!' + el('result') + '.hidden', 'The catalog did not reach its results');
+    if (refusedCopy) {
+      assert.match(await text('result-title'), /scan could not finish/i);
+      assert.match(await text('headline'), /index could not be copied/i);
+    } else {
+      assert.match(await text('result-title'), /Review previews/);
+      assert.match(await text('checked'), /Previews index/);
+    }
+    assert.equal(await evaluate(el('recover-legacy-after-error') + '.closest("[hidden]") === null'),
+      true, name + ': the catalog finding did not offer legacy recovery');
+    assert.equal(await evaluate('document.activeElement.id'), 'result-title');
+    await call(() => {
+      globalThis.showDirectoryPicker = async ({ mode }) => {
+        if (mode !== 'readwrite') throw new Error('Unexpected second source pick');
+        return catalogSource;
+      };
+    });
+    await send('Input.dispatchKeyEvent', { type: 'rawKeyDown', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9 });
+    await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9 });
+    assert.equal(await evaluate('document.activeElement.id'), 'recover-legacy-after-error');
+    await send('Input.dispatchKeyEvent', { type: 'rawKeyDown', key: ' ', code: 'Space', windowsVirtualKeyCode: 32 });
+    await send('Input.dispatchKeyEvent', { type: 'keyUp', key: ' ', code: 'Space', windowsVirtualKeyCode: 32 });
+    await until(el('headline') + '.textContent.includes("2 of 2 preview containers")',
+      'Legacy recovery did not reuse the nested cache');
+    await click('export-pick');
+    await until(el('export-refusal') + '.hidden === false', 'The catalog folder was accepted as a destination');
+    assert.equal(await evaluate(el('export-start') + '.disabled'), true);
+    measured.fallback++;
+    if (refusedCopy) await evaluate('restoreIndexRead()');
+    await click('restart');
+  }
 
   // A folder the walk cannot read is an inventory error, never a partial list.
   await call(mount, 'legacy-outside', true);
@@ -312,6 +386,80 @@ export async function checkLegacy(send) {
   }
 
   console.log('legacy: sizes, equal-area ties, a usable prefix, damaged and unsupported containers, '
-    + 'an empty folder, the missing-index hand-off, stop/continue, occupied files and byte parity agree');
+    + 'an empty folder, indexed and catalog handoffs, stop/continue, occupied files and byte parity agree');
   return measured;
+}
+
+// Drive the packaged guide and its sample through the actual installation path.
+// Only the destination picker answer is supplied by the test.
+export async function checkLegacyPractice(send) {
+  const { evaluate, call, el, click, text, until } = controls(send);
+  const sample = 'document.querySelector("#samples a[href$=\\"?sample=legacy\\"]")';
+  await until(sample + ' !== null', 'The packaged guide does not link to the legacy sample');
+
+  await send('Page.addScriptToEvaluateOnNewDocument', {
+    source: '(' + (() => {
+      globalThis.practiceSourcePicks = 0;
+      globalThis.showDirectoryPicker = async ({ mode }) => {
+        if (mode !== 'readwrite') {
+          practiceSourcePicks++;
+          throw new Error('The practice cache should already be available');
+        }
+        const root = await navigator.storage.getDirectory();
+        const destination = await root.getDirectoryHandle('practice-output', { create: true });
+        globalThis.cacheCheck = { destination };
+        return destination;
+      };
+    }).toString() + ')()',
+  });
+
+  const expected = {};
+  for (const [path, asset] of [
+    ['A/AAAA/practice.lrprev', 'canyon.jpg'],
+    ['relocated/snow.lrprev', 'snow-small.jpg'],
+  ]) {
+    const name = 'legacy-preview-' + createHash('sha256').update(path).digest('hex') + '.jpg';
+    const jpeg = await readFile(new URL('../crates/lrsalvage-app/practice/photos/' + asset, import.meta.url));
+    expected[name] = { bytes: jpeg.length, sha256: createHash('sha256').update(jpeg).digest('hex') };
+  }
+
+  await evaluate(sample + '.click()');
+  for (const repeat of [false, true]) {
+    if (repeat) await send('Page.reload');
+    await until('!' + el('result') + '?.hidden && ' +
+      el('headline') + '?.textContent.includes("no previews.db")', 'Expected the practice index error');
+    assert.equal(await evaluate(el('export-section') + '.hidden'), true);
+    assert.equal(await evaluate(el('recover-legacy-after-error') + '.closest("[hidden]") === null'), true);
+    await click('recover-legacy-after-error');
+    await until(el('headline') + '.textContent.includes("2 of 4 preview containers")',
+      'The handoff did not reach practice review');
+    assert.equal(await evaluate('practiceSourcePicks'), 0);
+    assert.match(await text('checked'), /Preview containers4Usable2Invalid1Unsupported1/);
+    await until('document.querySelectorAll(".review-tile input:checked").length === 2',
+      'The sample did not select both usable previews');
+    const tiles = await evaluate('[...document.querySelectorAll(".review-tile")].map((tile) => tile.textContent)');
+    for (const dims of ['960 × 640 px', '480 × 320 px']) {
+      assert(tiles.some((tile) => tile.includes(dims)), 'Missing selected dimensions: ' + dims);
+    }
+
+    await click('export-pick');
+    await until('!' + el('export-start') + '.disabled', 'The sample destination was refused');
+    await click('export-start');
+    if (repeat) {
+      await until(el('export-conflict') + '.open', 'Repeat recovery did not list the existing JPEGs');
+      await evaluate('document.querySelector("#export-conflict [value=skip]").click()');
+    }
+    await until(el('receipt-report-list') + '.children.length === 3', 'The sample receipt did not finish');
+    assert.deepEqual(await call(savedFiles), expected);
+    const counts = { saved: repeat ? 0 : 2, already_recovered: repeat ? 2 : 0, failed: 0 };
+    const manifest = JSON.parse(await call(report, repeat ? 'manifest (2).json' : 'manifest.json'));
+    assert.equal(manifest.mode, 'legacy');
+    assert.deepEqual(manifest.batch, counts);
+    await click('receipt-verification');
+    await until(el('receipt-report-status') + '.textContent.includes("Saved")',
+      'The practice verification report was not saved');
+    const verification = JSON.parse(await call(report, repeat ? 'verification (2).json' : 'verification.json'));
+    assert.deepEqual(verification.writes, { ...counts, confirmed_on_disk: 2 });
+  }
+  return { usable: 2, invalid: 1, unsupported: 1, alreadyRecovered: 2 };
 }

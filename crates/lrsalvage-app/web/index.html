@@ -271,6 +271,12 @@
   <section id="result" class="step" hidden>
     <h2 id="result-title" tabindex="-1">3. Review previews</h2>
     <p id="headline"></p>
+    <div id="legacy-handoff" hidden>
+      <p id="legacy-index-problem" hidden></p>
+      <p id="legacy-handoff-note">Legacy recovery reads .lrprev containers and saves JPEG previews with generated filenames.</p>
+      <button id="recover-legacy-after-error" type="button" aria-describedby="legacy-handoff-note">Recover from this cache without an index</button>
+      <p id="legacy-picker-status" role="status" hidden></p>
+    </div>
     <ul id="causes"></ul>
     <p id="cache-notice" hidden>These JPEGs are previews. Original files, filenames, folder structure, and catalog metadata are unavailable, and nothing links a preview back to a photo in a catalog.</p>
     <section id="photo-review" aria-label="Photo review" hidden>
@@ -456,7 +462,6 @@
     </div>
     <div class="actions">
       <button id="recover-cache-after-error" type="button" hidden>Recover from preview cache</button>
-      <button id="recover-legacy-after-error" type="button" hidden>Recover from this cache without an index</button>
       <button id="restart" type="button">Start over</button>
     </div>
   </section>

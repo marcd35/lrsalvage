@@ -40,8 +40,11 @@
     </section>
 
     <section id="samples" aria-labelledby="sample-title">
-      <h2 id="sample-title">Practice with a sample catalog</h2>
-      <p>Open a sample here, or download its ZIP to try the folder picker. Extract the ZIP and choose the folder that directly contains <code>Practice.lrcat</code> and <code>Practice Previews.lrdata</code>.</p>
+      <h2 id="sample-title">Practice with sample files</h2>
+      <p>Open a sample here, or download and extract its ZIP to try the folder picker.
+        For a catalog sample, choose the folder containing <code>Practice.lrcat</code> and
+        <code>Practice Previews.lrdata</code>. For a cache sample, select
+        <strong>Recover from preview cache</strong> and choose the extracted sample folder.</p>
       <ul class="samples">
         <li>
           <h3>Working</h3>
@@ -83,6 +86,15 @@
             <a href="./practice/cache-only.zip" download aria-label="Download cache-only sample ZIP">ZIP</a>
           </div>
         </li>
+        <li>
+          <h3>Preview cache without an index</h3>
+          <p>Start at a missing-index result. Choose <strong>Recover from this cache without an index</strong>
+            to review two JPEG previews, including a thumbnail that survived damage.</p>
+          <div class="sample-actions">
+            <a href="./recovery?sample=legacy">Open indexless cache sample</a>
+            <a href="./practice/legacy.zip" download aria-label="Download indexless cache sample ZIP">ZIP</a>
+          </div>
+        </li>
       </ul>
       <p class="fine">The catalogs and metadata are synthetic. <a href="./practice/credits.txt">Sample photo credits</a>.</p>
     </section>
@@ -118,13 +130,12 @@
             The cache must contain a readable <code>previews.db</code>.
           </p>
           <p>
-            If the cache has no <code>previews.db</code> — an older backup, or one whose index was
-            lost — select <strong>Recover from a cache without an index…</strong> and choose the
-            cache folder. That mode reads each <code>.lrprev</code> container in the folder and
-            offers its largest complete JPEG. The filenames are generated from where each
-            container sits, so the original filenames and folders are not part of it. A scan that
-            failed because the index is missing offers the same mode, on the folder it already
-            holds.
+            If your backup has legacy <code>.lrprev</code> containers, choose
+            <strong>Recover from a cache without an index…</strong> and select the cache folder.
+            If catalog or cache recovery reports a problem with the preview index, choose
+            <strong>Recover from this cache without an index</strong> to try the same folder.
+            Legacy recovery offers the largest complete JPEG from each usable container.
+            It saves previews under generated filenames.
           </p>
           <figure class="guide-shot">
             <img src="./guide/choose-folder.png" width="704" height="490" loading="lazy" alt="Recovery source screen: Choose folder, Scan this catalog, Recover from preview cache, and Recover from a cache without an index, above a note explaining what the indexless mode can and cannot recover">
@@ -174,7 +185,13 @@
         <dt>The catalog cannot be read</dt>
         <dd>Try another intact backup. Check whether the original backup includes catalog sidecars.</dd>
         <dt>The cache is missing or unreadable</dt>
-        <dd>Choose the matching <code>Previews.lrdata</code> folder. Check for <code>previews.db</code> inside it. If that file is gone, <strong>Recover from a cache without an index</strong> still reads the <code>.lrprev</code> containers the folder holds.</dd>
+        <dd>Choose the matching <code>Previews.lrdata</code> folder and check for <code>previews.db</code> inside it.
+          If the index has a problem, use the legacy recovery action to look for <code>.lrprev</code> containers.</dd>
+        <dt>Legacy recovery found no containers</dt>
+        <dd>Check that you selected the matching <code>Previews.lrdata</code> folder. If you have another copy
+          of that cache with a readable <code>previews.db</code>, try <strong>Recover from preview cache</strong>.
+          If Lightroom Classic still displays the previews, try
+          <a href="https://helpx.adobe.com/lightroom-classic/desktop/kb/extract-previews-for-lost-images-lightroom.html">Adobe’s preview extraction workflow</a>.</dd>
         <dt>There are fewer previews than photos</dt>
         <dd>Check the scan details for missing files or an unfamiliar cache layout. If you have another backup, try its catalog and matching cache.</dd>
       </dl>

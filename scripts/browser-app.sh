@@ -5,9 +5,9 @@
 #                             [--only <phase>] [--work <dir>] [--reuse-module]
 #
 # `--only` runs one phase — `parity`, `review`, `export`, `receipt`, `progress`,
-# `cache-only` or `legacy` — and `--work` reuses a fixture directory: the native run, the
-# vaults and the CLI's own files are made only when they are missing, and the
-# directory is left in place. Both leave the wasm rebuild alone: a page is only
+# `cache-only` or `legacy` — and `--work` keeps a fixture directory for later runs.
+# The native report and vaults regenerate when the requested fixture is missing
+# or incomplete. Both flags leave the wasm rebuild alone: a page is only
 # worth measuring against a module built from the Rust in front of you, so the
 # build runs every time unless `--reuse-module` says otherwise.
 #
@@ -159,15 +159,15 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# A phase asked for by name skips the others, not their preconditions: the native
-# run and the CLI's own files are made when they are missing and reused when not.
+# A phase asked for by name still needs the fixture shapes it checks. Older
+# indexed-error fixtures had no legacy container to recover after a handoff.
 want() {
     [ -z "$phase" ] || [ "$phase" = "$1" ]
 }
 
 printf '%s\n' '== native'
 if [ -f "$work/native.json" ] &&
-    { ! want cache-only || grep -q '"cache_only":' "$work/native.json"; } &&
+    { ! want cache-only || grep -Fq '"legacy.lrprev"' "$work/native.json"; } &&
     { ! want legacy || grep -q '"legacy":' "$work/native.json"; }; then
     printf '%s\n' "reusing $work/native.json"
 else

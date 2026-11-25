@@ -40,6 +40,19 @@ shared synthetic cases as CI: the page's entry against the native one, the
 review flow, the export flow held to the CLI on identical bytes, and the receipt
 with its reports and clipboard diagnostics.
 
+After building the static artifact, run the ZIP parity and browser practice
+checks against that artifact:
+
+```sh
+python scripts/check-browser-artifact.py target/app-static
+node scripts/drive-browser.mjs target/app-static --check-legacy-practice
+```
+
+The artifact verifier requires a build from a clean checkout. The practice check
+opens the sample from the packaged guide, chooses legacy recovery at the
+missing-index result, and saves to the same destination twice. The browser
+supplies the destination handle at the picker boundary.
+
 For an on-disk synthetic catalog, generate the cases into a fresh directory:
 
 ```sh
@@ -54,11 +67,11 @@ preview. Keep generated catalogs in scratch or `target`.
 
 ## Writing a browser check
 
-A check is one module, `scripts/check-<name>.mjs`, exporting `async (send) => numbers`:
-`send` is the DevTools call, and the object it returns is printed as the phase's
-result. `scripts/drive-browser.mjs` gives it a `--check-<name>` flag and
-`scripts/browser-app.sh` runs it as a phase; that script's header names the
-phases it already has.
+A browser check exports an `async (send) => numbers` function in
+`scripts/check-<name>.mjs`. `send` is the DevTools call, and the driver prints
+the returned counts. `scripts/browser-app.sh` lists and runs the checks based on
+native fixtures. The packaged practice check runs directly against the staged
+artifact as described above.
 
 Iterate against a fixture directory rather than a rebuild, keeping that directory
 at one path so the next session reuses it too:
@@ -68,7 +81,7 @@ sh scripts/browser-app.sh --work target/browser-work --only receipt
 ```
 
 `--work` reuses a directory — the native run, the vaults and the CLI's own files
-are made only when missing — and `--only` runs one phase. Both leave the wasm
+are reused when the requested fixture is present — and `--only` runs one phase. Both leave the wasm
 build alone, because a page is only worth measuring against a module built from
 the Rust in front of you: the build runs on every invocation, which is the
 slowest step and the one this paragraph used to imply was skipped. Both leave the
@@ -88,8 +101,7 @@ Or run one phase directly, which needs no build and no fixture regeneration:
 node scripts/drive-browser.mjs target/browser-work --check-review
 ```
 
-The driver's `--check-<name>` flags are the phases `browser-app.sh` runs, and
-`--attach <port>` points any of them at a Chrome somebody started by hand.
+Use `--attach <port>` to point the driver at a Chrome somebody started by hand.
 
 Three facts about headless Chromium cost a debugging session each the first
 time, and the platform does not say any of them out loud:
