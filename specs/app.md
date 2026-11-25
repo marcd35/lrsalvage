@@ -5,7 +5,7 @@ title: "app: browser scan, review and export"
 status: draft
 parent: architecture
 depends-on: [cache-recovery, catalog, previews-db, plan, snapshot, fs, error, extract, exif, model, report]
-references: [adr-0012-two-release-lines, browser-spike, glossary]
+references: [adr-0012-two-release-lines, adr-0014-recover-legacy-containers-without-an-index, browser-spike, glossary]
 ---
 
 # app
@@ -197,6 +197,9 @@ legacy, modern, and mixed layouts. The catalog-backed browser and CLI output
 parity remains a release check.
 
 ## Recover from a cache without an index
+
+[ADR 0014](../docs/adr/0014-recover-legacy-containers-without-an-index.md)
+records the decisions behind this operation.
 
 The start screen offers **Recover from a cache without an index…** as its own
 choice (#198), beside the two that read an index. It asks for one cache folder

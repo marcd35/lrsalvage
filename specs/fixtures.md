@@ -524,3 +524,25 @@ broken chunk boundary. A damaged container has no usable level, and the last
 contains only a recognized non-JPEG payload. These synthetic cases establish
 the browser's behavior on those shapes. See the [practice and distribution
 spec](app.md#practice-and-distribution) for the user flow.
+
+## Real indexless legacy cache verification
+
+[Issue #200](https://github.com/marcd35/lrsalvage/issues/200) tracks the pending
+local verification run for #196 against the maintainer's indexless legacy
+cache from the
+[read-only spike](../docs/format-notes.md#15-legacy-cache-without-an-index).
+Configure the cache path locally. The run needs only this cache and a fresh
+destination outside it.
+
+Use the browser app's explicit legacy recovery operation to scan the entire
+cache and save the default selection. Reconcile all discovered containers
+against the scan outcomes. For each usable container, compare the saved name
+and JPEG size and digest with the selected level's source bytes. A second
+save to the same destination must find those files already recovered. Compare
+the receipt with the files verified on disk.
+
+Record the exact app build, browser, inventory and aggregate scan and save
+counts. Use the spike as the baseline for inventory and structural evidence.
+Explain any difference in usability under the shipped JPEG certification.
+Keep paths, filenames and image data local. Run regular CI and the downloadable
+practice sample on synthetic data.

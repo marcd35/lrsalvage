@@ -202,6 +202,8 @@ that is deliberate — `previews.db` is authoritative for dimensions, the profil
 name and the mapping (ADR 0002), so a second source of the same facts would only
 create disagreement to resolve. Do not describe it as part of the read path.
 
+### 1.5 Legacy cache without an index
+
 **A legacy cache with no index is still readable by these lengths** (**reported**
 — the probe recorded in #196, not re-run for #198). One real legacy cache whose
 `previews.db` was lost was inspected with the files opened read-only: 3,848
@@ -210,6 +212,37 @@ held at least one `level_N` chunk with valid SOF dimensions and complete framing
 14,231 such levels in all. That is a container and level count. It establishes no
 original image identity and decodes no pixels, so it is evidence that containers
 survive an index rather than evidence about which photograph each one held.
+
+#### Lightroom Classic recovery evidence
+
+**Reported.** After opening an upgraded copy of the old catalog, the maintainer
+saw 1,866 gray placeholders and zero visible previews. A read-only directory
+listing **verified** that the catalog's same-basename cache contained
+`previews.db` and no preview payloads. The legacy cache from the spike above
+had a different basename and no `previews.db`. Which cache Lightroom opened, whether it could
+read an index, and any association between the probed containers and the
+catalog entries remain **unverified**.
+
+**Reported by Adobe.** Lightroom Classic 13.3 and later reorganize existing
+previews when upgrading a catalog from 13.2 or earlier. Adobe documents a
+different workflow for gray thumbnails on Windows. Its first step after a
+restart fails is to remove `previews.db` and `root-pixels.db`, then restart. If
+that fails, Adobe says to remove the entire standard preview cache and restart
+again. Adobe describes previews rebuilding as folders are opened and warns
+that deleting the cache loses previews for archived images. These instructions
+document migration and regeneration. Reindexing surviving `.lrprev` files and
+associating them with catalog entries after index loss remain **unverified**.
+[Adobe catalog FAQ](https://helpx.adobe.com/lightroom-classic/desktop/technical-support/workflow-issues/catalog-issues/catalog-faq-lightroom.html)
+[Adobe gray thumbnail troubleshooting](https://helpx.adobe.com/lightroom-classic/desktop/kb/lightroom-gives-error-preview-cache.html)
+[Adobe cache regeneration guidance](https://helpx.adobe.com/lightroom-classic/desktop/technical-support/performance-guidelines/optimize-performance-lightroom.html)
+
+**Verified in the distributed script files.** Both Adobe extraction downloads
+contain compiled Lua with symbols for the active catalog, its preview folder,
+selected image IDs, and a preview UUID/digest lookup by image ID. This matches
+Adobe's documented workflow, which exports available previews for selected
+catalog photos. The script files were inspected without running them. Recovery
+from a standalone indexless cache remains **unverified** in Lightroom Classic.
+[Adobe preview extraction instructions and downloads](https://helpx.adobe.com/lightroom-classic/desktop/kb/extract-previews-for-lost-images-lightroom.html)
 
 ---
 
