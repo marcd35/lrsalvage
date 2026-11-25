@@ -73,7 +73,9 @@ jobs:
         if: github.event_name == 'pull_request'
         run: |
           google-chrome --version
-          CHROME="$(command -v google-chrome)" sh scripts/check.sh browser
+          export CHROME="$(command -v google-chrome)"
+          sh scripts/check.sh browser
+          node scripts/drive-browser.mjs target/app-static --check-legacy-practice
       - uses: actions/upload-artifact@v7
         with:
           name: browser-app-static

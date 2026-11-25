@@ -62,6 +62,9 @@ export function mount(document) {
   const result = el('result');
   const headline = el('headline');
   const causes = el('causes');
+  const legacyHandoff = el('legacy-handoff');
+  const legacyIndexProblem = el('legacy-index-problem');
+  const legacyPickerStatus = el('legacy-picker-status');
   const checked = el('checked');
   const roots = el('roots');
   const rootsSection = el('roots-section');
@@ -156,7 +159,7 @@ export function mount(document) {
     stopButton.hidden = true;
     try {
       const handle = await loadPractice(name);
-      if (name === 'cache-only') {
+      if (name === 'cache-only' || name === 'legacy') {
         await runScan(cacheSource(handle));
         return;
       }
@@ -169,8 +172,8 @@ export function mount(document) {
     }
   }
 
-  function cacheSource(handle, mode = 'cache-only') {
-    return { mounts: [{ path: '/cache', handle }], catalog: null, cache: '/cache', mode };
+  function cacheSource(handle, mode = 'cache-only', catalogMounts = []) {
+    return { mounts: [{ path: '/cache', handle }, ...catalogMounts], catalog: null, cache: '/cache', mode };
   }
 
   /**
@@ -194,14 +197,14 @@ export function mount(document) {
   }
 
   /** The indexless mode: the same picker, read for `.lrprev` files instead. */
-  async function chooseLegacyCache(message) {
+  async function chooseLegacyCache(message, catalogMounts = []) {
     const answer = await pickFolder({ id: 'lrsalvage-cache', mode: 'read' });
     if (answer.cancelled) {
       say(message, 'Nothing was chosen, so nothing changed.');
     } else if (answer.refused) {
       say(message, `This browser refused the folder: ${answer.refused.message}`);
     } else {
-      await runScan(cacheSource(answer.handle, 'legacy'));
+      await runScan(cacheSource(answer.handle, 'legacy', catalogMounts));
     }
   }
 
@@ -237,20 +240,19 @@ export function mount(document) {
     await chooseRecoveryCache(headline);
   }
 
-  /**
-   * Reuse the cache a failed indexed run was given, this time without its index.
-   *
-   * That is the one failure that names a next step rather than a dead end: the
-   * containers are still in the folder, and the mode that reads them needs no
-   * `previews.db` at all.
-   */
   async function recoverLegacyAfterError() {
-    const handle = await cacheHandleOf(state.source);
+    const previous = state.source;
+    if (!previous) return;
+    const handle = await cacheHandleOf(previous);
+    if (state.source !== previous) return;
+
+    // Keep the catalog folder protected by the destination overlap checks.
+    const catalogMounts = previous.mounts.filter(({ path }) => path === '/source');
     if (handle) {
-      await runScan(cacheSource(handle, 'legacy'));
+      await runScan(cacheSource(handle, 'legacy', catalogMounts));
       return;
     }
-    await chooseLegacyCache(headline);
+    await chooseLegacyCache(legacyPickerStatus, catalogMounts);
   }
 
   async function chooseCatalogue() {
@@ -449,10 +451,11 @@ export function mount(document) {
     el('cache-notice').hidden = !cacheOnly || !report.ok || !report.photos.length;
     el('recover-cache-after-error').hidden = report.ok || cacheOnly ||
       !['open', 'copy'].includes(report.problem.stage);
-    // A cache whose index is missing, unreadable or unsupported still holds its
-    // containers, so that failure offers the mode that reads them (#198).
-    el('recover-legacy-after-error').hidden = report.ok ||
-      report.problem.stage !== 'cache-index';
+    const index = mode === 'catalog' && report.ok ? report.index.problem : null;
+    const indexFailure = !report.ok && ['cache-index', 'index'].includes(report.problem.stage);
+    legacyHandoff.hidden = !index && !indexFailure;
+    legacyIndexProblem.hidden = !index;
+    legacyPickerStatus.hidden = true;
     el('scan-details').hidden = !report.ok;
     if (!report.ok) {
       log.viewFailure(report.problem.stage, report.problem.kind);
@@ -492,10 +495,7 @@ export function mount(document) {
       fact('Unsupported', counted(unsupported));
       if (containers === 0) {
         causes.append(sentence(
-          'No .lrprev file was found under that folder. This mode reads containers only, ' +
-            'so a cache that keeps standalone level files beside its previews.db has nothing ' +
-            'for it. If you picked the folder holding the cache rather than the cache itself, ' +
-            'choose the .lrdata folder and scan again.',
+          'No .lrprev file was found. Check that you chose the matching Previews.lrdata folder.',
         ));
       } else if (invalid || unsupported) {
         causes.append(sentence(
@@ -538,18 +538,14 @@ export function mount(document) {
     // Why, in counts. Each of these is a different nothing, and a page that says
     // only "no previews found" has not answered the question.
     const reasons = [];
-    const index = report.index.problem;
-    if (index && index.kind === 'missing') {
-      reasons.push(
+    if (index?.kind === 'missing') {
+      legacyIndexProblem.textContent =
         'There is no previews.db in that folder. Lightroom’s preview index is what ' +
-          'says which preview belongs to which photo, so without it nothing can be matched.',
-      );
+        'says which preview belongs to which photo, so without it nothing can be matched.';
     }
-    if (index && index.kind === 'unreadable') {
-      reasons.push(
-        `previews.db is there, and it could not be read: ${index.text}. A preview folder ` +
-          'from a backup that was interrupted usually looks like this.',
-      );
+    if (index?.kind === 'unreadable') {
+      legacyIndexProblem.textContent =
+        'previews.db is there, and it could not be read: ' + index.text;
     }
     if (report.cache.layout === 'none') {
       reasons.push(report.index.present
@@ -733,13 +729,10 @@ function failureSentence(stage, kind) {
   }
   if (stage === 'cache-index') {
     return {
-      missing: 'This folder has no previews.db. Choose the preview cache folder that contains ' +
-        'it, or recover its previews without an index — that mode reads the .lrprev ' +
-        'containers the folder still holds.',
-      unreadable: 'The preview index could not be read. Try another copy of the preview cache, ' +
-        'or recover its previews without an index.',
-      unsupported: 'This preview index has an unsupported schema. Recovering its previews ' +
-        'without an index reads the containers beside it.',
+      missing: 'This folder has no previews.db. If you have a matching preview cache with ' +
+        'its index, try that folder.',
+      unreadable: 'The preview index could not be read. Try another copy of the preview cache.',
+      unsupported: 'This preview index has an unsupported schema.',
     }[kind];
   }
   if (kind === 'catalog-changed') {

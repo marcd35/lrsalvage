@@ -190,16 +190,26 @@ bytes in each folder the run used. The local report CSVs and manifest identify t
 shareable verification report and copied diagnostics use aggregate counts
 without paths, filenames, or cache identities.
 
+The indexed cache-only practice case shows a healthy pyramid, a smaller
+surviving level, and a missing preview. The native and browser product checks
+compare generated filenames, JPEG bytes, scan counts, and batch outcomes on
+legacy, modern, and mixed layouts. The catalog-backed browser and CLI output
+parity remains a release check.
+
 ## Recover from a cache without an index
 
 The start screen offers **Recover from a cache without an index…** as its own
 choice (#198), beside the two that read an index. It asks for one cache folder
 and nothing else: no catalog, no `previews.db`, no index copy and no open. A
-run of the indexed mode that fails at `cache-index` — missing, unreadable or
-unsupported — offers this mode with the folder it already holds, because a cache
-whose index is gone still carries its containers; the offer is one button on the
-result and reuses the handle rather than asking for the folder again. The
-indexed mode's own behaviour is unchanged when the index is there.
+run of the indexed mode that fails at `cache-index` (missing, unreadable, or
+unsupported) and a catalog-backed scan that reports an index problem or cannot
+copy the index each offer **Recover from this cache without an index** beside
+the explanation. The catalog-backed scan still shows its existing result. The offer explains that
+legacy recovery reads `.lrprev` containers. Focus starts on the result heading
+and the button is reachable by keyboard. Choosing the button starts the legacy
+scan with the handle already held by the page, or opens a folder picker when
+that handle is unavailable. Any catalog folder already selected remains protected
+by the destination checks.
 
 The scan is the [cache recovery module](modules/cache-recovery.md)'s indexless
 plan. The page reports one outcome per `.lrprev` container the walk found:
@@ -214,12 +224,6 @@ destination conflict choices, the already-recovered outcome, the receipt
 and the destination reconciliation. The three report files come from the same
 encoders under a `legacy` mode word and the container counts, with
 `report.csv`'s own frozen column set (`[report](modules/report.md)`).
-
-The downloadable and in-app practice case contains only a synthetic cache.
-It shows a healthy pyramid, a smaller surviving level, and a missing preview.
-The native and browser product checks compare generated filenames, JPEG bytes,
-scan counts, and batch outcomes on legacy, modern, and mixed layouts. The
-catalog-backed browser and CLI output parity remains a release check.
 
 ## Preview review
 
@@ -437,10 +441,17 @@ hands that directory to the same folder inspection and scan as a picked
 backup. A lock serializes installation of each revision. Once installed, its
 files stay available to other tabs using the same sample.
 
-The shared fixture builder generates the four catalog-backed downloadable ZIPs from
-synthetic catalogs and redistributable JPEGs. The ZIP and in-app route for each
-case use the same catalog and cache. The native app scan checks each case
-during packaging.
+The shared fixture builder generates the catalog-backed and cache-only samples
+from synthetic data and redistributable JPEGs. For each sample, packaging uses
+one set of files for the ZIP and for the in-app route. The native app scan checks
+each case during packaging.
+
+The legacy practice sample starts in indexed cache-only recovery, which reports
+the missing index. The user can then choose legacy recovery. Its ZIP contains the
+same four containers with no catalog or index. To rehearse the handoff from the
+ZIP, extract it and pick the sample folder with **Recover from preview cache**.
+See the [fixture spec](fixtures.md#legacy-app-recovery-without-an-index) for the
+container composition.
 
 [The static builder](../scripts/build-browser-app.py) packages tracked runtime
 assets, builds the WebAssembly module, and writes the app and core versions and
@@ -505,7 +516,14 @@ the deployed candidate.
   empty result offering no save, the missing-index hand-off into this mode, and
   an unreadable folder reported as an inventory error rather than a partial
   list. The published files and copied diagnostics are read back and held to
-  `legacy` and the four container counts.
+  `legacy` and the four container counts. The browser gate also checks both
+  catalog-backed index findings, a refused index copy, and all three indexed
+  cache-only failures, then
+  exercises the legacy handoff without a second source pick.
+- The packaged product check follows the guide's sample link through the error,
+  the handoff, and two saves to the same destination. It checks selected
+  dimensions, generated names, JPEG bytes, and the reconciled receipt. The
+  artifact verifier compares the ZIP with the in-app sample files.
 - `scripts/check-scan-progress.mjs` is the scanning readout's phase of that
   script (`#185`). It drives the page's own progress module with made-up reports
   — the range and its maximum, the 99% ceiling, the estimate's warm-up and its

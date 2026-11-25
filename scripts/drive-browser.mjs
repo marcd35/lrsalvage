@@ -27,7 +27,7 @@
 import { createServer } from 'node:http';
 import { checkExport } from './check-export.mjs';
 import { checkCacheOnly } from './check-cache-only.mjs';
-import { checkLegacy } from './check-legacy.mjs';
+import { checkLegacy, checkLegacyPractice } from './check-legacy.mjs';
 import { checkReceipt } from './check-receipt.mjs';
 import { checkPreviewReview } from './check-preview-review.mjs';
 import { checkScanProgress, checkScanProgressFixture } from './check-scan-progress.mjs';
@@ -70,9 +70,10 @@ const CHROME_CANDIDATES = [
 function usage(message) {
   if (message) console.error(message);
   console.error(
-    `usage: node scripts/drive-browser.mjs <out-dir> [--chrome <path>] [--timeout <s>] [--attach <port>] [--verbose] [--page <path>] [--check-review|--check-export|--check-receipt|--check-scan-progress|--check-scan-progress-fixture|--check-cache-only|--check-legacy]\n` +
+    `usage: node scripts/drive-browser.mjs <out-dir> [--chrome <path>] [--timeout <s>] [--attach <port>] [--verbose] [--page <path>] [--check-review|--check-export|--check-receipt|--check-scan-progress|--check-scan-progress-fixture|--check-cache-only|--check-legacy|--check-legacy-practice]\n` +
       `  --page defaults to ${PARITY_PAGE}; the app's page is ${APP_PAGE}\n` +
       '  --check-scan-progress-fixture needs <out-dir> to hold a vault (fixture.json and its files);\n' +
+      '  --check-legacy-practice needs the packaged site from build-browser-app.py;\n' +
       '  the other product checks need the native.json a vault-app run writes',
   );
   process.exit(2);
@@ -90,6 +91,7 @@ let productCheck = null;
 let productLabel = '';
 /** A whole scan over a supplied vault needs no native run to compare against. */
 let needsNative = true;
+let packaged = false;
 for (let index = 0; index < args.length; index += 1) {
   const arg = args[index];
   if (arg === '--chrome') chromePath = args[++index];
@@ -107,6 +109,11 @@ for (let index = 0; index < args.length; index += 1) {
   }
   else if (arg === '--check-cache-only') productCheck = checkCacheOnly;
   else if (arg === '--check-legacy') productCheck = checkLegacy;
+  else if (arg === '--check-legacy-practice') {
+    productCheck = checkLegacyPractice;
+    needsNative = false;
+    packaged = true;
+  }
   else if (arg === '--page') {
     // A leading slash is optional: `sh` on this machine rewrites an argument that
     // begins with one into a Windows path, so the script passes it without.
@@ -116,11 +123,12 @@ for (let index = 0; index < args.length; index += 1) {
   else usage(`unexpected argument: ${arg}`);
 }
 if (out === null) usage();
-if (productCheck) pagePath = APP_PAGE;
+if (productCheck) pagePath = packaged ? '/' : APP_PAGE;
 
 const chrome = chromePath ?? CHROME_CANDIDATES.find((candidate) => existsSync(candidate));
 if (!chrome) usage(`no Chrome found; set CHROME to one, or pass --chrome <path>`);
 if (needsNative && !existsSync(join(out, 'native.json'))) usage(`${out} holds no native.json`);
+if (packaged && !existsSync(join(out, 'recovery.html'))) usage(`${out} holds no packaged recovery.html`);
 
 const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
 
@@ -128,7 +136,7 @@ async function main() {
   const server = await serve(out);
   const port = server.address().port;
   const page = `http://127.0.0.1:${port}${pagePath}${verbose ? '?verbose' : ''}`;
-  console.log(`serving ${ROOT} (crates/ only) and ${out} on ${page}`);
+  console.log(`serving ${packaged ? '' : ROOT + ' (crates/ only) and '}${out} on ${page}`);
 
   if (attachPort) {
     // A Chrome somebody else started: open a tab on this run's page and drive it.
@@ -183,8 +191,10 @@ function serve(root) {
     const path = decodeURIComponent(url.pathname);
     // `/` is the parity page, which is what this driver was written for; a run
     // that names another page does so with `--page`.
-    const file = path === '/' || path === '/index.html' ? PARITY_PAGE.slice(1) : path.slice(1);
-    const roots = [ROOT, root];
+    let file = path.slice(1);
+    if (path === '/' || path === '/index.html') file = packaged ? 'index.html' : PARITY_PAGE.slice(1);
+    if (packaged && path === '/recovery') file = 'recovery.html';
+    const roots = packaged ? [root] : [ROOT, root];
     for (const base of roots) {
       // The checkout answers only for `crates/`: this server is what serves two
       // pages' modules, and a checkout's `.env` is not one of them.

@@ -500,7 +500,9 @@ levels. The fixture has more valid previews than the batch writer can schedule
 at once, so Stop/Continue can leave pending work and finish it on continuation.
 The browser product test compares the generated names and JPEG SHA-256 values
 against the native run and reads the receipt and manifest against the saved
-files. It supplies accepted handles at the picker boundary.
+files. It supplies accepted handles at the picker boundary. Each index-error
+fixture also holds one usable legacy container so the browser can exercise
+the explicit handoff from the indexed error.
 
 ## Legacy app recovery without an index
 
@@ -513,3 +515,12 @@ explicit paths outside the shard folders.
 which is what makes the second and the last of those possible without a writer of
 their own. The browser product test mounts the same fixtures and compares the
 saved names and bytes with the native run, one case at a time.
+
+
+The packaged legacy practice sample (#199) also uses the shared vault builder.
+Its ZIP and in-app files carry only four containers. One holds multiple
+complete JPEG sizes, and a relocated one holds a complete thumbnail before a
+broken chunk boundary. A damaged container has no usable level, and the last
+contains only a recognized non-JPEG payload. These synthetic cases establish
+the browser's behavior on those shapes. See the [practice and distribution
+spec](app.md#practice-and-distribution) for the user flow.
