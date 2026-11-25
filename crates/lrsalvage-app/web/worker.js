@@ -21,7 +21,7 @@
 import { installBridge } from './seam/lrsalvage-fs.js';
 import init, {
   pause_store, poll_install, read_preview, scan, scan_cache, scan_legacy,
-  start_install, export_paths, prepare_export, existing_export, export_reports,
+  start_install, preview_modified, export_paths, prepare_export, existing_export, export_reports,
   verification_report, versions,
 } from './pkg/lrsalvage_app.js';
 
@@ -58,7 +58,7 @@ self.onmessage = async (event) => {
     }
     return;
   }
-  if ([ 'export-paths', 'export-jpeg', 'export-existing', 'export-reports', 'verification-report' ].includes(message?.type)) {
+  if ([ 'preview-modified', 'export-paths', 'export-jpeg', 'export-existing', 'export-reports', 'verification-report' ].includes(message?.type)) {
     const { request, id, flat, outcomes } = message;
     try {
       if (message.type === 'verification-report') {
@@ -85,6 +85,7 @@ self.onmessage = async (event) => {
       } else {
         let value;
         switch (message.type) {
+          case 'preview-modified': value = preview_modified(message.ids); break;
           case 'export-paths': value = export_paths(flat); break;
           case 'export-existing': value = existing_export(id, flat, message.bytes); break;
           case 'export-reports':

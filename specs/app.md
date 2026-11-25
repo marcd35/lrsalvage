@@ -176,8 +176,8 @@ previews. Before either save action the page explains that the JPEGs are preview
 and that originals, original filenames and folders, and catalog metadata are
 unavailable. Use the core's deterministic filenames and write the JPEGs byte
 for byte. An occupied path counts as already recovered only when its bytes
-match the selected preview. A mismatch leaves the file in place and counts
-as a conflict.
+match the selected preview. Both matching and conflicting files use the
+destination conflict prompt.
 
 Use the same destination checks and batch writer. Stop lets in-flight writes
 settle, and Continue keeps the selection, paths, and destination fixed. The
@@ -207,7 +207,7 @@ name is the core's generated one, and the page never invents one.
 
 Everything the indexed mode does after review is shared unchanged: the
 destination checks in both directions, the batch writer, Stop and Continue, the
-no-overwrite rule with its already-recovered and conflict outcomes, the receipt
+destination conflict choices, the already-recovered outcome, the receipt
 and the destination reconciliation. The three report files come from the same
 encoders under a `legacy` mode word and the container counts, with
 `report.csv`'s own frozen column set (`[report](modules/report.md)`).
@@ -224,7 +224,18 @@ catalog-backed browser and CLI output parity remains a release check.
   page receives one row per catalog image, including photos with no preview.
   IDs travel as strings so JavaScript preserves the full SQLite integer.
 - Ready and small previews use the plan's default 640 px long-edge floor.
-  The checked set starts with the ready previews. Search, grouping, sorting,
+  The checked set starts with the ready previews. The **Resolution** dropdown
+  lists each distinct JPEG width and height. A resolution starts visible if any
+  preview at that size starts checked. Changes apply immediately, and **Show all
+  resolutions** toggles all sizes. Photos without a preview remain eligible for
+  display. Filtering leaves the checked set and batch selection intact.
+  **Date captured** (catalog mode) uses the capture date from catalog metadata.
+  **Preview file modified** uses the modification time of the file holding the
+  selected JPEG, including its container when applicable. The first use of
+  that sort requests the timestamps in batches from the completed review.
+  Both sorts put newer
+  dates first within the current groups, unknown dates last, and ties in
+  filename order. Search, grouping, sorting,
   collapsing folders and switching views leave that set intact. Bulk inclusion
   applies to previews visible within the current filters and open groups.
 - Gallery and List share the same rows and selection. The optional Preview pane
@@ -276,11 +287,17 @@ catalog's folder, which is the handle the page already holds; a platform that
 refuses to open a read-write picker there is retried once without it, since the
 start location is a convenience and never a failure. The worker uses the shared extraction preparation
 for every JPEG. The page commits the bytes through a writable file stream and
-records success after close. The app verifies existing JPEGs with the same marker and dimensions check as
-native extraction. It reports matching files as already recovered. The app refuses foreign files it
-finds at a planned path. The browser lock coordinates tabs of the app. Other
-applications can change the destination independently. A one-off
-save uses the active layout and leaves the checked set alone. Its destination
+records success after close. Before writing, both save actions list occupied
+planned paths and ask for **Overwrite**, **Skip**, or **Keep both**. **Skip** has
+initial focus and leaves existing entries in place. An existing file counts as
+already recovered only when it passes the mode's verification. An unverified
+file skipped by choice is omitted. **Overwrite** replaces the listed files
+after checking that they still match the contents shown for approval.
+**Keep both** saves to the next available numbered name outside the paths
+reserved by the batch. A directory at a planned file path cannot be
+overwritten. The browser lock coordinates tabs of the app. Other applications
+can change the destination independently. A one-off save uses the active
+layout and leaves the checked set alone. Its destination
 is suggested for the batch. A remembered handle requires another permission
 request from a user gesture when reopened.
 
@@ -293,8 +310,10 @@ it, and stopping is said in words rather than implied by a stopped bar. One poli
 live region announces each quarter, completion and a stop request — never each
 write, which on a 2,659-file batch would be thousands of announcements. Stop
 leaves pending work unscheduled and
-allows in-flight writes to settle. Continue uses the same batch and committed
-paths. The page surfaces exceptions by relative output path and keeps successful
+allows in-flight writes to settle. A new conflict stops scheduling until
+in-flight writes settle, then asks again. Cancel before the first write
+returns to review. Cancel at a later prompt keeps completed files and leaves
+Continue available. Continue uses the same batch and committed paths. The page surfaces exceptions by relative output path and keeps successful
 writes in the open run. A finished batch writes the reports the next section
 lists into its destination. An occupied report name gets the next free number.
 
@@ -306,37 +325,28 @@ button that opened it, which is the browser's own behaviour for a modal dialog.
 
 ## Receipt, reports and diagnostics
 
-The receipt is a section of the result screen rather than a stage of its own: it
-appears when the first file commits and stays until another recovery starts, so a
-run that saved one photo ends with the same account a batch does, and a stopped
-batch shows its receipt with the continuation beside it. It leads with the count
-of catalog images the run **saved** — one per image, however many times a one-off
-save and a batch reached it — and names beneath it the images already recovered
-at their planned paths, the images it could not save, and how many files the
-folder answered for when it was read back. The count is taken from commits: a
-file counts when its write has closed, never when it was planned. Both version
-numbers a bug report quotes sit on the receipt, in ADR 0012 D2's form. When a
-batch finishes the receipt's heading takes focus, and it keeps the page's focus
-ring instead of suppressing it: the result title behaves the same way, a
-programmatic target with no indicator is worse than a firm one, and changing both
-is one piece of work rather than half of it (#169, test drive).
+The receipt gives successful saves one headline with the count and the
+destination folder name. It adds a breakdown for already recovered files,
+files skipped by choice, save failures, or newly numbered files. A partial
+batch states how many selected files were verified. It lists exceptions by
+output path and explains when it cannot read the destination. **Show file list**
+reveals saved files and verified existing files under their actual output names.
+The receipt's diagnostic counts count each catalog image once across one-off
+saves and batches.
 
-Reconciliation reads the destination instead of trusting the run. When a batch
-settles the page lists the destination back through the same handle and compares
-the committed paths with what is there, naming a planned path that is missing and
-a foreign file where a plan expected one; a read that cannot be finished — a
-disconnected folder, a lost grant — says so instead of claiming the files.
-**View saved files** shows that listing: the files this run saved or found
-already recovered, grouped by the catalog folder they came from, with names and
-byte sizes. A directory handle carries a name and nothing else, so the page
-cannot learn a folder's path or open one in Explorer; the receipt names the
-chosen folder, offers the name for copying, and explains how to find it there.
-The prototype's *Open folder* has no page equivalent and the page does not claim
-one.
+A completed batch that saved at least one file and verified all selected files
+shows a dialog such as **5 of 5 files recovered in 2.4 s**, with the destination
+folder name. **OK** dismisses it and returns focus to the receipt. The time
+covers active save work through destination verification. It excludes time
+waiting for conflict choices, time between Stop and Continue, and report
+writing. A batch consisting entirely of verified existing files shows its
+result in the receipt.
 
 The destination receives the CLI's three report files — `report.csv` from the
 plan, `extract.csv` from the file outcomes, `manifest.json` from both — and each
-takes the next free number when its name is occupied. The receipt links the files
+takes the next free number when its name is occupied. The outcome CSV and
+manifest report the numbered JPEG name used by **Keep both**. A user-skipped
+unverified collision has the outcome `omitted`. The receipt links the files
 it actually wrote, opening each from the bytes read back through the handle, and
 reports one that failed to write as a failure rather than as a link. The
 path-free verification report is offered separately, because it is the artifact a

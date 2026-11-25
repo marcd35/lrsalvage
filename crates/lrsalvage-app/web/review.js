@@ -14,6 +14,12 @@ export function mountReview(document, exports) {
   const layout = el('layout');
   const thumbnails = el('thumbnails');
   const selectedOnly = el('selected');
+  const sort = el('sort');
+  const modifiedOption = sort.querySelector('[value="modified"]');
+  const resolution = el('resolution');
+  const resolutionValue = el('resolution-value');
+  const allResolutions = el('resolution-all');
+  const resolutionSizes = el('resolution-sizes');
   const pane = el('pane');
   const paneToggle = el('pane-toggle');
   const dialog = el('dialog');
@@ -24,6 +30,7 @@ export function mountReview(document, exports) {
   let photos = [];
   let cacheOnly = false;
   let checked = new Set();
+  const resolutionChecks = new Map();
   let collapsed = new Set();
   let displayed = [];
   let selectedPhoto;
@@ -31,6 +38,8 @@ export function mountReview(document, exports) {
   let returnFocus;
   let dialogOrder = [];
   let read;
+  let requestModified;
+  let loadingModified = false;
   let clearPaneImage;
   let clearLoupeImage;
   const inFlight = new Map();
@@ -81,9 +90,25 @@ export function mountReview(document, exports) {
   };
 
   search.addEventListener('input', renderRows);
-  for (const control of [el('sort'), el('group'), selectedOnly]) {
+  sort.addEventListener('change', applySort);
+  for (const control of [el('group'), selectedOnly]) {
     control.addEventListener('change', renderRows);
   }
+  allResolutions.addEventListener('change', () => {
+    for (const checkbox of resolutionChecks.values()) checkbox.checked = allResolutions.checked;
+    updateResolutionSummary();
+    renderRows();
+  });
+  resolution.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && resolution.open) {
+      event.preventDefault();
+      resolution.open = false;
+      resolution.querySelector('summary').focus();
+    }
+  });
+  document.addEventListener('click', (event) => {
+    if (resolution.open && !resolution.contains(event.target)) resolution.open = false;
+  });
   layout.addEventListener('change', setLayout);
   thumbnails.addEventListener('change', setLayout);
   paneToggle.addEventListener('change', updatePane);
@@ -137,8 +162,15 @@ export function mountReview(document, exports) {
     clearLoupeImage = null;
     groups.replaceChildren();
     photos = [];
+    requestModified = null;
+    loadingModified = false;
+    sort.removeAttribute('aria-busy');
+    modifiedOption.textContent = 'Preview file modified';
     displayed = [];
     checked.clear();
+    resolution.open = false;
+    resolutionChecks.clear();
+    resolutionSizes.replaceChildren();
     collapsed.clear();
     selectedPhoto = null;
     enlargedPhoto = null;
@@ -148,22 +180,61 @@ export function mountReview(document, exports) {
     inFlight.clear();
   }
 
-  function show(rows, readPreview, fromCache = false) {
+  function show(rows, scan, fromCache = false) {
     clear();
     cacheOnly = fromCache;
     el('group-control').hidden = cacheOnly;
-    el('sort').querySelector('[value="folder"]').hidden = cacheOnly;
-    if (cacheOnly && el('sort').value === 'folder') el('sort').value = 'name';
+    for (const value of ['folder', 'captured']) {
+      sort.querySelector('[value="' + value + '"]').hidden = cacheOnly;
+      if (cacheOnly && sort.value === value) sort.value = 'name';
+    }
     search.placeholder = cacheOnly ? 'Generated filename' : 'Name or original folder';
     photos = rows;
-    read = readPreview;
+    read = scan.preview;
+    requestModified = scan.previewModified;
     checked = new Set(photos.filter((photo) => photo.checked).map((photo) => photo.id));
     exports.select(checked);
+    mountResolutions();
     search.value = '';
     selectedOnly.checked = false;
     section.hidden = false;
     setLayout();
+    applySort();
+  }
+
+  function applySort() {
     renderRows();
+    if (sort.value === 'modified' && requestModified && !loadingModified) {
+      void loadModifiedDates();
+    }
+  }
+
+  async function loadModifiedDates() {
+    const current = photos;
+    const request = requestModified;
+    const previews = current.filter((photo) => photo.preview);
+    loadingModified = true;
+    sort.setAttribute('aria-busy', 'true');
+    modifiedOption.textContent = 'Reading preview modification dates…';
+    try {
+      // Let other worker requests run between filesystem batches.
+      for (let start = 0; start < previews.length; start += 64) {
+        const batch = previews.slice(start, start + 64);
+        const dates = await request(batch.map(({ id }) => id));
+        if (photos !== current) return;
+        batch.forEach((photo, index) => { photo.modified = dates[index]; });
+      }
+      requestModified = null;
+    } catch {
+      // A closed review discards its request. A live review can try again.
+    } finally {
+      if (photos === current) {
+        loadingModified = false;
+        sort.removeAttribute('aria-busy');
+        modifiedOption.textContent = 'Preview file modified';
+        if (sort.value === 'modified') renderRows();
+      }
+    }
   }
 
   function setLayout() {
@@ -171,10 +242,49 @@ export function mountReview(document, exports) {
     groups.dataset.thumbnailSize = thumbnails.value;
   }
 
+  function mountResolutions() {
+    const sizes = new Map();
+    for (const photo of photos) {
+      if (!photo.preview || !photo.size) continue;
+      const key = resolutionKey(photo.size);
+      sizes.set(key, { label: photo.size.join(' × '), visible: Boolean(sizes.get(key)?.visible || photo.checked) });
+    }
+
+    const ordered = [...sizes].sort(([, a], [, b]) => collator.compare(a.label, b.label));
+    for (const [key, size] of ordered) {
+      const label = element('label', '', '');
+      const checkbox = element('input', '', '');
+      checkbox.type = 'checkbox';
+      checkbox.checked = size.visible;
+      checkbox.addEventListener('change', () => {
+        updateResolutionSummary();
+        renderRows();
+      });
+      label.append(checkbox, size.label);
+      resolutionSizes.append(label);
+      resolutionChecks.set(key, checkbox);
+    }
+    el('resolution-control').hidden = sizes.size === 0;
+    updateResolutionSummary();
+  }
+
+  function updateResolutionSummary() {
+    const visible = [...resolutionChecks.values()].filter((checkbox) => checkbox.checked).length;
+    allResolutions.checked = visible === resolutionChecks.size;
+    allResolutions.indeterminate = visible > 0 && !allResolutions.checked;
+    resolutionValue.textContent = allResolutions.checked ? 'All sizes' : visible + ' of ' + resolutionChecks.size;
+  }
+
+  function newestFirst(a, b) {
+    if (a == null || b == null) return Number(a == null) - Number(b == null);
+    return Number(b > a) - Number(a > b);
+  }
+
   function filteredPhotos() {
     const term = search.value.trim().toLocaleLowerCase();
-    const order = el('sort').value;
+    const order = sort.value;
     return photos.filter((photo) =>
+      (!photo.preview || !photo.size || resolutionChecks.get(resolutionKey(photo.size))?.checked) &&
       (!selectedOnly.checked || checked.has(photo.id)) &&
       (!term || [photo.name, folderName(photo)].some((text) => text.toLocaleLowerCase().includes(term))),
     ).sort((a, b) => {
@@ -185,6 +295,7 @@ export function mountReview(document, exports) {
           : Number(!a.folder) - Number(!b.folder);
       }
       if (order === 'size') precedence = longEdge(b) - longEdge(a);
+      if (order === 'captured' || order === 'modified') precedence = newestFirst(a[order], b[order]);
       return precedence || collator.compare(a.name, b.name);
     });
   }
@@ -492,6 +603,10 @@ function folderName(photo) {
 
 function longEdge(photo) {
   return photo.preview ? Math.max(...photo.size) : 0;
+}
+
+function resolutionKey([width, height]) {
+  return width + ':' + height;
 }
 
 function sizeText([width, height]) {

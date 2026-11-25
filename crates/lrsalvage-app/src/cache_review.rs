@@ -154,6 +154,11 @@ impl CacheReview {
         }
     }
 
+    #[cfg(target_arch = "wasm32")]
+    pub(crate) fn modified_millis(&self, id: i64) -> Option<i64> {
+        self.chosen(id).ok()?.1.modified_millis()
+    }
+
     pub(crate) fn read(&self, id: i64) -> Result<Vec<u8>> {
         self.chosen(id)?.1.read()
     }
@@ -238,6 +243,7 @@ fn batch(outcomes: &[Outcome], confirmed_on_disk: Option<usize>) -> CacheBatch {
         saved: count(OutcomeStatus::Written),
         already_recovered: count(OutcomeStatus::Skipped),
         failed: count(OutcomeStatus::Failed),
+        omitted: count(OutcomeStatus::Omitted),
         confirmed_on_disk,
     }
 }

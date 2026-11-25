@@ -59,6 +59,16 @@ impl Review {
         Value::Array(self.plan.items.iter().filter_map(row).collect())
     }
 
+    #[cfg(target_arch = "wasm32")]
+    pub(crate) fn modified_millis(&self, id: i64) -> Option<i64> {
+        if let Some(cache) = &self.cache {
+            return cache.modified_millis(id);
+        }
+        let item = &self.plan.items[*self.by_id.get(&id)?];
+        let payload = item.payload.as_ref().filter(|_| has_preview(item))?;
+        lrsalvage_core::fs::modified_millis(payload.path())
+    }
+
     fn paths(&self, flat: bool) -> &[Option<PathBuf>] {
         self.layouts[usize::from(flat)].get_or_init(|| {
             self.plan.export_paths(
@@ -135,7 +145,17 @@ impl Review {
     /// `report.csv` is the scan's own plan, as the CLI's is; `extract.csv` and the
     /// manifest describe the selection this batch committed. Three files, one
     /// encoder each — the page writes the text and owns the file names.
-    pub fn reports(&self, flat: bool, mut outcomes: Vec<extract::Outcome>, now: u64) -> Value {
+    pub fn reports(&self, flat: bool, outcomes: Vec<extract::Outcome>, now: u64) -> Value {
+        self.reports_with_renames(flat, outcomes, &HashMap::new(), now)
+    }
+
+    pub(crate) fn reports_with_renames(
+        &self,
+        flat: bool,
+        mut outcomes: Vec<extract::Outcome>,
+        renamed: &HashMap<PathBuf, PathBuf>,
+        now: u64,
+    ) -> Value {
         if let Some(cache) = &self.cache {
             return cache.reports(&outcomes, now);
         }
@@ -148,12 +168,20 @@ impl Review {
             .iter()
             .map(|outcome| outcome.output.as_path())
             .collect();
-        let plan = self.plan.export_report(
-            Path::new(crate::OUTPUT_ROOT),
-            self.paths(flat),
-            &selected,
-            flat,
-        );
+        let root = Path::new(crate::OUTPUT_ROOT);
+        let paths: Vec<_> = self
+            .paths(flat)
+            .iter()
+            .map(|path| {
+                path.as_ref().map(|path| {
+                    path.strip_prefix(root)
+                        .ok()
+                        .and_then(|relative| renamed.get(relative))
+                        .map_or_else(|| path.clone(), |actual| root.join(actual))
+                })
+            })
+            .collect();
+        let plan = self.plan.export_report(root, &paths, &selected, flat);
         json!({
             "report.csv": report::csv(&self.plan),
             "extract.csv": extract::outcomes_csv(&outcomes),
@@ -219,6 +247,7 @@ fn row(item: &PlanItem) -> Option<Value> {
         "preview": available,
         "checked": available && item.selected,
         "size": item.width.zip(item.height),
+        "captured": image.xmp.as_ref().and_then(|xmp| xmp.capture_time.as_deref()),
         "declared": item.declared,
         "rotation": item.effective_orientation.degrees(),
     }))

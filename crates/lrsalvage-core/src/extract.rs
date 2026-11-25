@@ -61,6 +61,8 @@ pub enum OutcomeStatus {
     Written,
     /// An earlier run already produced a valid file; left alone.
     Skipped,
+    /// The browser user chose to keep a conflicting file that did not verify.
+    Omitted,
     /// `--dry-run`: nothing was written.
     DryRun,
     Failed,
@@ -71,6 +73,7 @@ impl OutcomeStatus {
         match self {
             OutcomeStatus::Written => "written",
             OutcomeStatus::Skipped => "skipped",
+            OutcomeStatus::Omitted => "omitted",
             OutcomeStatus::DryRun => "dry-run",
             OutcomeStatus::Failed => "failed",
         }

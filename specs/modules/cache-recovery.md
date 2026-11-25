@@ -77,6 +77,11 @@ walked, and `Payloads` per container or indexed pyramid measured, with the total
 known after the walk. A stop lands between two units and returns no partial plan.
 The plan retains the chosen payload and its digest, and the reader rechecks the
 bytes before returning them unmodified (`adr-0003-preserve-preview-bytes`). The
-module never writes recovered files. Standalone modern level files are not
+module never writes recovered files. Review can request the chosen payload
+file's modification time via the filesystem seam. The lookup happens on
+request and returns no timestamp when the file or its timestamp is unavailable.
+All previews in a container use that container's timestamp. The browser review
+check exercises the timestamp sort.
+Standalone modern level files are not
 candidates of the indexless mode: grouping and provenance for them is a separate
 design question, and the walk reads containers only.

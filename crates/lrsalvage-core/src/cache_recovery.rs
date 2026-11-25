@@ -330,6 +330,11 @@ pub struct Preview {
 }
 
 impl Preview {
+    /// Modification time of the file that contains this preview.
+    pub fn modified_millis(&self) -> Option<i64> {
+        fs::modified_millis(&self.path)
+    }
+
     /// Re-read the certified bytes. A changed payload requires a fresh scan.
     pub fn read(&self) -> Result<Vec<u8>> {
         let file = fs::read(&self.path).at(&self.path)?;

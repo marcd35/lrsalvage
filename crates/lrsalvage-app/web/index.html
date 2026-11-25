@@ -292,8 +292,22 @@
               <option value="name">Filename</option>
               <option value="folder">Original folder</option>
               <option value="size">Largest preview first</option>
+              <option value="captured">Date captured</option>
+              <option value="modified">Preview file modified</option>
             </select>
           </label>
+          <div id="photo-resolution-control" class="resolution-control">
+            <span id="photo-resolution-label">Resolution</span>
+            <details id="photo-resolution" class="resolution-filter">
+              <summary aria-labelledby="photo-resolution-label photo-resolution-value">
+                <span id="photo-resolution-value"></span>
+              </summary>
+              <div class="resolution-options">
+                <label><input id="photo-resolution-all" type="checkbox"> Show all resolutions</label>
+                <div id="photo-resolution-sizes" role="group" aria-label="Visible resolutions"></div>
+              </div>
+            </details>
+          </div>
         </div>
         <div class="review-tools">
           <label id="photo-group-control"><input id="photo-group" type="checkbox"> Group by original folder</label>
@@ -368,15 +382,32 @@
       <p id="export-paths-shown"></p>
       <ul id="export-path-list"></ul>
     </dialog>
+    <dialog id="export-conflict" aria-labelledby="export-conflict-title" aria-describedby="export-conflict-message">
+      <h3 id="export-conflict-title">Files already exist</h3>
+      <p id="export-conflict-message"></p>
+      <ul id="export-conflict-paths"></ul>
+      <form method="dialog" class="dialog-footer">
+        <button value="cancel">Cancel</button>
+        <button value="overwrite">Overwrite</button>
+        <button value="keep">Keep both</button>
+        <button value="skip" autofocus>Skip</button>
+      </form>
+    </dialog>
+    <dialog id="receipt-complete" aria-labelledby="receipt-complete-title" aria-describedby="receipt-complete-destination">
+      <h3 id="receipt-complete-title">Recovery complete</h3>
+      <p id="receipt-complete-destination"></p>
+      <p id="receipt-complete-breakdown" hidden></p>
+      <div class="dialog-footer">
+        <form method="dialog"><button type="submit" autofocus>OK</button></form>
+      </div>
+    </dialog>
     <section id="receipt-section" aria-labelledby="receipt-title" hidden>
       <h3 id="receipt-title" tabindex="-1">Recovery receipt</h3>
       <p id="receipt-headline" role="status"></p>
       <p id="receipt-detail"></p>
       <p id="receipt-reconciled" class="review-note"></p>
-      <p id="receipt-destination"></p>
-      <p id="receipt-where" class="review-note"></p>
       <div class="review-tools">
-        <button id="receipt-view" type="button" aria-expanded="false">View saved files</button>
+        <button id="receipt-view" type="button" aria-expanded="false" aria-controls="receipt-files">Show file list</button>
         <button id="receipt-copy-name" type="button" hidden>Copy folder name</button>
       </div>
       <div id="receipt-files" hidden></div>

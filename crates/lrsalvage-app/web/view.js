@@ -424,7 +424,7 @@ export function mount(document) {
       if (report.photos.some((photo) => photo.preview)) {
         exports.open(scan, chosen.mounts, mode);
       }
-      if (!cacheOnly || report.photos.length) review.show(report.photos, scan.preview, cacheOnly);
+      if (!cacheOnly || report.photos.length) review.show(report.photos, scan, cacheOnly);
     }
     resultTitle.focus();
   }

@@ -715,7 +715,26 @@ pub struct CacheBatch {
     pub saved: usize,
     pub already_recovered: usize,
     pub failed: usize,
+    #[serde(default)]
+    pub omitted: usize,
     pub confirmed_on_disk: Option<usize>,
+}
+
+impl CacheBatch {
+    fn json(self, include_verified_count: bool) -> Value {
+        let mut counts = json!({
+            "saved": self.saved,
+            "already_recovered": self.already_recovered,
+            "failed": self.failed,
+        });
+        if self.omitted != 0 {
+            counts["omitted"] = json!(self.omitted);
+        }
+        if include_verified_count {
+            counts["confirmed_on_disk"] = json!(self.confirmed_on_disk);
+        }
+        counts
+    }
 }
 
 /// `report.csv`, one row per indexed pyramid, for a cache-only run.
@@ -785,11 +804,7 @@ pub fn cache_manifest_json(
         "layout": recovery.layout.as_str(),
         "scan": cache_scan_json(&recovery.counts),
         "outputs": outputs,
-        "batch": {
-            "saved": batch.saved,
-            "already_recovered": batch.already_recovered,
-            "failed": batch.failed,
-        },
+        "batch": batch.json(false),
     });
     let mut text = serde_json::to_string_pretty(&manifest)
         .expect("the cache-only manifest is JSON-serialisable by construction");
@@ -815,12 +830,7 @@ pub fn cache_verification_json(
         "mode": CACHE_ONLY_MODE,
         "layout": recovery.layout.as_str(),
         "scan": cache_scan_json(&recovery.counts),
-        "writes": {
-            "saved": writes.saved,
-            "already_recovered": writes.already_recovered,
-            "failed": writes.failed,
-            "confirmed_on_disk": writes.confirmed_on_disk,
-        },
+        "writes": writes.json(true),
     });
     let mut text = serde_json::to_string_pretty(&report)
         .expect("the cache-only verification report is JSON-serialisable by construction");
@@ -915,11 +925,7 @@ pub fn legacy_manifest_json(
         "mode": LEGACY_MODE,
         "scan": container_scan_json(&recovery.counts),
         "outputs": outputs,
-        "batch": {
-            "saved": batch.saved,
-            "already_recovered": batch.already_recovered,
-            "failed": batch.failed,
-        },
+        "batch": batch.json(false),
     });
     let mut text = serde_json::to_string_pretty(&manifest)
         .expect("the legacy manifest is JSON-serialisable by construction");
@@ -944,12 +950,7 @@ pub fn legacy_verification_json(
         "generated_unix": generated_unix,
         "mode": LEGACY_MODE,
         "scan": container_scan_json(&recovery.counts),
-        "writes": {
-            "saved": writes.saved,
-            "already_recovered": writes.already_recovered,
-            "failed": writes.failed,
-            "confirmed_on_disk": writes.confirmed_on_disk,
-        },
+        "writes": writes.json(true),
     });
     let mut text = serde_json::to_string_pretty(&report)
         .expect("the legacy verification report is JSON-serialisable by construction");
@@ -1227,6 +1228,7 @@ mod tests {
             saved: 1,
             already_recovered: 2,
             failed: 3,
+            omitted: 0,
             confirmed_on_disk: Some(3),
         };
         let text = cache_manifest_json(
@@ -1271,6 +1273,7 @@ mod tests {
             saved: 1,
             already_recovered: 2,
             failed: 0,
+            omitted: 0,
             confirmed_on_disk: None,
         };
         let text = cache_verification_json(&recovery, writes, "9.9.9", 1_700_000_000);

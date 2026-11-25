@@ -244,6 +244,7 @@ fn the_published_files_carry_the_legacy_mode_and_its_own_counts() {
         saved: 1,
         already_recovered: 2,
         failed: 3,
+        omitted: 0,
         confirmed_on_disk: Some(3),
     };
     let manifest: Value = serde_json::from_str(&report::legacy_manifest_json(

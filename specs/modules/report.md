@@ -82,11 +82,14 @@ way, so three files from one run agree about which run they came from.
   - `manifest.json` (cache-only): `schema` `lrsalvage.manifest`, `version`,
     `generated_unix`, `mode` `cache-only`, `layout`, `scan`, `outputs` (one entry
     per prepared output, as the catalog manifest's `items` are), `batch`
-    (`saved`, `already_recovered`, `failed`).
+    (`saved`, `already_recovered`, `failed`). An explicitly skipped unverified
+    collision adds `omitted` when its count is nonzero.
   - `verification.json` (cache-only): `schema` `lrsalvage.verification`,
     `version`, `generated_unix`, `mode` `cache-only`, `layout`, `scan`,
     `writes` (`saved`, `already_recovered`, `failed`, `confirmed_on_disk`; the
     last is the receipt's reconciliation, `null` when the run never made one).
+    An explicitly skipped unverified collision adds `omitted` when its count is
+    nonzero.
     It carries no item, filename, folder or payload digest: the aggregate
     counts and the layout word are the whole of it.
   - `scan` is the five counts that mode measured — `indexed`, `recoverable`,
@@ -96,9 +99,10 @@ way, so three files from one run agree about which run they came from.
     for both would be a lie about whichever it was not measuring.
   - `manifest.json` (legacy): the same members **less `layout`** — `schema`,
     `version`, `generated_unix`, `mode` `legacy`, `scan`, `outputs`, `batch` —
-    and `verification.json` (legacy) likewise, with `writes` as above. An
-    indexless run classifies no representation: it reads every container the walk
-    finds, so the cache's `layout` word would be a fact it never measured.
+    with the same optional `omitted` count, and `verification.json` (legacy)
+    likewise, with `writes` as above, including optional `omitted`. An indexless
+    run classifies no representation: it reads every container the walk finds,
+    so the cache's `layout` word would be a fact it never measured.
   - `scan` (legacy) is the four counts that mode measured — `containers`,
     `usable`, `invalid`, `unsupported`. A container is a file, not an indexed
     pyramid, so the indexed words would name different facts; `containers` and
@@ -118,11 +122,13 @@ way, so three files from one run agree about which run they came from.
   the shareable artifacts stay the ones that name nothing: the verification
   report has no filename, path or container.
 - **The batch's counts arrive as a value, not as a type this module would have to
-  know.** `CacheBatch` carries `saved`, `already_recovered`, `failed` and
-  `confirmed_on_disk`; `extract` owns the outcomes and renders its own CSV through
-  `escape_csv`, so handing this module `Outcome` would close a dependency cycle.
-  The three counts in the manifest and the four in the verification report are
-  the same value, so the two files cannot disagree about one batch.
+  know.** `CacheBatch` carries `saved`, `already_recovered`, `failed`, an
+  `omitted` count serialized only when nonzero, and `confirmed_on_disk`;
+  `extract` owns the outcomes and renders its own CSV through `escape_csv`, so
+  handing this module `Outcome` would close a dependency cycle. The three base
+  outcome counts in the manifest and the four verification fields are the same
+  value; both add `omitted` only when
+  it is nonzero, so the two files cannot disagree about one batch.
 - **A degraded run says what it saw, in one hint.** Every line that talks about a
   payload the run could not name is a fact about this run — counts filled from the
   plan, never hard-coded — and no line calls an unclaimed payload recovered,

@@ -135,10 +135,10 @@ async function responseJson(url) {
 
 function checkReceipt(snapshot, count, destination) {
   const ungrouped = (text) => text.replaceAll(',', '');
-  assert.match(ungrouped(snapshot.headline), new RegExp(`^${count} photos? saved$`));
-  assert.match(ungrouped(snapshot.detail), new RegExp(`^${count} files? in the folder$`));
-  assert.match(snapshot.reconciled, /Every file above was found in the folder/);
-  assert.equal(snapshot.destination, `Saved to \u201c${basename(destination)}\u201d`, 'receipt names the wrong folder');
+  const files = count === 1 ? 'file' : 'files';
+  assert.equal(ungrouped(snapshot.headline), count + ' ' + files + ' saved to “' + basename(destination) + '”');
+  assert.equal(snapshot.detail, '');
+  assert.equal(snapshot.reconciled, '');
   assert.equal(snapshot.failures, 0, 'the receipt contains photo failures');
 }
 

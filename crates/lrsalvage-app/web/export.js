@@ -74,6 +74,14 @@ class OccupiedPath extends Error {
  */
 class Overlap extends Error {}
 
+class PendingConflict extends Error {
+  constructor(path, snapshot) {
+    super('The destination now contains a file at this path.');
+    this.path = path;
+    this.snapshot = snapshot;
+  }
+}
+
 /** The tree a mount path belongs to, in the words the refusal uses. */
 function treeName(path) {
   if (path === '/source') return "the catalog's folder";
@@ -91,11 +99,52 @@ async function fileAt(directory, name) {
   }
 }
 
-async function writeNew(root, relative, prepare, inspectExisting) {
+function pathParts(relative) {
   const parts = relative.split('/');
   if (parts.some((part) => !part || part === '.' || part === '..' || part.includes('\\'))) {
     throw new Error('The planned path is outside the destination.');
   }
+  return parts;
+}
+
+async function entryAt(parent, name) {
+  try {
+    return await fileAt(parent, name);
+  } catch (error) {
+    if (!(error instanceof OccupiedPath)) throw error;
+    return parent.getDirectoryHandle(name);
+  }
+}
+
+async function snapshot(entry) {
+  if (entry.kind === 'directory') return { kind: entry.kind };
+  const bytes = new Uint8Array(await (await entry.getFile()).arrayBuffer());
+  return { kind: entry.kind, digest: await sha256(bytes), bytes };
+}
+
+async function probe(root, relative) {
+  const parts = pathParts(relative);
+  const name = parts.pop();
+  try {
+    let parent = root;
+    for (const part of parts) parent = await parent.getDirectoryHandle(part);
+    const entry = await entryAt(parent, name);
+    if (!entry) return null;
+    const { kind, digest } = await snapshot(entry);
+    return { kind, digest };
+  } catch (error) {
+    if (error.name === 'NotFoundError' || error.name === 'TypeMismatchError') return null;
+    throw error;
+  }
+}
+
+function numberedPath(path, number) {
+  const dot = path.lastIndexOf('.');
+  return path.slice(0, dot) + ' (' + number + ')' + path.slice(dot);
+}
+
+async function writeNew(root, relative, prepare, inspectExisting) {
+  const parts = pathParts(relative);
   const name = parts.pop();
   // Tabs of this app share the check and commit for the same relative name.
   return navigator.locks.request('lrsalvage-save:' + relative.toLowerCase(), async () => {
@@ -108,10 +157,10 @@ async function writeNew(root, relative, prepare, inspectExisting) {
       if (!outcome) throw new OccupiedPath();
       return outcome;
     };
-    const existing = await fileAt(parent, name);
+    const existing = await entryAt(parent, name);
     if (existing) return occupied(existing);
     const { bytes, outcome } = await prepare();
-    const appeared = await fileAt(parent, name);
+    const appeared = await entryAt(parent, name);
     if (appeared) return occupied(appeared);
 
     const handle = await parent.getFileHandle(name, { create: true });
@@ -143,10 +192,9 @@ async function writeNew(root, relative, prepare, inspectExisting) {
 }
 
 async function writeReport(destination, name, text) {
-  const dot = name.lastIndexOf('.');
   const bytes = new TextEncoder().encode(text);
   for (let number = 1; ; number++) {
-    const path = number === 1 ? name : name.slice(0, dot) + ' (' + number + ')' + name.slice(dot);
+    const path = number === 1 ? name : numberedPath(name, number);
     try {
       await writeNew(destination, path, () => ({ bytes }));
       return path;
@@ -170,6 +218,11 @@ async function writeAndLink(destination, name, text, description) {
   return { name: path, url: URL.createObjectURL(file), description };
 }
 
+async function sha256(bytes) {
+  const hash = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));
+  return Array.from(hash, (byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
 /**
  * What the destination answers when it is listed back.
  *
@@ -179,7 +232,7 @@ async function writeAndLink(destination, name, text, description) {
  * letting the run's own record pass for an observation (`specs/app.md`,
  * *Receipt, reports and diagnostics*).
  */
-async function reconcile(destination, ledger, verifyBytes) {
+async function reconcile(destination, ledger) {
   const entries = [...ledger.values()];
   const planned = new Map(entries.map((entry) => [entry.path.toLowerCase(), entry]));
   const present = new Map();
@@ -195,15 +248,13 @@ async function reconcile(destination, ledger, verifyBytes) {
         const found = planned.get(path.toLowerCase());
         if (!found) continue;
         const file = await entry.getFile();
-        if (verifyBytes) {
-          const hash = new Uint8Array(await crypto.subtle.digest('SHA-256', await file.arrayBuffer()));
-          const digest = Array.from(hash, (byte) => byte.toString(16).padStart(2, '0')).join('');
-          if (file.size !== found.bytes || digest !== found.sha256) {
-            changed.push(found.path);
-            continue;
-          }
+        if (file.size !== found.bytes || await sha256(await file.arrayBuffer()) !== found.digest) {
+          changed.push(found.path);
+          continue;
         }
-        present.set(path.toLowerCase(), { id: found.id, path: found.path, bytes: file.size });
+        present.set(path.toLowerCase(), {
+          id: found.id, path: found.path, bytes: file.size, status: found.status, destination: destination.name,
+        });
       }
     };
     await walk(destination, '');
@@ -217,11 +268,15 @@ async function reconcile(destination, ledger, verifyBytes) {
   return { ok: true, reason: null, present: [...present.values()], missing, changed };
 }
 
-async function reconcileCache(ledger) {
+function savedFiles(current) {
+  return current.targets.flatMap((target) => [...target.files.values()]);
+}
+
+async function reconcileReceipt(current) {
   const settled = { ok: true, present: [], missing: [], changed: [] };
-  for (const [target, entries] of Map.groupBy(ledger.values(), (entry) => entry.target)) {
-    const group = new Map(entries.map((entry) => [entry.id, entry]));
-    const result = await reconcile(target.handle, group, true);
+  for (const target of current.targets) {
+    if (!target.files.size) continue;
+    const result = await reconcile(target.handle, target.files);
     if (!result.ok) return result;
     settled.present = settled.present.concat(result.present);
     settled.missing = settled.missing.concat(result.missing);
@@ -250,6 +305,7 @@ export function mountExport(document) {
   const pathsOpen = el('paths-open');
   const pathsSummary = el('paths-summary');
   const pathsDialog = el('paths-dialog');
+  const conflictsDialog = el('conflict');
   const pathsNote = el('paths-note');
   const pathsSearch = el('paths-search');
   const pathsShown = el('paths-shown');
@@ -278,7 +334,7 @@ export function mountExport(document) {
       // the failures and the reports it wrote. `targets[].saved` caches per
       // destination for the writer; this is what the receipt counts.
       ledger: new Map(), failures: [], reportFailures: [], reports: [],
-      categorised: new Set(), reconciled: null,
+      categorised: new Set(), reconciled: null, batchSummary: null, omitted: new Map(),
     };
     section.hidden = false;
     el('layout-control').hidden = cacheOnly;
@@ -302,6 +358,7 @@ export function mountExport(document) {
     clearRefusal();
     resetProgress();
     if (pathsDialog.open) pathsDialog.close();
+    if (conflictsDialog.open) conflictsDialog.close('cancel');
     el('status').textContent = '';
     el('errors').replaceChildren();
     el('one-status').textContent = '';
@@ -313,8 +370,11 @@ export function mountExport(document) {
     if (run !== current) return;
     receipt.update({
       ledger: current.ledger,
+      files: savedFiles(current),
       cacheOnly: current.cacheOnly,
       failures: current.failures,
+      omitted: current.omitted,
+      batch: current.batchSummary,
       reportFailures: current.reportFailures,
       reports: current.reports,
       reconciled: current.reconciled,
@@ -511,7 +571,7 @@ export function mountExport(document) {
         return target;
       }
     }
-    const target = { handle, saved: new Map() };
+    const target = { handle, saved: new Map(), files: new Map() };
     current.targets.push(target);
     return target;
   }
@@ -577,31 +637,128 @@ export function mountExport(document) {
    */
   function promote(current, row, outcome, target) {
     const previous = current.ledger.get(row.id);
-    if (previous && !(previous.status === 'skipped' && outcome.status === 'written')) return;
-    if (!previous) log.commit(outcome.status);
-    current.ledger.set(row.id, {
-      id: row.id, path: row.path, status: outcome.status, bytes: outcome.bytes, sha256: outcome.sha256, target,
-    });
     const at = current.failures.findIndex((entry) => entry.path === row.path);
     if (at >= 0) current.failures.splice(at, 1);
+    current.omitted.delete(row.path);
+    const path = outcome.actual ?? row.path;
+    const key = path.toLowerCase();
+    const status = target.files.get(key)?.status === 'written' ? 'written' : outcome.status;
+    const file = { id: row.id, path, status, bytes: outcome.bytes, digest: outcome.digest, target };
+    target.files.set(key, file);
+    if (previous && !(previous.status === 'skipped' && outcome.status === 'written')) return;
+    if (!previous) log.commit(outcome.status);
+    current.ledger.set(row.id, file);
   }
 
-  async function write(current, target, flat, row) {
-    const key = row.path.toLowerCase();
-    const previous = target.saved.get(key);
-    if (!current.cacheOnly && previous?.id === row.id) return previous.outcome;
+  async function askConflicts(conflicts, target, choices) {
+    const count = conflicts.size;
+    const ending = count === 1 ? 'filename already exists' : 'filenames already exist';
+    const hasDirectory = [...conflicts.values()].some((item) => item.kind === 'directory');
+    el('conflict-message').textContent = count + ' ' + ending + ' in “' + target.handle.name + '”.' +
+      (hasDirectory ? ' A folder occupies a planned filename. Choose Skip or Keep both.' :
+        ' Overwrite replaces the existing files.');
+    const list = el('conflict-paths');
+    list.replaceChildren();
+    for (const path of [...conflicts.keys()].slice(0, PATH_CAP)) {
+      const item = document.createElement('li');
+      item.textContent = path;
+      list.append(item);
+    }
+    if (count > PATH_CAP) {
+      const item = document.createElement('li');
+      item.textContent = 'And ' + (count - PATH_CAP) + ' more';
+      list.append(item);
+    }
+    conflictsDialog.querySelector('[value="overwrite"]').disabled = hasDirectory;
+    const answer = await new Promise((resolve) => {
+      conflictsDialog.addEventListener('close', () => resolve(conflictsDialog.returnValue), { once: true });
+      conflictsDialog.returnValue = 'cancel';
+      conflictsDialog.showModal();
+    });
+    if (!['overwrite', 'skip', 'keep'].includes(answer)) return false;
+    for (const [path, observed] of conflicts) choices.set(path, { ...observed, action: answer });
+    return true;
+  }
+
+  async function findConflicts(target, rows, stopping) {
+    const conflicts = new Map();
+    for (let index = 0; index < rows.length && !stopping(); index += MAX_WRITES) {
+      await Promise.all(rows.slice(index, index + MAX_WRITES).map(async ({ path }) => {
+        const found = await probe(target.handle, path);
+        if (found) conflicts.set(path, found);
+      }));
+    }
+    return conflicts;
+  }
+
+  async function write(current, target, flat, row, choices, reserved) {
+    const prepare = () => current.scan.exportJpeg(row.id, flat);
+    let actual = row.path;
+    let observedDigest;
+    let keepBoth = false;
     try {
-      const outcome = await writeNew(target.handle, row.path,
-        () => current.scan.exportJpeg(row.id, flat),
-        async (handle) => {
-          const file = await handle.getFile();
-          const bytes = new Uint8Array(await file.arrayBuffer());
-          return current.scan.existingExport(row.id, flat, bytes);
-        },
-      );
-      target.saved.set(key, { id: row.id, outcome });
-      return outcome;
+      let outcome = await writeNew(target.handle, row.path, prepare, async (handle) => {
+        const found = await snapshot(handle);
+        const { kind, digest } = found;
+        const approved = choices.get(row.path);
+        if (approved?.kind !== kind || approved.digest !== digest) {
+          throw new PendingConflict(row.path, { kind, digest });
+        }
+        if (approved.action === 'keep') {
+          keepBoth = true;
+          return null;
+        }
+        if (approved.action === 'overwrite' && kind === 'file') {
+          const prepared = await prepare();
+          await commitFile(handle, prepared.bytes, async () => {
+            const latest = await probe(target.handle, row.path);
+            if (latest?.kind !== kind || latest.digest !== digest) {
+              if (latest) throw new PendingConflict(row.path, latest);
+              throw new OccupiedPath();
+            }
+          });
+          return prepared.outcome;
+        }
+        const previous = target.saved.get(row.path.toLowerCase());
+        if (kind === 'file' && (previous?.id !== row.id || previous.digest === digest)) {
+          const verified = await current.scan.existingExport(row.id, flat, found.bytes);
+          if (verified) {
+            observedDigest = digest;
+            return verified;
+          }
+        }
+        return {
+          status: 'omitted', bytes: 0, sha256: null, output: row.path,
+          note: 'Skipped because the destination already holds an unverified file or folder.',
+        };
+      }).catch((error) => {
+        if (keepBoth && error instanceof OccupiedPath) return null;
+        throw error;
+      });
+      if (keepBoth) {
+        // Skip names belonging to other selected previews, including those
+        // that another writer has not committed yet.
+        for (let number = 2; !outcome; number++) {
+          actual = numberedPath(row.path, number);
+          if (reserved.has(actual.toLowerCase())) continue;
+          reserved.add(actual.toLowerCase());
+          try {
+            outcome = await writeNew(target.handle, actual, prepare);
+          } catch (error) {
+            if (!(error instanceof OccupiedPath)) throw error;
+          }
+        }
+      }
+      if (outcome.status === 'omitted') return outcome;
+      const digest = outcome.sha256 ?? observedDigest;
+      target.saved.set(actual.toLowerCase(), { id: row.id, digest });
+      return { ...outcome, output: actual === row.path ? outcome.output : actual, digest, actual };
     } catch (error) {
+      if (error instanceof PendingConflict) throw error;
+      if (error instanceof OccupiedPath && actual === row.path) {
+        const latest = await probe(target.handle, row.path);
+        if (latest) throw new PendingConflict(row.path, latest);
+      }
       return {
         status: 'failed', bytes: 0, sha256: null, output: row.path,
         note: error.message, category: classify(error),
@@ -651,63 +808,129 @@ export function mountExport(document) {
   }
 
   async function saveBatch(current) {
+    const started = performance.now();
     const target = current.target;
     await validateDestination(target.handle, current.inputs);
-    if (current.batch) log.continued();
-    const batch = current.batch ??= { rows: selected(current), outcomes: new Map() };
-    if (batch.outcomes.size === 0) log.planned(batch.rows.length);
+    if (run !== current) return;
+    const continuing = Boolean(current.batch);
+    const batch = current.batch ??= { rows: selected(current), outcomes: new Map(), elapsed: 0 };
+    if (continuing) log.continued();
+    else log.planned(batch.rows.length);
     batch.stopping = false;
+    const choices = new Map();
+    const totals = { written: 0, skipped: 0, omitted: 0, failed: 0 };
+    // Continue can retry a write failure from the preceding attempt.
+    for (const [id, outcome] of batch.outcomes) {
+      if (outcome.status === 'failed') batch.outcomes.delete(id);
+      else totals[outcome.status]++;
+    }
+    const remaining = () => batch.rows.filter(({ id }) => !batch.outcomes.has(id));
+    let since = started;
+    const chooseConflicts = async (conflicts) => {
+      batch.elapsed += performance.now() - since;
+      const accepted = await askConflicts(conflicts, target, choices);
+      since = performance.now();
+      return accepted;
+    };
     render();
-    const totals = { written: 0, skipped: 0, failed: 0 };
-    const pending = batch.rows.filter(({ id }) => {
-      const status = batch.outcomes.get(id)?.status;
-      if (status !== 'written' && status !== 'skipped') return true;
-      totals[status]++;
-      return false;
-    });
-    let next = 0;
+    let conflicts;
+    try {
+      conflicts = await findConflicts(target, remaining(), () => batch.stopping || run !== current);
+    } catch (error) {
+      if (!continuing) current.batch = null;
+      throw error;
+    }
+    if (run !== current) return;
+    if (!batch.stopping && conflicts.size && !await chooseConflicts(conflicts)) {
+      if (!continuing) current.batch = null;
+      return;
+    }
+    if (run !== current) return;
+
+    const reserved = new Set(batch.rows.map(({ path }) => path.toLowerCase()));
+    for (const outcome of batch.outcomes.values()) {
+      if (outcome.actual) reserved.add(outcome.actual.toLowerCase());
+    }
     el('errors').replaceChildren();
     resetProgress(batch.rows.length);
     const paint = () => {
-      const done = totals.written + totals.skipped + totals.failed;
+      const done = Object.values(totals).reduce((sum, count) => sum + count, 0);
       el('status').textContent = totals.written + ' saved of ' + batch.rows.length +
         (totals.skipped ? ' · ' + totals.skipped + ' already recovered' : '') +
+        (totals.omitted ? ' · ' + totals.omitted + ' skipped' : '') +
         (totals.failed ? ' · ' + totals.failed + ' failed' : '');
       paintProgress(batch.rows.length, done, batch.stopping);
     };
     paint();
 
-    // One entry per catalog image, so a photo a one-off and a batch both reached
-    // is one photo on the receipt.
     const record = (row, outcome) => {
       if (outcome.status === 'written' || outcome.status === 'skipped') {
         promote(current, row, outcome, target);
+      } else if (outcome.status === 'omitted') {
+        current.omitted.set(row.path, outcome.note);
       } else {
         failPhoto(current, row.path, outcome.note ?? 'The file could not be written.', outcome.category);
       }
     };
-
-    await Promise.all(Array.from({ length: Math.min(MAX_WRITES, pending.length) }, async () => {
-      while (!batch.stopping && next < pending.length) {
-        const row = pending[next++];
-        const outcome = await write(current, target, current.flat, row);
-        batch.outcomes.set(row.id, outcome);
-        if (run !== current) continue;
-        totals[outcome.status]++;
-        record(row, outcome);
-        paint();
+    while (!batch.stopping && run === current) {
+      const pending = remaining();
+      if (!pending.length) break;
+      const late = new Map();
+      let next = 0;
+      await Promise.all(Array.from({ length: Math.min(MAX_WRITES, pending.length) }, async () => {
+        while (!batch.stopping && !late.size && run === current && next < pending.length) {
+          const row = pending[next++];
+          let outcome;
+          try {
+            outcome = await write(current, target, current.flat, row, choices, reserved);
+          } catch (error) {
+            if (!(error instanceof PendingConflict)) throw error;
+            late.set(error.path, error.snapshot);
+            continue;
+          }
+          batch.outcomes.set(row.id, outcome);
+          if (run !== current) return;
+          totals[outcome.status]++;
+          record(row, outcome);
+          paint();
+        }
+      }));
+      if (run !== current) return;
+      if (late.size && !batch.stopping && !await chooseConflicts(late)) {
+        batch.stopping = true;
+        log.stopped();
       }
-    }));
+    }
     log.settled();
     if (run !== current) return;
 
-    // The destination's own answer, not the writer's recollection of it.
-    current.reconciled = current.cacheOnly
-      ? await reconcileCache(current.ledger)
-      : await reconcile(target.handle, current.ledger, false);
-    log.confirmed(current.reconciled.ok ? current.reconciled.present.length : null);
+    const planned = new Map(batch.rows.flatMap(({ id }) => {
+      const outcome = batch.outcomes.get(id);
+      if (!outcome || !['written', 'skipped'].includes(outcome.status)) return [];
+      const { actual: path, bytes, digest, status } = outcome;
+      return [[id, { id, path, bytes, digest, status }]];
+    }));
+    const confirmed = planned.size ? await reconcile(target.handle, planned) : null;
+    const files = savedFiles(current);
+    const sameFiles = files.length === planned.size && files.every((file) => {
+      const entry = planned.get(file.id);
+      return entry && file.target === target && file.path === entry.path && file.digest === entry.digest;
+    });
+    current.reconciled = confirmed && (sameFiles || !confirmed.ok)
+      ? confirmed
+      : await reconcileReceipt(current);
+    log.confirmed(current.reconciled.ok ? new Set(current.reconciled.present.map(({ id }) => id)).size : null);
     if (run !== current) return;
-    if (next < pending.length) {
+    batch.elapsed += performance.now() - since;
+    const summary = {
+      total: batch.rows.length, verified: confirmed ? (confirmed.ok ? confirmed.present.length : null) : 0,
+      written: totals.written, already: totals.skipped, omitted: totals.omitted,
+      failed: totals.failed, renamed: batch.rows.filter(({ id, path }) =>
+        batch.outcomes.get(id)?.actual && batch.outcomes.get(id).actual !== path).length,
+      folder: target.handle.name, elapsed: batch.elapsed,
+    };
+    current.batchSummary = summary;
+    if (remaining().length) {
       el('status').textContent += ' · Stopped';
       updateReceipt(current);
       return;
@@ -716,7 +939,11 @@ export function mountExport(document) {
     batch.reporting = true;
     render();
     try {
-      const reports = await current.scan.exportReports(current.flat, batch.rows.map(({ id }) => batch.outcomes.get(id)));
+      const outcomes = batch.rows.map(({ id, path }) => {
+        const { actual, digest, ...outcome } = batch.outcomes.get(id);
+        return actual && actual !== path ? { ...outcome, planned: path } : outcome;
+      });
+      const reports = await current.scan.exportReports(current.flat, outcomes);
       const written = [];
       for (const [name, text] of Object.entries(reports)) {
         try {
@@ -732,8 +959,10 @@ export function mountExport(document) {
     } finally {
       current.batch = null;
     }
+    if (run !== current) return;
     updateReceipt(current);
     receipt.focus();
+    if (summary.written && summary.verified === summary.total) receipt.showCompletion(summary);
   }
 
   /** The batch's own account, as the report's `writes` member publishes it. */
@@ -743,7 +972,8 @@ export function mountExport(document) {
       saved: entries.filter((entry) => entry.status === 'written').length,
       already_recovered: entries.filter((entry) => entry.status === 'skipped').length,
       failed: run.failures.length,
-      confirmed_on_disk: run.reconciled?.ok ? run.reconciled.present.length : null,
+      omitted: run.omitted.size,
+      confirmed_on_disk: run.reconciled?.ok ? new Set(run.reconciled.present.map(({ id }) => id)).size : null,
     };
   }
 
@@ -840,7 +1070,28 @@ export function mountExport(document) {
       status.textContent = '';
       const target = await choose(current);
       if (!target) return;
-      const outcome = await write(current, target, current.flat, row);
+      const choices = new Map();
+      const reserved = new Set([row.path.toLowerCase()]);
+      const conflicts = await findConflicts(target, [row], () => run !== current);
+      if (conflicts.size && !await askConflicts(conflicts, target, choices)) return;
+      let outcome;
+      while (run === current) {
+        try {
+          outcome = await write(current, target, current.flat, row, choices, reserved);
+          break;
+        } catch (error) {
+          if (!(error instanceof PendingConflict)) throw error;
+          if (!await askConflicts(new Map([[error.path, error.snapshot]]), target, choices)) return;
+        }
+      }
+      if (run !== current) return;
+      current.batchSummary = null;
+      if (outcome.status === 'omitted') {
+        current.omitted.set(row.path, outcome.note);
+        status.textContent = outcome.note;
+        updateReceipt(current);
+        return;
+      }
       if (outcome.status === 'failed') {
         status.textContent = outcome.note;
         failPhoto(current, row.path, outcome.note, outcome.category);
@@ -849,15 +1100,13 @@ export function mountExport(document) {
       }
       current.suggestion = target.handle;
       if (!current.target) current.target = target;
-      status.textContent = (outcome.status === 'skipped' ? 'Already recovered · ' : 'Saved · ') + row.path;
+      status.textContent = (outcome.status === 'skipped' ? 'Already recovered · ' : 'Saved · ') + outcome.actual;
       el('status').textContent = status.textContent;
       // The receipt counts this run's photos, so a one-off save is a photo saved
       // even when no batch ever runs (`#117`, user story 27).
       promote(current, row, outcome, target);
-      if (current.cacheOnly) {
-        current.reconciled = await reconcileCache(current.ledger);
-        log.confirmed(current.reconciled.ok ? current.reconciled.present.length : null);
-      }
+      current.reconciled = await reconcileReceipt(current);
+      log.confirmed(current.reconciled.ok ? new Set(current.reconciled.present.map(({ id }) => id)).size : null);
       updateReceipt(current);
     }, status);
   });

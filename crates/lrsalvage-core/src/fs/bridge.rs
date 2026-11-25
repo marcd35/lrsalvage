@@ -169,6 +169,7 @@ pub(crate) struct Stat {
     pub(crate) exists: bool,
     pub(crate) is_file: bool,
     pub(crate) len: u64,
+    pub(crate) modified_millis: Option<i64>,
 }
 
 fn render(path: &Path) -> String {
@@ -190,6 +191,7 @@ pub(crate) fn stat(path: &Path) -> io::Result<Stat> {
         exists: answer["exists"].as_bool().unwrap_or(false),
         is_file: answer["file"].as_bool().unwrap_or(false),
         len: answer["len"].as_u64().unwrap_or(0),
+        modified_millis: answer["modified_millis"].as_i64(),
     })
 }
 

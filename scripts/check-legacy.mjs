@@ -176,9 +176,8 @@ export async function checkLegacy(send) {
     await click('export-start');
     await until(el('receipt-report-list') + '.children.length === 3',
       `${name}: the recovery reports were not saved`);
-    assert.equal(await text('receipt-headline'),
-      `${counts.usable} ${counts.usable === 1 ? 'preview' : 'previews'} saved`);
-    assert.match(await text('receipt-reconciled'), /Every file above was found/);
+    assert.match(await text('receipt-headline'), /^\d+ files? saved to /);
+    assert.equal(await text('receipt-reconciled'), '');
     assert.deepEqual(
       await call(savedFiles),
       Object.fromEntries(entry.manifest.map(({ output, bytes, sha256 }) => [output, { bytes, sha256 }])),
@@ -255,11 +254,14 @@ export async function checkLegacy(send) {
   await click('export-pick');
   await until('!' + el('export-start') + '.disabled', 'The same folder was refused as a destination');
   await click('export-start');
+  await until(el('export-conflict') + '.open', 'Existing legacy previews were not listed');
+  await evaluate('document.querySelector("#export-conflict [value=skip]").click()');
   await until(el('receipt-report-list') + '.children.length === 3', 'The second run reports were not saved');
-  assert.match(await text('receipt-detail'), /1 already recovered · 1 could not be saved/);
+  assert.match(await text('receipt-headline'), /^1 of 2 files recovered/);
+  assert.match(await text('receipt-detail'), /1 skipped/);
   assert.deepEqual(await call(savedFiles), occupied, 'a conflict must not overwrite the file');
   assert.deepEqual(JSON.parse(await call(report, 'manifest (2).json')).batch,
-    { saved: 0, already_recovered: 1, failed: 1 });
+    { saved: 0, already_recovered: 1, failed: 0, omitted: 1 });
   measured.alreadyRecovered += 1;
   measured.conflicts += 1;
   await click('restart');

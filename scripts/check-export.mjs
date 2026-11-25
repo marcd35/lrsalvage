@@ -89,6 +89,7 @@ export async function checkExport(send) {
   assert.equal(await evaluate('document.getElementById("export-bar").value'), 3);
   assert.match(await evaluate(el('#export-announce') + '.textContent'),
     /100% — 3 of 3 written · finished/, 'The milestone was not announced');
+  await click('#receipt-complete button[type="submit"]');
   const files = await evaluate('outputFiles()');
   const expected = await evaluate(`(async () => {
     const csv = await (await fetch('/cli-extract/extract.csv')).text();
@@ -118,11 +119,15 @@ export async function checkExport(send) {
   assert.deepEqual(manifest, JSON.parse(normalise(JSON.stringify(expected.manifest))), 'app and CLI manifests');
   await evaluate('(' + (async (names) => {
     const { mountVault } = await import('./mount.js');
+    exportPicker.firstDestination = exportPicker.destination;
     exportPicker.destination = await mountVault(exportPicker.root, 'cli-resume', '/cli-extract', names);
   }).toString() + ')(' + JSON.stringify([...Object.keys(expected.jpegs), 'extract.csv', 'manifest.json']) + ')');
   await click('#export-pick');
   await until(el('#export-destination') + '.textContent.endsWith("cli-resume")', 'The CLI output folder was not selected');
   await click('#export-start');
+  await until(el('#export-conflict') + '.open', 'Existing CLI outputs were not listed');
+  assert.equal(await evaluate('document.activeElement.value'), 'skip');
+  await click('#export-conflict [value="skip"]');
   await until(el('#export-status') + '.textContent.includes("3 already recovered") && ' +
     el('#export-start') + '.disabled === false', 'The browser did not recognize verified CLI outputs');
   const resumed = await evaluate('outputFiles()');
@@ -131,6 +136,28 @@ export async function checkExport(send) {
   for (const [name, bytes] of Object.entries(expected.jpegs)) assert.deepEqual(resumed[name], bytes);
   assert.equal(decoder.decode(Uint8Array.from(resumed['extract.csv'])), expected.csv);
   assert.match(decoder.decode(Uint8Array.from(resumed['extract (2).csv'])), /skipped,/);
+
+  // A same-size replacement can retain the JPEG marker and dimensions.
+  // The in-run fingerprint must still catch it without overwriting it.
+  const replaced = Object.keys(jpegs)[0];
+  const changedBytes = [...jpegs[replaced]];
+  changedBytes[changedBytes.length - 3] ^= 1;
+  await evaluate('(' + (async (path, bytes) => {
+    const { writeFile } = await import('./mount.js');
+    exportPicker.destination = exportPicker.firstDestination;
+    await writeFile(exportPicker.destination, path, Uint8Array.from(bytes));
+  }).toString() + ')(' + JSON.stringify(replaced) + ',' + JSON.stringify(changedBytes) + ')');
+  await click('#export-pick');
+  await until(el('#export-destination') + '.textContent.endsWith("export-output")', 'The first folder was not restored');
+  await click('#export-start');
+  await until(el('#export-conflict') + '.open', 'The changed file did not prompt');
+  await click('#export-conflict [value="skip"]');
+  await until(el('#export-status') + '.textContent.includes("1 skipped") && ' +
+    el('#export-start') + '.disabled === false', 'The replaced file was not reported as a conflict');
+  assert.match(await evaluate(el('#export-status') + '.textContent'), /^0 saved.*2 already recovered/);
+  assert.equal(await evaluate(el('#receipt-complete') + '.open'), false);
+  assert.match(await evaluate(el('#receipt-reconciled') + '.textContent'), /Changed in the destination/);
+  assert.deepEqual((await evaluate('outputFiles()'))[replaced], changedBytes);
 
   await click('#restart');
   await evaluate("prepareExport('export')");
@@ -225,12 +252,16 @@ export async function checkExport(send) {
   // The bar above the gallery learned the same destination the panel did.
   assert.match(await evaluate(el('#export-save-bar-destination') + '.textContent'),
     /^Destination · /, 'The save bar did not take the accepted destination');
+  await click('#photo-resolution summary');
+  await click('#photo-resolution-all');
+  await click('#photo-resolution summary');
   await click('button[aria-label="Preview Small.CR2"]');
   await until(el('#export-one') + '.disabled === false', 'One-off save was not enabled');
   assert.equal(await evaluate(el('#export-one-path') + '.textContent'), 'Small_small.jpg');
   await click('#export-one');
   await until(el('#export-one-status') + '.textContent.startsWith("Saved")', 'The one-off JPEG did not commit');
-  assert.equal(await tally(), unchanged, 'Saving an unchecked photo must leave selection alone');
+  assert.equal((await tally()).split(' · ')[1], unchanged.split(' · ')[1],
+    'Saving an unchecked photo must leave selection alone');
   assert.match(await evaluate(el('#export-destination') + '.textContent'), new RegExp(originalDestination));
   assert.deepEqual(Object.keys(await evaluate('outputFiles()')), ['Small_small.jpg']);
   await click('#photo-dialog-check');
@@ -243,15 +274,17 @@ export async function checkExport(send) {
   // an observable in-flight boundary and verify that only committed files count.
   await evaluate("(" + pauseCloses.toString() + ")()");
   await click('#export-start');
+  await until(el('#export-conflict') + '.open', 'The one-off file did not prompt');
+  await click('#export-conflict [value="skip"]');
   await until('exportWrites.active === 8', 'The bounded writer did not fill eight slots');
   await click('#export-stop');
-  assert.match(await evaluate(status + '.textContent'), /^1 saved/);
+  assert.match(await evaluate(status + '.textContent'), /^0 saved.*1 already recovered/);
   await evaluate('exportWrites.resume(); true');
   await until(status + '.textContent.includes("Stopped") && ' + ready, 'The stopped batch did not settle');
   const stopped = await evaluate('outputFiles()');
   assert.equal(Object.keys(stopped).length, 9);
   await click('#export-start');
-  await until(status + '.textContent.startsWith("13 saved") && ' + ready, 'Continuation did not finish');
+  await until(status + '.textContent.startsWith("12 saved") && ' + ready, 'Continuation did not finish');
   const finished = await evaluate('outputFiles()');
   assert.equal(Object.keys(finished).filter((name) => name.endsWith('.jpg')).length, 13);
   for (const [name, bytes] of Object.entries(stopped)) assert.deepEqual(finished[name], bytes);
@@ -275,9 +308,64 @@ export async function checkExport(send) {
   await click('#export-pick');
   await until(el('#export-destination') + '.textContent.endsWith("occupied") && ' + ready, 'The occupied folder was not selected');
   await click('#export-start');
-  await until(status + '.textContent.includes("12 saved of 13") && ' + ready, 'A pre-existing file was not handled separately');
-  assert.match(await errors(), /IMG\.jpg.*already exists/);
-  assert.deepEqual((await evaluate('outputFiles()'))['IMG.jpg'], inputsBefore['out/IMG.jpg']);
+  await until(el('#export-conflict') + '.open', 'An occupied JPEG was not shown before saving');
+  await click('#export-conflict [value="cancel"]');
+  await until(ready, 'Cancel did not return to review');
+  assert.deepEqual(Object.keys(await evaluate('outputFiles()')), ['IMG.jpg']);
+  await click('#export-start');
+  await until(el('#export-conflict') + '.open', 'The occupied path was not shown again');
+  await click('#export-conflict [value="keep"]');
+  await until(status + '.textContent.includes("13 saved of 13") && ' + ready, 'Keep both did not complete');
+  const kept = await evaluate('outputFiles()');
+  assert.deepEqual(kept['IMG.jpg'], inputsBefore['out/IMG.jpg']);
+  assert.match(await evaluate(el('#receipt-complete-title') + '.textContent'), /13 of 13 files recovered in /);
+  assert.match(await evaluate(el('#receipt-complete-breakdown') + '.textContent'), /1 kept both/);
+  await click('#receipt-complete button[type="submit"]');
+  const renamed = Object.keys(kept).find(path => !['IMG (2).jpg', 'IMG (4).jpg', 'IMG.jpg', 'img (3).jpg'].includes(path) && /^IMG \(\d+\)\.jpg$/i.test(path));
+  assert(renamed, 'The extra JPEG must be numbered around reserved plan paths');
+  assert(decoder.decode(Uint8Array.from(kept['extract.csv'])).includes('/' + renamed));
+  const keptManifest = JSON.parse(decoder.decode(Uint8Array.from(kept['manifest.json'])));
+  assert(keptManifest.items.some(item => item.selected && item.output.endsWith('/' + renamed)));
+
+  await click('#export-start');
+  await until(el('#export-conflict') + '.open', 'Overwrite was not offered for the current batch');
+  await click('#export-conflict [value="overwrite"]');
+  await until(status + '.textContent.includes("13 saved of 13") && ' + ready, 'Overwrite did not complete');
+  const overwritten = await evaluate('outputFiles()');
+  assert.notDeepEqual(overwritten['IMG.jpg'], inputsBefore['out/IMG.jpg']);
+  assert.deepEqual(overwritten[renamed], kept[renamed], 'Overwrite leaves the separate numbered copy alone');
+  await click('#receipt-complete button[type="submit"]');
+  await evaluate('(' + (async () => {
+    const { freshDirectory } = await import('./mount.js');
+    exportPicker.destination = await freshDirectory(exportPicker.root, 'late-conflict');
+    const native = FileSystemDirectoryHandle.prototype.getFileHandle;
+    let lookups = 0;
+    FileSystemDirectoryHandle.prototype.getFileHandle = async function (name, options) {
+      if (this.name === 'late-conflict' && name === 'Small_small.jpg' && ++lookups === 2) {
+        const foreign = await native.call(this, name, { create: true });
+        const stream = await foreign.createWritable();
+        await stream.write(Uint8Array.of(1, 2, 3));
+        await stream.close();
+      }
+      return native.call(this, name, options);
+    };
+  }).toString() + ')()');
+  await click('#export-pick');
+  await until(el('#export-destination') + '.textContent.endsWith("late-conflict")', 'The race folder was not selected');
+  await click('#export-start');
+  await until(el('#export-conflict') + '.open', 'A file that arrived during the save did not prompt');
+  await click('#export-conflict [value="cancel"]');
+  await until(ready + ' && ' + el('#export-start') + '.textContent === "Continue saving"', 'Cancel did not pause the batch');
+  const pausedFiles = await evaluate('outputFiles()');
+  assert(Object.keys(pausedFiles).length > 1, 'The late conflict should preserve earlier saves');
+  assert.deepEqual(pausedFiles['Small_small.jpg'], [1, 2, 3]);
+  await click('#export-start');
+  await until(el('#export-conflict') + '.open', 'Continue did not reopen the conflict');
+  await click('#export-conflict [value="skip"]');
+  await until(ready + ' && ' + el('#export-status') + '.textContent.includes("1 skipped")', 'Continue did not settle');
+  assert.match(await evaluate(el('#receipt-headline') + '.textContent'), /^12 of 13 files recovered in /);
+  assert.equal(await evaluate(el('#receipt-complete') + '.open'), false);
+  assert.deepEqual((await evaluate('outputFiles()'))['Small_small.jpg'], [1, 2, 3]);
   assert.deepEqual(await evaluate('outputFiles(exportPicker.fixture)'), inputsBefore,
     'no catalog or preview cache file may change');
   return { jpegs: Object.keys(jpegs).length, reports: 2, resumedCli: 3, stoppedAt: 8, continuedTo: 13, lostDestination: 13 };

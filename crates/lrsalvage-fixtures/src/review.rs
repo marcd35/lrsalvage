@@ -79,7 +79,12 @@ pub fn vault() -> Vault {
         let uuid = format!("AAAA{id:04}-1111-4111-8111-{id:012}");
         let mut photo = ImageRow::new(id, name).path_from_root(folder).cache(&uuid);
         if id == 3 {
-            photo = photo.orientation("BC");
+            photo = photo
+                .orientation("BC")
+                .xmp(r#"<rdf:Description exif:DateTimeOriginal="2024-02-03T10:11:12"/>"#);
+        }
+        if id == 2 || id == 4 {
+            photo = photo.xmp(r#"<rdf:Description exif:DateTimeOriginal="2023-02-03T10:11:12"/>"#);
         }
         if id == 5 {
             photo = photo.without_file();

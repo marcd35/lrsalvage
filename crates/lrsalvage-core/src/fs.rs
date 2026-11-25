@@ -132,6 +132,11 @@ pub fn is_file(path: &Path) -> io::Result<bool> {
     backend::is_file(path)
 }
 
+/// The file's last modification time in Unix milliseconds, when available.
+pub fn modified_millis(path: &Path) -> Option<i64> {
+    backend::modified_millis(path)
+}
+
 /// The regular files directly inside `dir`, in the order the platform lists them.
 ///
 /// Directories and anything else that is not a regular file are left out. An

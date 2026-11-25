@@ -138,6 +138,7 @@ fn the_published_files_carry_the_legacy_mode() {
             saved: 1,
             already_recovered: 0,
             failed: 0,
+            omitted: 0,
             confirmed_on_disk: Some(1),
         },
         1_700_000_000,

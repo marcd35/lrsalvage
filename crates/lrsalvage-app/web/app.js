@@ -312,6 +312,7 @@ export function start(source, ui = {}, { review = false } = {}) {
     },
     done,
     preview: (id) => ask('preview', { id }),
+    previewModified: (ids) => ask('preview-modified', { ids }),
     exportPaths: (flat) => ask('export-paths', { flat }),
     exportJpeg: (id, flat) => ask('export-jpeg', { id, flat }),
     existingExport: (id, flat, bytes) => ask('export-existing', { id, flat, bytes }, [bytes.buffer]),

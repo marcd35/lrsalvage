@@ -190,6 +190,19 @@ pub fn read_preview(id: &str) -> Result<Vec<u8>, JsValue> {
     REVIEW.with(|review| review.borrow().read(id).map_err(review_problem))
 }
 
+/// Look up modification times for the requested preview IDs, in request order.
+#[wasm_bindgen]
+pub fn preview_modified(ids: Vec<String>) -> String {
+    REVIEW.with(|review| {
+        let review = review.borrow();
+        let dates: Vec<_> = ids
+            .iter()
+            .map(|id| review.modified_millis(id.parse().ok()?))
+            .collect();
+        json!(dates).to_string()
+    })
+}
+
 /// Return the planned relative paths in catalog order.
 #[wasm_bindgen]
 pub fn export_paths(flat: bool) -> String {
@@ -246,12 +259,23 @@ pub fn existing_export(id: &str, flat: bool, bytes: &[u8]) -> Result<String, JsV
 
 #[wasm_bindgen]
 pub fn export_reports(flat: bool, outcomes: &str, now: f64) -> Result<String, JsValue> {
-    let outcomes: Vec<lrsalvage_core::extract::Outcome> =
+    let rows: Vec<Value> =
         serde_json::from_str(outcomes).map_err(|error| JsValue::from_str(&error.to_string()))?;
+    let mut outcomes = Vec::with_capacity(rows.len());
+    let mut renamed = std::collections::HashMap::new();
+    for row in rows {
+        let planned = row["planned"].as_str().map(std::path::PathBuf::from);
+        let outcome: lrsalvage_core::extract::Outcome =
+            serde_json::from_value(row).map_err(|error| JsValue::from_str(&error.to_string()))?;
+        if let Some(planned) = planned {
+            renamed.insert(planned, outcome.output.clone());
+        }
+        outcomes.push(outcome);
+    }
     Ok(REVIEW.with(|review| {
         review
             .borrow()
-            .reports(flat, outcomes, now as u64)
+            .reports_with_renames(flat, outcomes, &renamed, now as u64)
             .to_string()
     }))
 }

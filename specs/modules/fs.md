@@ -79,6 +79,7 @@ next slice reads.
 | `read_prefix` | the first `n` bytes, or all of a shorter file | `jpeg` | answered |
 | `exists` | is anything at this path; `Err` when the target cannot look | `previews_db`, `extract` | answered; `Err` only when nothing is mounted or no bridge is installed |
 | `is_file` | is a regular file at this path | `snapshot`, `plan` | answered |
+| `modified_millis` | the file's last modification time, if available | app review, `cache_recovery` | the bridged file's `lastModified`; the origin-private store has no timestamp |
 | `list_files` | the regular files in one directory | `previews_db` | answered: a prefix scan of the store, or a paged directory listing |
 | `walk_files` | every regular file under a root | `previews_db` | answered |
 | `create_dir_all` | a directory and its parents | `extract` | answered; a no-op in the store, where a directory is a prefix |

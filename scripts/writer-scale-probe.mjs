@@ -110,7 +110,6 @@ export function installWriterProbe(destination, holdForStop, total) {
       headline: el('receipt-headline').textContent,
       detail: el('receipt-detail').textContent,
       reconciled: el('receipt-reconciled').textContent,
-      destination: el('receipt-destination').textContent,
       failures: el('receipt-failures').childElementCount,
     }),
   };

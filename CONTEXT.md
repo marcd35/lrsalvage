@@ -149,6 +149,11 @@ A size class for a best level, by long edge: `full` (4000 px and above), `large`
 The classes set expectations; they do not change what is in the cache.
 _Avoid_: quality, resolution
 
+**Preview resolution**:
+The exact width and height of the recovered JPEG in pixels. In review, a
+resolution filter controls which previews are shown. Each preview's own
+checkbox controls whether it will be exported.
+
 **Floor**:
 The smallest long edge worth writing: a level below it is left unwritten.
 `--min-long-edge` sets it, 640 by default, and `0` removes it.
