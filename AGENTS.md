@@ -92,6 +92,13 @@ nothing from it, so nothing shipped depends on a harness.
 Browser app changes use the [deployment runbook](docs/agents/browser-app-deployment.md)
 for synthetic fixtures, the Chromium product check and hosted release evidence.
 
+## Codex workflow
+
+- **Running-summary updates use three headings** — the action, its completed
+  state and the subject (for example, `Checking`, `Checked`, `browser gate`).
+- **Iterate on the gate that failed.** After fixing it, run the full
+  `sh scripts/check.sh` gate list once before hand-off.
+
 ## Verification
 
 - **`sh scripts/check.sh` is the one gate list.** Run it before a hand-off, or
