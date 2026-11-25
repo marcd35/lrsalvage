@@ -167,6 +167,11 @@ gate_build() {
 # browser half at all. CI's `wasm` job supplies the target and `clippy`; the two
 # compiler variables a machine may point somewhere else are `.env.example`'s to
 # document and this gate's to read.
+#
+# The compiler those variables name is checked before cargo runs: a path that has
+# moved otherwise fails inside `cc`, after every gate before this one has already
+# spent its time, and reports only `gate failed: wasm`. The check is
+# `scripts/load-env.sh`'s, because `scripts/browser-app.sh` needs the same one.
 gate_wasm() {
     printf '%s\n' '== wasm32-unknown-unknown'
     require rustup 'rustup.rs'
@@ -176,6 +181,7 @@ gate_wasm() {
         exit 1
     fi
     load_env
+    require_wasm_compiler || exit 1
     cargo clippy --lib --locked --target wasm32-unknown-unknown \
         -p lrsalvage-core -p lrsalvage-app -p lrsalvage-web -- -D warnings
 }

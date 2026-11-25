@@ -60,18 +60,36 @@ result. `scripts/drive-browser.mjs` gives it a `--check-<name>` flag and
 `scripts/browser-app.sh` runs it as a phase; that script's header names the
 phases it already has.
 
-Iterate against a fixture directory rather than a rebuild:
+Iterate against a fixture directory rather than a rebuild, keeping that directory
+at one path so the next session reuses it too:
 
 ```sh
-sh scripts/browser-app.sh --work <dir> --only receipt
+sh scripts/browser-app.sh --work target/browser-work --only receipt
 ```
 
 `--work` reuses a directory — the native run, the vaults and the CLI's own files
-are made only when missing — and `--only` runs one phase. Both leave the
+are made only when missing — and `--only` runs one phase. Both leave the wasm
+build alone, because a page is only worth measuring against a module built from
+the Rust in front of you: the build runs on every invocation, which is the
+slowest step and the one this paragraph used to imply was skipped. Both leave the
 directory in place on success, which is what turns a failing assertion into a
 rerun instead of a twelve-minute rebuild. Where a check can, hold the page to the
 CLI over one vault: `check-export.mjs` and `check-receipt.mjs` both compare the
 files the page wrote with the CLI's own runs on the same bytes.
+
+Two ways to run without a wasm C compiler. `--reuse-module` measures the phases
+against `crates/lrsalvage-app/web/pkg` as it stands and prints which module it
+reused; the frontend is served from the checkout either way, so a frontend-only
+change is checked against the module the parent commit built — the same evidence
+the previous section's checks report, and never evidence about Rust that changed.
+Or run one phase directly, which needs no build and no fixture regeneration:
+
+```sh
+node scripts/drive-browser.mjs target/browser-work --check-review
+```
+
+The driver's `--check-<name>` flags are the phases `browser-app.sh` runs, and
+`--attach <port>` points any of them at a Chrome somebody started by hand.
 
 Three facts about headless Chromium cost a debugging session each the first
 time, and the platform does not say any of them out loud:

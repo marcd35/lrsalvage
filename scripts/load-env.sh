@@ -45,3 +45,42 @@ for _load_env_candidate in \
     load_env_files="${load_env_files:+$load_env_files, }$_load_env_candidate"
 done
 unset _load_env_candidate
+
+# Whether the wasm C compiler this machine named is still where it said.
+#
+# `CC_wasm32_unknown_unknown` and `AR_wasm32_unknown_unknown` are how a machine
+# points `sqlite-wasm-rs`'s `cc` at a wasm toolchain it keeps off `PATH`, so a
+# path that has since moved fails *inside a dependency's build script*, three
+# crates into `cargo clippy --target wasm32` — and the reader's only symptom is
+# the gate list's own `gate failed: wasm`, with the cause a hundred lines up a
+# log nobody printed. A named path is one second to check and one sentence to
+# report, so it is checked here, where the value came from.
+#
+# Lives beside the loader because the values come from the files it reads and
+# because all three callers need the same check: a copy of the rule in each of
+# them is the drift this file exists to end.
+#
+# A bare command name (`CC_wasm32_unknown_unknown=clang`) is legal — `cc`
+# resolves it on `PATH` — so only a value that looks like a path is checked.
+require_wasm_compiler() {
+    for _wasm_var in CC_wasm32_unknown_unknown AR_wasm32_unknown_unknown; do
+        eval "_wasm_path=\${$_wasm_var:-}"
+        [ -n "$_wasm_path" ] || continue
+        case "$_wasm_path" in
+            # A bare command name is legal — `cc` resolves it on `PATH` — so only
+            # a value carrying a separator is treated as a path. The backslash
+            # alternative is quoted because an unquoted `\\` is not portable.
+            */* | *:* | *"\\"*) ;;
+            *) continue ;;
+        esac
+        if [ ! -f "$_wasm_path" ]; then
+            printf '%s\n' \
+                "$_wasm_var names $_wasm_path, which is not there." \
+                "read: ${load_env_files:-no env file}" \
+                'fix that line, point it at a wasm C compiler, or remove it to use clang on PATH.' >&2
+            unset _wasm_var _wasm_path
+            return 1
+        fi
+    done
+    unset _wasm_var _wasm_path
+}
