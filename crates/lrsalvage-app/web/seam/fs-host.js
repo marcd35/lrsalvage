@@ -212,7 +212,7 @@ export class FsHost {
     try {
       const handle = await this.file(mount.handle, segments);
       const file = await handle.getFile();
-      return { exists: true, file: true, len: file.size };
+      return { exists: true, file: true, len: file.size, modified_millis: file.lastModified };
     } catch (error) {
       // A directory at this path makes `getFileHandle` throw a type mismatch,
       // which is an answer — "not a file" — and not a failure.

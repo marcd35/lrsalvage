@@ -482,6 +482,9 @@ pub struct Vault {
     /// Files written verbatim at a container's address — the deliberately
     /// unreadable `.lrprev` `superseded` leaves behind.
     verbatim: Vec<(String, String, Vec<u8>)>,
+    /// Bytes written verbatim at an explicit cache-relative path: a `.lrprev`
+    /// anywhere in the tree, which is what the indexless mode reads.
+    placed: Vec<(PathBuf, Vec<u8>)>,
     unrecognised: Vec<UnrecognisedFile>,
     preoccupied: Vec<(PathBuf, Vec<u8>)>,
     /// What `write()` actually put on disk, recorded as it wrote: the shape
@@ -527,6 +530,14 @@ impl Vault {
         vault
     }
 
+    /// `.lrprev` containers and **no** `previews.db`: the legacy cache whose
+    /// index is gone, which #198 recovers without one.
+    pub fn unindexed_legacy() -> Self {
+        let mut vault = Self::archetype(Layout::Legacy, "1200001", "15.4.0");
+        vault.has_index = false;
+        vault
+    }
+
     /// A version no release produced: no number may refuse a run (ADR 0004).
     pub fn unrecognised() -> Self {
         Self::archetype(Layout::Unrecognised, "9900001", "99.0.0")
@@ -557,6 +568,7 @@ impl Vault {
             tombstones: Vec::new(),
             stale_entries: Vec::new(),
             verbatim: Vec::new(),
+            placed: Vec::new(),
             unrecognised: Vec::new(),
             preoccupied: Vec::new(),
             level_files: Vec::new(),
@@ -637,6 +649,46 @@ impl Vault {
     #[must_use]
     pub fn container(self, levels: &[Level]) -> Self {
         self.payloads(levels, Representation::Container)
+    }
+
+    /// A `.lrprev` at an explicit cache-relative path, whatever the cache holds.
+    ///
+    /// The indexless mode reads every container it finds, including one outside
+    /// the `<uuid[0]>/<uuid[0..4]>` shard folders the derived address names, so a
+    /// fixture has to be able to put one there. The bytes are the same `AgHg`
+    /// file the derived path would hold: a `header` chunk and one `level_N`
+    /// chunk per level, in the order given.
+    ///
+    /// # Panics
+    ///
+    /// Panics on an absolute path or one holding `..`: a fixture writes only
+    /// inside its own cache.
+    #[must_use]
+    pub fn container_at(self, relative: &str, levels: &[Level]) -> Self {
+        self.raw_file(relative, &container_bytes(levels))
+    }
+
+    /// Bytes written verbatim at an explicit cache-relative path.
+    ///
+    /// The escape hatch an exotic shape needs — a container whose declared
+    /// lengths stop agreeing part way through, or one holding a payload no JPEG
+    /// reader knows — without a writer of its own.
+    ///
+    /// # Panics
+    ///
+    /// Panics on an absolute path or one holding `..`.
+    #[must_use]
+    pub fn raw_file(mut self, relative: &str, bytes: &[u8]) -> Self {
+        let path = PathBuf::from(relative);
+        assert!(
+            !path.is_absolute()
+                && path
+                    .components()
+                    .all(|component| !matches!(component, std::path::Component::ParentDir)),
+            "a fixture path stays inside the cache: {relative}"
+        );
+        self.placed.push((path, bytes.to_vec()));
+        self
     }
 
     /// A level file the widened glob must find: the file exists, the row does
@@ -1159,30 +1211,20 @@ impl Vault {
         }
 
         for ((uuid, digest), levels) in containers {
-            let shapes: Vec<(u16, u16)> = levels
-                .iter()
-                .map(|level| {
-                    (
-                        u16::try_from(level.width).expect("a JPEG dimension fits a u16"),
-                        u16::try_from(level.height).expect("a JPEG dimension fits a u16"),
-                    )
-                })
-                .collect();
-            let mut file = bytes::chunk("header", &bytes::header(&shapes), 0);
-            for (position, level) in levels.iter().enumerate() {
-                file.extend(bytes::chunk(
-                    &format!("level_{}", position + 1),
-                    &level.payload(),
-                    0,
-                ));
-            }
-            write_file(&self.container_path(&uuid, &digest), &file);
-            self.containers.push(self.container_path(&uuid, &digest));
+            let path = self.container_path(&uuid, &digest);
+            write_file(&path, &container_file(&levels));
+            self.containers.push(path);
         }
 
         for (uuid, digest, bytes) in &self.verbatim {
             write_file(&self.container_path(uuid, digest), bytes);
             self.containers.push(self.container_path(uuid, digest));
+        }
+
+        for (relative, bytes) in &self.placed {
+            let path = self.previews().join(relative);
+            write_file(&path, bytes);
+            self.containers.push(path);
         }
     }
 
@@ -1320,6 +1362,38 @@ fn sidecar(path: &Path, suffix: &str) -> PathBuf {
     let mut name = path.as_os_str().to_owned();
     name.push(suffix);
     PathBuf::from(name)
+}
+
+/// The `AgHg` bytes a set of levels becomes: one `header` chunk naming every
+/// level's dimensions and one `level_N` chunk per level, in the order given.
+fn container_file(levels: &[&Payload]) -> Vec<u8> {
+    let shapes: Vec<(u16, u16)> = levels
+        .iter()
+        .map(|level| {
+            (
+                u16::try_from(level.width).expect("a JPEG dimension fits a u16"),
+                u16::try_from(level.height).expect("a JPEG dimension fits a u16"),
+            )
+        })
+        .collect();
+    let mut file = bytes::chunk("header", &bytes::header(&shapes), 0);
+    for (position, level) in levels.iter().enumerate() {
+        file.extend(bytes::chunk(
+            &format!("level_{}", position + 1),
+            &level.payload(),
+            0,
+        ));
+    }
+    file
+}
+
+/// [`container_file`] for levels composed by [`Vault::container_at`].
+fn container_bytes(levels: &[Level]) -> Vec<u8> {
+    let payloads: Vec<Payload> = levels
+        .iter()
+        .map(|level| Payload::from_level(level, Representation::Container))
+        .collect();
+    container_file(&payloads.iter().collect::<Vec<_>>())
 }
 
 fn write_file(path: &Path, bytes: &[u8]) {

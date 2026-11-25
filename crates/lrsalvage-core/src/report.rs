@@ -23,10 +23,12 @@ const VERIFICATION_SCHEMA: &str = "lrsalvage.verification";
 const MANIFEST_SCHEMA: &str = "lrsalvage.manifest";
 
 /// The `mode` every published report carries, so two files are decidable on
-/// their own: a catalog-backed run and a cache-only run measure different
-/// facts and freeze their own member sets (`specs/modules/report.md`).
+/// their own: a catalog-backed run, a cache-only run and an indexless one
+/// measure different facts and freeze their own member sets
+/// (`specs/modules/report.md`).
 const CATALOG_MODE: &str = "catalog";
 const CACHE_ONLY_MODE: &str = "cache-only";
+const LEGACY_MODE: &str = "legacy";
 
 /// One-line-per-status summary for the terminal, naming the bounds the run
 /// actually applied.
@@ -713,7 +715,26 @@ pub struct CacheBatch {
     pub saved: usize,
     pub already_recovered: usize,
     pub failed: usize,
+    #[serde(default)]
+    pub omitted: usize,
     pub confirmed_on_disk: Option<usize>,
+}
+
+impl CacheBatch {
+    fn json(self, include_verified_count: bool) -> Value {
+        let mut counts = json!({
+            "saved": self.saved,
+            "already_recovered": self.already_recovered,
+            "failed": self.failed,
+        });
+        if self.omitted != 0 {
+            counts["omitted"] = json!(self.omitted);
+        }
+        if include_verified_count {
+            counts["confirmed_on_disk"] = json!(self.confirmed_on_disk);
+        }
+        counts
+    }
 }
 
 /// `report.csv`, one row per indexed pyramid, for a cache-only run.
@@ -783,11 +804,7 @@ pub fn cache_manifest_json(
         "layout": recovery.layout.as_str(),
         "scan": cache_scan_json(&recovery.counts),
         "outputs": outputs,
-        "batch": {
-            "saved": batch.saved,
-            "already_recovered": batch.already_recovered,
-            "failed": batch.failed,
-        },
+        "batch": batch.json(false),
     });
     let mut text = serde_json::to_string_pretty(&manifest)
         .expect("the cache-only manifest is JSON-serialisable by construction");
@@ -813,12 +830,7 @@ pub fn cache_verification_json(
         "mode": CACHE_ONLY_MODE,
         "layout": recovery.layout.as_str(),
         "scan": cache_scan_json(&recovery.counts),
-        "writes": {
-            "saved": writes.saved,
-            "already_recovered": writes.already_recovered,
-            "failed": writes.failed,
-            "confirmed_on_disk": writes.confirmed_on_disk,
-        },
+        "writes": writes.json(true),
     });
     let mut text = serde_json::to_string_pretty(&report)
         .expect("the cache-only verification report is JSON-serialisable by construction");
@@ -840,6 +852,110 @@ fn cache_scan_json(counts: &crate::cache_recovery::Counts) -> Value {
         "invalid": counts.invalid,
         "unsupported": counts.unsupported,
     })
+}
+
+/// The four counts an indexless run measured, named for what they count.
+///
+/// A container is a file rather than an indexed pyramid, so reusing the indexed
+/// words would name different facts; `containers` and `usable` are this mode's
+/// own (`specs/modules/report.md`).
+fn container_scan_json(counts: &crate::cache_recovery::ContainerCounts) -> Value {
+    json!({
+        "containers": counts.containers,
+        "usable": counts.usable,
+        "invalid": counts.invalid,
+        "unsupported": counts.unsupported,
+    })
+}
+
+/// `report.csv`, one row per `.lrprev` container, for an indexless run.
+///
+/// Its own frozen column set: the cache-relative container path is the identity
+/// this mode has, because nothing else names a candidate. The filename is the
+/// generated one, never an original, and the dimensions are empty when no
+/// preview survived (`specs/modules/report.md`).
+const LEGACY_CSV_HEADER: &str = "mode,filename,status,width,height,container";
+
+pub fn legacy_csv(recovery: &crate::cache_recovery::LegacyRecovery) -> String {
+    let mut text = String::with_capacity(LEGACY_CSV_HEADER.len() + 2 + recovery.items.len() * 112);
+    let mut line = String::with_capacity(144);
+
+    text.push_str(LEGACY_CSV_HEADER);
+    text.push_str("\r\n");
+
+    for item in &recovery.items {
+        line.clear();
+        push_csv_field(&mut line, LEGACY_MODE);
+        line.push(',');
+        push_csv_field(&mut line, &item.filename);
+        line.push(',');
+        push_csv_field(&mut line, item.status.as_str());
+        line.push(',');
+        let (width, height) = item.preview.as_ref().map_or((None, None), |preview| {
+            (Some(preview.dimensions.0), Some(preview.dimensions.1))
+        });
+        push_csv_field(&mut line, &optional_number(width));
+        line.push(',');
+        push_csv_field(&mut line, &optional_number(height));
+        line.push(',');
+        push_csv_field(&mut line, &slashed(&item.relative));
+        line.push_str("\r\n");
+        text.push_str(&line);
+    }
+    text
+}
+
+/// `manifest.json` for an indexless run, with the host's clock and the batch's
+/// already-serialised outcomes.
+///
+/// The member set is the cache-only one less `layout`: an indexless run measures
+/// no layout, because it reads every container it finds and classifies none of
+/// the cache's representations (`specs/modules/report.md`).
+pub fn legacy_manifest_json(
+    recovery: &crate::cache_recovery::LegacyRecovery,
+    outputs: &Value,
+    batch: CacheBatch,
+    version: &str,
+    generated_unix: u64,
+) -> String {
+    let manifest = json!({
+        "schema": MANIFEST_SCHEMA,
+        "version": version,
+        "generated_unix": generated_unix,
+        "mode": LEGACY_MODE,
+        "scan": container_scan_json(&recovery.counts),
+        "outputs": outputs,
+        "batch": batch.json(false),
+    });
+    let mut text = serde_json::to_string_pretty(&manifest)
+        .expect("the legacy manifest is JSON-serialisable by construction");
+    text.push('\n');
+    text
+}
+
+/// The path-free verification report for an indexless run.
+///
+/// Aggregate counts and nothing that names a file, a folder or a payload: no
+/// item list, no filename, no cache-relative path
+/// (`adr-0007-publish-a-verification-report`).
+pub fn legacy_verification_json(
+    recovery: &crate::cache_recovery::LegacyRecovery,
+    writes: CacheBatch,
+    version: &str,
+    generated_unix: u64,
+) -> String {
+    let report = json!({
+        "schema": VERIFICATION_SCHEMA,
+        "version": version,
+        "generated_unix": generated_unix,
+        "mode": LEGACY_MODE,
+        "scan": container_scan_json(&recovery.counts),
+        "writes": writes.json(true),
+    });
+    let mut text = serde_json::to_string_pretty(&report)
+        .expect("the legacy verification report is JSON-serialisable by construction");
+    text.push('\n');
+    text
 }
 
 /// Self-contained HTML contact sheet with inlined thumbnails.
@@ -1112,6 +1228,7 @@ mod tests {
             saved: 1,
             already_recovered: 2,
             failed: 3,
+            omitted: 0,
             confirmed_on_disk: Some(3),
         };
         let text = cache_manifest_json(
@@ -1156,6 +1273,7 @@ mod tests {
             saved: 1,
             already_recovered: 2,
             failed: 0,
+            omitted: 0,
             confirmed_on_disk: None,
         };
         let text = cache_verification_json(&recovery, writes, "9.9.9", 1_700_000_000);

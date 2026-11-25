@@ -447,6 +447,13 @@ pub(super) fn exists(path: &Path) -> io::Result<bool> {
     }
 }
 
+pub(super) fn modified_millis(path: &Path) -> Option<i64> {
+    match mount_of(path).ok()?.kind {
+        Kind::Store => None,
+        Kind::Bridge => bridge::stat(path).ok()?.modified_millis,
+    }
+}
+
 pub(super) fn is_file(path: &Path) -> io::Result<bool> {
     match mount_of(path)?.kind {
         Kind::Store => {

@@ -117,8 +117,17 @@
             select <strong>Recover from preview cache</strong> and choose the cache folder itself.
             The cache must contain a readable <code>previews.db</code>.
           </p>
+          <p>
+            If the cache has no <code>previews.db</code> — an older backup, or one whose index was
+            lost — select <strong>Recover from a cache without an index…</strong> and choose the
+            cache folder. That mode reads each <code>.lrprev</code> container in the folder and
+            offers its largest complete JPEG. The filenames are generated from where each
+            container sits, so the original filenames and folders are not part of it. A scan that
+            failed because the index is missing offers the same mode, on the folder it already
+            holds.
+          </p>
           <figure class="guide-shot">
-            <img src="./guide/choose-folder.png" width="704" height="307" loading="lazy" alt="Recovery source screen with Choose folder, Scan this catalog, and Recover from preview cache buttons">
+            <img src="./guide/choose-folder.png" width="704" height="490" loading="lazy" alt="Recovery source screen: Choose folder, Scan this catalog, Recover from preview cache, and Recover from a cache without an index, above a note explaining what the indexless mode can and cannot recover">
             <figcaption>The source screen before choosing a folder.</figcaption>
           </figure>
         </li>
@@ -165,7 +174,7 @@
         <dt>The catalog cannot be read</dt>
         <dd>Try another intact backup. Check whether the original backup includes catalog sidecars.</dd>
         <dt>The cache is missing or unreadable</dt>
-        <dd>Choose the matching <code>Previews.lrdata</code> folder. Check for <code>previews.db</code> inside it.</dd>
+        <dd>Choose the matching <code>Previews.lrdata</code> folder. Check for <code>previews.db</code> inside it. If that file is gone, <strong>Recover from a cache without an index</strong> still reads the <code>.lrprev</code> containers the folder holds.</dd>
         <dt>There are fewer previews than photos</dt>
         <dd>Check the scan details for missing files or an unfamiliar cache layout. If you have another backup, try its catalog and matching cache.</dd>
       </dl>

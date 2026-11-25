@@ -21,6 +21,7 @@ on:
       - "scripts/drive-browser.mjs"
       - "scripts/check-preview-review.mjs"
       - "scripts/check-cache-only.mjs"
+      - "scripts/check-legacy.mjs"
   workflow_dispatch:
   push:
     tags: ["app-0.1.0"]

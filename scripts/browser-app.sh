@@ -4,8 +4,8 @@
 #   sh scripts/browser-app.sh [--chrome <path>] [--attach <port>] [--verbose]
 #                             [--only <phase>] [--work <dir>]
 #
-# `--only` runs one phase — `parity`, `review`, `export`, `receipt`, `progress`
-# or `cache-only` — and `--work` reuses a fixture directory: the native run, the
+# `--only` runs one phase — `parity`, `review`, `export`, `receipt`, `progress`,
+# `cache-only` or `legacy` — and `--work` reuses a fixture directory: the native run, the
 # vaults and the CLI's own files are made only when they are missing, and the
 # directory is left in place. Together they turn iterating on one phase from a
 # rebuild into a rerun.
@@ -98,7 +98,7 @@ while [ "$#" -gt 0 ]; do
             shift
             phase=${1:-}
             case "$phase" in
-                parity | review | export | receipt | progress | cache-only) ;;
+                parity | review | export | receipt | progress | cache-only | legacy) ;;
                 *)
                     printf '%s\n' '--only needs one of: parity review export receipt progress cache-only' >&2
                     exit 2
@@ -148,7 +148,8 @@ want() {
 
 printf '%s\n' '== native'
 if [ -f "$work/native.json" ] &&
-    { ! want cache-only || grep -q '"cache_only":' "$work/native.json"; }; then
+    { ! want cache-only || grep -q '"cache_only":' "$work/native.json"; } &&
+    { ! want legacy || grep -q '"legacy":' "$work/native.json"; }; then
     printf '%s\n' "reusing $work/native.json"
 else
     cargo run -q -p lrsalvage-app --bin vault-app -- "$work"
@@ -249,5 +250,16 @@ if want cache-only; then
     else
         # shellcheck disable=SC2086
         node scripts/drive-browser.mjs "$work" --check-cache-only $driver_args
+    fi
+fi
+
+if want legacy; then
+    printf '%s\n' '== indexless preview recovery (#198)'
+    if [ -n "$chrome" ]; then
+        # shellcheck disable=SC2086
+        node scripts/drive-browser.mjs "$work" --chrome "$chrome" --check-legacy $driver_args
+    else
+        # shellcheck disable=SC2086
+        node scripts/drive-browser.mjs "$work" --check-legacy $driver_args
     fi
 fi

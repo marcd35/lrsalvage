@@ -20,8 +20,8 @@
 
 import { installBridge } from './seam/lrsalvage-fs.js';
 import init, {
-  pause_store, poll_install, read_preview, scan, scan_cache, start_install,
-  export_paths, prepare_export, existing_export, export_reports,
+  pause_store, poll_install, read_preview, scan, scan_cache, scan_legacy,
+  start_install, preview_modified, export_paths, prepare_export, existing_export, export_reports,
   verification_report, versions,
 } from './pkg/lrsalvage_app.js';
 
@@ -58,7 +58,7 @@ self.onmessage = async (event) => {
     }
     return;
   }
-  if ([ 'export-paths', 'export-jpeg', 'export-existing', 'export-reports', 'verification-report' ].includes(message?.type)) {
+  if ([ 'preview-modified', 'export-paths', 'export-jpeg', 'export-existing', 'export-reports', 'verification-report' ].includes(message?.type)) {
     const { request, id, flat, outcomes } = message;
     try {
       if (message.type === 'verification-report') {
@@ -85,6 +85,7 @@ self.onmessage = async (event) => {
       } else {
         let value;
         switch (message.type) {
+          case 'preview-modified': value = preview_modified(message.ids); break;
           case 'export-paths': value = export_paths(flat); break;
           case 'export-existing': value = existing_export(id, flat, message.bytes); break;
           case 'export-reports':
@@ -109,7 +110,7 @@ self.onmessage = async (event) => {
   }
 };
 
-async function run({ sab, stop, mounts, catalog, cache, capacity }) {
+async function run({ sab, stop, mounts, catalog, cache, mode, capacity }) {
   const started = performance.now();
   const exports = await init();
   log('wasm instantiated in', Math.round(performance.now() - started), 'ms');
@@ -151,7 +152,11 @@ async function run({ sab, stop, mounts, catalog, cache, capacity }) {
   self.postMessage({ type: 'stage', stage: 'copy' });
 
   const began = performance.now();
-  const report = JSON.parse(catalog ? scan(catalog, cache) : scan_cache(cache));
+  const report = JSON.parse(
+    mode === 'legacy' ? scan_legacy(cache)
+      : mode === 'catalog' ? scan(catalog, cache)
+        : scan_cache(cache),
+  );
   // Preview reads address the picked cache through the bridge. Release the
   // SQLite pool before reporting so a restart or recheck can install it again.
   pause_store();

@@ -136,8 +136,12 @@ export async function checkCacheOnly(send) {
       await click('export-start');
     }
     await until(el('receipt-report-list') + '.children.length === 3', 'Recovery reports were not saved');
-    assert.equal(await text('receipt-headline'), '13 previews saved');
-    assert.match(await text('receipt-reconciled'), /Every file above was found/);
+    assert.match(await text('receipt-headline'), /^13 files saved to /);
+    assert.equal(await text('receipt-reconciled'), '');
+    assert.equal(await evaluate(el('receipt-complete') + '.open'), true);
+    await evaluate('document.querySelector("#receipt-complete button[type=submit]").click()');
+    await until('!' + el('receipt-complete') + '.open', 'OK did not dismiss the completion dialog');
+    assert.equal(await evaluate(el('receipt-files') + '.hidden'), true);
     assert.deepEqual(await call(savedFiles), Object.fromEntries(entry.manifest.map(({ output, bytes, sha256 }) =>
       [output, { bytes, sha256 }])));
     const manifest = JSON.parse(await call(report, 'manifest.json'));
@@ -183,8 +187,8 @@ export async function checkCacheOnly(send) {
   await evaluate('document.querySelector(".review-open").click()');
   await until('!' + el('export-one') + '.disabled', 'The one-off save did not open');
   await click('export-one');
-  await until(el('receipt-reconciled') + '.textContent.includes("Every file above was found")',
-    'The one-off receipt did not reconcile the destination');
+  await until(el('receipt-headline') + '.textContent.startsWith("1 file saved to")',
+    'The one-off receipt did not list the saved file');
   await click('photo-close');
   await call(async () => {
     const { freshDirectory } = await import('./mount.js');
@@ -194,11 +198,17 @@ export async function checkCacheOnly(send) {
   await until(el('export-destination') + '.textContent.includes("cache-other-output")',
     'Could not set the second destination');
   await click('photo-uncheck-visible');
+  await evaluate('document.querySelectorAll(".review-tile input")[0].click()');
   await evaluate('document.querySelectorAll(".review-tile input")[1].click()');
   await click('export-start');
   await until(el('receipt-report-list') + '.children.length === 3', 'Second destination reports were not saved');
-  assert.equal(await text('receipt-headline'), '2 previews saved');
-  assert.match(await text('receipt-reconciled'), /Every file above was found/);
+  assert.match(await text('export-status'), /^2 saved of 2/);
+  assert.equal(await evaluate(el('receipt-complete') + '.open'), true,
+    'Completion must verify the batch destination even when the receipt keeps an earlier path');
+  assert.match(await text('receipt-complete-destination'), /cache-other-output/);
+  await evaluate('document.querySelector("#receipt-complete button[type=submit]").click()');
+  assert.match(await text('receipt-headline'), /^2 files saved to /);
+  assert.equal(await text('receipt-reconciled'), '');
   measured.previewsSaved += 2;
   await click('restart');
 
@@ -216,11 +226,14 @@ export async function checkCacheOnly(send) {
   await click('export-pick');
   await until('!' + el('export-start') + '.disabled', 'Cannot resume using the same folder');
   await click('export-start');
+  await until(el('export-conflict') + '.open', 'Existing previews were not listed');
+  await evaluate('document.querySelector("#export-conflict [value=skip]").click()');
   await until(el('receipt-report-list') + '.children.length === 3', 'Second run reports were not saved');
-  assert.match(await text('receipt-detail'), /12 already recovered · 1 could not be saved/);
+  assert.match(await text('receipt-headline'), /^12 of 13 files recovered/);
+  assert.match(await text('receipt-detail'), /1 skipped/);
   assert.deepEqual(await call(savedFiles), occupied);
   assert.deepEqual(JSON.parse(await call(report, 'manifest (2).json')).batch,
-    { saved: 0, already_recovered: 12, failed: 1 });
+    { saved: 0, already_recovered: 12, failed: 0, omitted: 1 });
   measured.alreadyRecovered += 12;
   measured.conflicts += 1;
   await click('restart');

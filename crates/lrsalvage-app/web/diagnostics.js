@@ -30,6 +30,9 @@ const SCAN_COUNTS = [
 
 const CACHE_SCAN_COUNTS = ['indexed', 'recoverable', 'missing', 'invalid', 'unsupported'];
 
+/** The four facts an indexless run measures, in `report.md`'s order. */
+const CONTAINER_SCAN_COUNTS = ['containers', 'usable', 'invalid', 'unsupported'];
+
 /** The seven categories a failed write is counted under, aimed at a person. */
 const FAILURE_CATEGORIES = [
   'destination_gone', 'permission', 'out_of_room', 'occupied_foreign',
@@ -84,13 +87,19 @@ const build = (async () => {
   }
 })();
 
-function blank() {
+function blank(mode = 'catalog') {
   return {
+    mode,
     marks: {},
     scan: null,
-    // The other mode's counts, present as `null` on every copy so a reader can key
-    // on the same five names whichever run produced it (`specs/app.md`).
-    cacheScan: Object.fromEntries(CACHE_SCAN_COUNTS.map((name) => [name, null])),
+    // The counts of the modes that measured no catalog, present on every copy so
+    // a reader keys on the same names whichever run produced it. An indexless
+    // run counts containers rather than pyramids, so its four names are the
+    // ones at `null` on its copy (`specs/app.md`).
+    cacheScan: Object.fromEntries(
+      (mode === 'legacy' ? CONTAINER_SCAN_COUNTS : CACHE_SCAN_COUNTS)
+        .map((name) => [name, null]),
+    ),
     writes: { planned: 0, written: 0, already_recovered: 0, failed: 0, confirmed_on_disk: null },
     events: { stopped: 0, settled: 0, continued: 0 },
     failures: Object.fromEntries(FAILURE_CATEGORIES.map((name) => [name, 0])),
@@ -111,11 +120,11 @@ let state = blank();
  */
 export const log = {
   /** A new run begins: the receipt's counters start again, the versions do not. */
-  run(cacheOnly = false) {
+  run(mode = 'catalog') {
     const versions = state.versions;
-    state = blank();
+    state = blank(mode);
     state.versions = versions;
-    state.cacheOnly = cacheOnly;
+    state.cacheOnly = mode !== 'catalog';
   },
 
   /**
@@ -154,13 +163,15 @@ export const log = {
   /** The scan's frozen counts, copied member by member and by name.
    *
    * Each mode fills its own object and leaves the other's `null`: a cache-only
-   * scan measures five facts about pyramids and none of the catalog's eighteen,
-   * and giving one set the other's names would be the second vocabulary
-   * `specs/app.md` forbids.
+   * scan measures five facts about pyramids, an indexless one four facts about
+   * containers, and neither measures any of the catalog's eighteen. Giving one
+   * set the other's names would be the second vocabulary `specs/app.md` forbids.
    */
   scanCounts(stats) {
     if (!stats) return;
-    const fields = state.cacheOnly ? CACHE_SCAN_COUNTS : SCAN_COUNTS;
+    const fields = state.mode === 'legacy'
+      ? CONTAINER_SCAN_COUNTS
+      : state.cacheOnly ? CACHE_SCAN_COUNTS : SCAN_COUNTS;
     const counts = Object.fromEntries(fields.map((name) => [name, stats[name] ?? null]));
     if (state.cacheOnly) state.cacheScan = counts;
     else state.scan = counts;
@@ -237,7 +248,7 @@ export const log = {
     const marks = state.marks;
     const object = {
       schema: 'lrsalvage.diagnostics',
-      mode: state.cacheOnly ? 'cache-only' : 'catalog',
+      mode: state.mode,
       versions: {
         app: identity.app,
         core: identity.core,

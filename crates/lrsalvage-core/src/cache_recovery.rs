@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 use std::io;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 use serde::Serialize;
 use sha2::{Digest, Sha256};
@@ -30,6 +30,182 @@ impl Status {
             Self::Unsupported => "unsupported",
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ContainerStatus {
+    Usable,
+    Invalid,
+    Unsupported,
+}
+
+impl ContainerStatus {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Usable => "usable",
+            Self::Invalid => "invalid",
+            Self::Unsupported => "unsupported",
+        }
+    }
+}
+
+/// What an indexless run counts: one outcome per `.lrprev` container.
+///
+/// Not the indexed counts under other words: `containers` is a number of files
+/// and `usable` is how many of them yielded a certified JPEG, where the indexed
+/// mode counts pyramids the index named.
+#[derive(Debug, Default, Serialize)]
+pub struct ContainerCounts {
+    pub containers: usize,
+    pub usable: usize,
+    pub invalid: usize,
+    pub unsupported: usize,
+}
+
+/// One container, and the one preview this mode offers from it.
+#[derive(Debug)]
+pub struct ContainerItem {
+    /// The container's exact cache-relative path: this mode's identity for a
+    /// candidate, and the only input its generated name is derived from.
+    pub relative: PathBuf,
+    pub filename: String,
+    pub status: ContainerStatus,
+    /// The chosen JPEG, `Some` exactly when the status is `usable`.
+    pub preview: Option<Preview>,
+}
+
+/// A cache recovered with no index at all (#198).
+#[derive(Debug)]
+pub struct LegacyRecovery {
+    /// One entry per `.lrprev` container found, in cache-relative path order.
+    pub items: Vec<ContainerItem>,
+    pub counts: ContainerCounts,
+}
+
+impl LegacyRecovery {
+    /// Enumerate every `.lrprev` under `cache` and choose one JPEG from each.
+    ///
+    /// Nothing here opens `previews.db`: with no index there is nothing to map,
+    /// so a container is a candidate on its own and the name it produces comes
+    /// from where it sits. A stopped scan has no plan, as the indexed one has
+    /// none.
+    pub fn scan(
+        cache: &Path,
+        progress: &mut dyn FnMut(Progress) -> Control,
+    ) -> Result<Option<Self>> {
+        let walked = previews_db::containers(cache, &mut |files| {
+            progress(Progress::Cache { files }) == Control::Continue
+        })?;
+        let Some(paths) = walked else {
+            return Ok(None);
+        };
+        let total = paths.len() as u64;
+        let mut counts = ContainerCounts {
+            containers: paths.len(),
+            ..ContainerCounts::default()
+        };
+        let mut items = Vec::with_capacity(paths.len());
+        for (done, relative) in paths.into_iter().enumerate() {
+            if progress(Progress::Payloads {
+                done: done as u64,
+                total,
+            }) == Control::Stop
+            {
+                return Ok(None);
+            }
+            let item = inspect_container(cache, relative);
+            match item.status {
+                ContainerStatus::Usable => counts.usable += 1,
+                ContainerStatus::Invalid => counts.invalid += 1,
+                ContainerStatus::Unsupported => counts.unsupported += 1,
+            }
+            items.push(item);
+        }
+        if progress(Progress::Payloads { done: total, total }) == Control::Stop {
+            return Ok(None);
+        }
+        Ok(Some(Self { items, counts }))
+    }
+}
+
+/// One container's outcome: its best certified JPEG, or why it has none.
+fn inspect_container(cache: &Path, relative: PathBuf) -> ContainerItem {
+    let path = cache.join(&relative);
+    let mut item = ContainerItem {
+        filename: legacy_filename(&relative),
+        relative,
+        status: ContainerStatus::Invalid,
+        preview: None,
+    };
+    let Ok(bytes) = fs::read(&path) else {
+        // A file this run cannot read is one outcome, not a stopped scan: the
+        // inventory is complete, and the candidate is the thing that failed.
+        return item;
+    };
+    let (container, parsed) = lrprev::Lrprev::parse_prefix(&bytes);
+    let levels = container.levels();
+    let mut best: Option<(usize, (u32, u32))> = None;
+    for (index, chunk) in levels.iter().enumerate() {
+        let Ok(frame) = jpeg::certify_recovery(chunk.data) else {
+            continue;
+        };
+        if !frame.complete || area(frame.dimensions) == 0 {
+            continue;
+        }
+        // Strictly greater: an equal-area tie keeps the chunk that came first
+        // in file order, which is the tie-break this mode promises.
+        if best.is_none_or(|(_, size)| area(frame.dimensions) > area(size)) {
+            best = Some((index, frame.dimensions));
+        }
+    }
+    if let Some((index, dimensions)) = best {
+        item.status = ContainerStatus::Usable;
+        item.preview = Some(Preview {
+            path,
+            chunk: Some(index),
+            dimensions,
+            bytes: levels[index].data.len() as u64,
+            sha256: hex(&Sha256::digest(levels[index].data)),
+        });
+        return item;
+    }
+    // No certified JPEG. A container that parsed, names at least one image and
+    // holds only formats this reader recognizes as images is one this tool
+    // cannot read rather than a damaged file, and saying so is the difference
+    // between "unsupported" and "invalid".
+    item.status = if parsed.is_ok()
+        && !levels.is_empty()
+        && levels.iter().all(|chunk| jpeg::is_other_image(chunk.data))
+    {
+        ContainerStatus::Unsupported
+    } else {
+        ContainerStatus::Invalid
+    };
+    item
+}
+
+/// The generated name one container gets: its exact cache-relative path, hashed
+/// behind a prefix this mode owns.
+///
+/// The path is joined with `/` so the same cache composes the same name on a
+/// target that spells separators differently, and the cache root's own name is
+/// not part of it — so moving a whole cache, or adding another container beside
+/// it, leaves every existing name alone. Two containers never share one, however
+/// identical their previews are.
+fn legacy_filename(relative: &Path) -> String {
+    let mut hash = Sha256::new();
+    let mut first = true;
+    for component in relative.components() {
+        if let Component::Normal(part) = component {
+            if !first {
+                hash.update(b"/");
+            }
+            first = false;
+            hash.update(part.as_encoded_bytes());
+        }
+    }
+    format!("legacy-preview-{}.jpg", hex(&hash.finalize()))
 }
 
 #[derive(Debug, Default, Serialize)]
@@ -154,6 +330,11 @@ pub struct Preview {
 }
 
 impl Preview {
+    /// Modification time of the file that contains this preview.
+    pub fn modified_millis(&self) -> Option<i64> {
+        fs::modified_millis(&self.path)
+    }
+
     /// Re-read the certified bytes. A changed payload requires a fresh scan.
     pub fn read(&self) -> Result<Vec<u8>> {
         let file = fs::read(&self.path).at(&self.path)?;

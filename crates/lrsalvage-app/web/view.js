@@ -99,7 +99,9 @@ export function mount(document) {
 
   showOnly(source);
   el('recover-cache').addEventListener('click', () => void chooseRecoveryCache(pickerError));
+  el('recover-legacy').addEventListener('click', () => void chooseLegacyCache(pickerError));
   el('recover-cache-after-error').addEventListener('click', () => void recoverAfterError());
+  el('recover-legacy-after-error').addEventListener('click', () => void recoverLegacyAfterError());
   scanButton.addEventListener('click', scanChosenCatalog);
 
   function scanChosenCatalog() {
@@ -167,8 +169,17 @@ export function mount(document) {
     }
   }
 
-  function cacheSource(handle) {
-    return { mounts: [{ path: '/cache', handle }], catalog: null, cache: '/cache' };
+  function cacheSource(handle, mode = 'cache-only') {
+    return { mounts: [{ path: '/cache', handle }], catalog: null, cache: '/cache', mode };
+  }
+
+  /**
+   * The run's mode, in the words the report files carry: `catalog`, `cache-only`
+   * or `legacy`. One vocabulary, so the copied diagnostics and a `manifest.json`
+   * from the same run cannot name it two ways.
+   */
+  function modeOf(chosen) {
+    return chosen.mode ?? (chosen.catalog ? 'catalog' : 'cache-only');
   }
 
   async function chooseRecoveryCache(message) {
@@ -182,27 +193,64 @@ export function mount(document) {
     }
   }
 
-  async function recoverAfterError() {
-    const chosen = state.source;
-    if (chosen) {
-      const mount = chosen.mounts.find(({ path }) =>
-        chosen.cache === path || chosen.cache.startsWith(path + '/'));
-      if (mount) {
-        let handle = mount.handle;
-        try {
-          for (const component of chosen.cache.slice(mount.path.length).split('/').filter(Boolean)) {
-            handle = await handle.getDirectoryHandle(component);
-          }
-        } catch {
-          handle = null;
-        }
-        if (handle) {
-          await runScan(cacheSource(handle));
-          return;
-        }
+  /** The indexless mode: the same picker, read for `.lrprev` files instead. */
+  async function chooseLegacyCache(message) {
+    const answer = await pickFolder({ id: 'lrsalvage-cache', mode: 'read' });
+    if (answer.cancelled) {
+      say(message, 'Nothing was chosen, so nothing changed.');
+    } else if (answer.refused) {
+      say(message, `This browser refused the folder: ${answer.refused.message}`);
+    } else {
+      await runScan(cacheSource(answer.handle, 'legacy'));
+    }
+  }
+
+  /**
+   * The cache folder the last run used, through the handles this page holds.
+   *
+   * A `FileSystemDirectoryHandle` cannot be reached from a path, but a run's
+   * source records the mount it was picked with and the path below it, so the
+   * handle is one walk down from the mount.
+   */
+  async function cacheHandleOf(chosen) {
+    if (!chosen) return null;
+    const mount = chosen.mounts.find(({ path }) =>
+      chosen.cache === path || chosen.cache.startsWith(path + '/'));
+    if (!mount) return null;
+    let handle = mount.handle;
+    try {
+      for (const component of chosen.cache.slice(mount.path.length).split('/').filter(Boolean)) {
+        handle = await handle.getDirectoryHandle(component);
       }
+    } catch {
+      return null;
+    }
+    return handle;
+  }
+
+  async function recoverAfterError() {
+    const handle = await cacheHandleOf(state.source);
+    if (handle) {
+      await runScan(cacheSource(handle));
+      return;
     }
     await chooseRecoveryCache(headline);
+  }
+
+  /**
+   * Reuse the cache a failed indexed run was given, this time without its index.
+   *
+   * That is the one failure that names a next step rather than a dead end: the
+   * containers are still in the folder, and the mode that reads them needs no
+   * `previews.db` at all.
+   */
+  async function recoverLegacyAfterError() {
+    const handle = await cacheHandleOf(state.source);
+    if (handle) {
+      await runScan(cacheSource(handle, 'legacy'));
+      return;
+    }
+    await chooseLegacyCache(headline);
   }
 
   async function chooseCatalogue() {
@@ -312,11 +360,12 @@ export function mount(document) {
   async function runScan(chosen) {
     if (running || exports.busy()) return;
     state.source = chosen;
-    const cacheOnly = !chosen.catalog;
+    const mode = modeOf(chosen);
+    const cacheOnly = mode !== 'catalog';
     pickerError.hidden = true;
     // A run's diagnostics start here: a failure at the copy has no receipt to
     // attach them to, and it is the one somebody wants to hand over.
-    log.run(cacheOnly);
+    log.run(mode);
     clearReview();
     const path = chosen.catalog ?? chosen.cache;
     const mount = chosen.mounts.find(({ path: root }) => path === root || path.startsWith(root + '/'));
@@ -332,12 +381,14 @@ export function mount(document) {
       },
       stage(name) {
         log.stage(name);
-        // The cache-only run has no catalog to copy, so it names its own wait
+        // A run with no catalog has nothing to copy, so it names its own wait
         // instead of the catalog copy's sentence; everything else about the
         // readout is `scan-progress.js`'s (#185), including the cache walk's
         // "files checked" and the stopping state.
         if (cacheOnly && name === 'copy') {
-          scanProgress.reset('Opening the preview index…');
+          scanProgress.reset(
+            mode === 'legacy' ? 'Reading the preview containers…' : 'Opening the preview index…',
+          );
           return;
         }
         scanProgress.stage(name);
@@ -377,9 +428,9 @@ export function mount(document) {
       log.scanCounts(cacheOnly ? report.scan : report.stats);
       completed = scan;
       if (report.photos.some((photo) => photo.preview)) {
-        exports.open(scan, chosen.mounts, cacheOnly);
+        exports.open(scan, chosen.mounts, mode);
       }
-      if (!cacheOnly || report.photos.length) review.show(report.photos, scan.preview, cacheOnly);
+      if (!cacheOnly || report.photos.length) review.show(report.photos, scan, cacheOnly);
     }
     resultTitle.focus();
   }
@@ -393,10 +444,15 @@ export function mount(document) {
     roots.replaceChildren();
 
     resultTitle.textContent = report.ok ? '3. Review previews' : 'The scan could not finish';
-    const cacheOnly = !chosen.catalog;
+    const mode = modeOf(chosen);
+    const cacheOnly = mode !== 'catalog';
     el('cache-notice').hidden = !cacheOnly || !report.ok || !report.photos.length;
     el('recover-cache-after-error').hidden = report.ok || cacheOnly ||
       !['open', 'copy'].includes(report.problem.stage);
+    // A cache whose index is missing, unreadable or unsupported still holds its
+    // containers, so that failure offers the mode that reads them (#198).
+    el('recover-legacy-after-error').hidden = report.ok ||
+      report.problem.stage !== 'cache-index';
     el('scan-details').hidden = !report.ok;
     if (!report.ok) {
       log.viewFailure(report.problem.stage, report.problem.kind);
@@ -421,6 +477,31 @@ export function mount(document) {
       const item = document.createElement('li');
       item.append(detail, copy, status);
       causes.append(item);
+      rootsSection.hidden = true;
+      return;
+    }
+
+    if (mode === 'legacy') {
+      const { containers, usable, invalid, unsupported } = report.scan;
+      headline.textContent = containers === 0
+        ? 'This folder holds no preview containers.'
+        : `${counted(usable)} of ${counted(containers)} preview containers hold a usable preview.`;
+      fact('Preview containers', counted(containers));
+      fact('Usable', counted(usable));
+      fact('Invalid', counted(invalid));
+      fact('Unsupported', counted(unsupported));
+      if (containers === 0) {
+        causes.append(sentence(
+          'No .lrprev file was found under that folder. This mode reads containers only, ' +
+            'so a cache that keeps standalone level files beside its previews.db has nothing ' +
+            'for it. If you picked the folder holding the cache rather than the cache itself, ' +
+            'choose the .lrdata folder and scan again.',
+        ));
+      } else if (invalid || unsupported) {
+        causes.append(sentence(
+          `${counted(invalid)} invalid · ${counted(unsupported)} unsupported`,
+        ));
+      }
       rootsSection.hidden = true;
       return;
     }
@@ -621,6 +702,12 @@ export function mount(document) {
     node.hidden = false;
   }
 
+  function sentence(text) {
+    const item = document.createElement('li');
+    item.textContent = text;
+    return item;
+  }
+
   function line(lead, text) {
     const paragraph = document.createElement('p');
     if (lead) {
@@ -646,9 +733,13 @@ function failureSentence(stage, kind) {
   }
   if (stage === 'cache-index') {
     return {
-      missing: 'This folder has no previews.db. Choose the preview cache folder that contains it.',
-      unreadable: 'The preview index could not be read. Try another copy of the preview cache.',
-      unsupported: 'This preview index has an unsupported schema.',
+      missing: 'This folder has no previews.db. Choose the preview cache folder that contains ' +
+        'it, or recover its previews without an index — that mode reads the .lrprev ' +
+        'containers the folder still holds.',
+      unreadable: 'The preview index could not be read. Try another copy of the preview cache, ' +
+        'or recover its previews without an index.',
+      unsupported: 'This preview index has an unsupported schema. Recovering its previews ' +
+        'without an index reads the containers beside it.',
     }[kind];
   }
   if (kind === 'catalog-changed') {

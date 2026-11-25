@@ -10,6 +10,29 @@ minor saying so here before one is removed, renamed or given a different meaning
 
 ## [Unreleased]
 
+### Added
+
+- **The browser app recovers a legacy preview cache whose index is gone (#198).**
+  The start screen offers **Recover from a cache without an index…** beside the two
+  modes that read an index. A run of that mode enumerates every `.lrprev` container
+  under a folder you choose — including ones outside the shard folders the indexed
+  walk addresses — reads each by its declared chunk boundaries without ever opening
+  `previews.db`, and offers one complete JPEG per container: the largest by measured
+  pixel area, with an equal-area tie going to the first chunk in file order. A
+  container with no complete chunk but only recognized non-JPEG images is reported
+  as unsupported rather than damaged, and one the folder refuses to open is counted
+  as invalid instead of stopping the scan. The file name is generated from the
+  container's exact cache-relative path, so moving the whole cache or adding
+  another file beside it keeps every existing name, and two containers never share
+  one. Review, the destination checks, Stop and Continue, the already-recovered and
+  conflict outcomes, the receipt and the three report files are the ones the
+  indexed cache mode already had; the mode word they carry is `legacy`, and the
+  scan counts are containers, usable, invalid and unsupported. Original filenames,
+  folder structure, catalog metadata and image-to-catalog associations are not
+  available in this mode, and the page says so before a save. Modern standalone
+  level files are not candidates: grouping them and giving them provenance is a
+  separate question.
+
 ## [0.4.0]
 
 0.4.0 is the daily-use minor, in

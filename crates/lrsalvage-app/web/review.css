@@ -12,7 +12,8 @@ main:has(#photo-review:not([hidden])) {
 }
 
 .review-controls input[type="search"],
-.review-controls select {
+.review-controls select,
+.resolution-filter summary {
   font: inherit;
   color: var(--ink);
   background: var(--bg);
@@ -56,6 +57,90 @@ main:has(#photo-review:not([hidden])) {
   width: 1rem;
   height: 1rem;
   margin: 0;
+}
+
+.resolution-control:not([hidden]) {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 0.35rem;
+}
+
+.resolution-control > span {
+  line-height: 2.5rem;
+}
+
+.resolution-filter {
+  position: relative;
+}
+
+.resolution-filter summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.55rem;
+  min-inline-size: 6.5rem;
+  cursor: pointer;
+  list-style: none;
+}
+
+.resolution-filter summary::-webkit-details-marker {
+  display: none;
+}
+
+.resolution-filter summary::after {
+  content: "";
+  inline-size: 0.32rem;
+  block-size: 0.32rem;
+  border-inline-end: 1px solid currentColor;
+  border-block-end: 1px solid currentColor;
+  transform: translateY(-0.08rem) rotate(45deg);
+}
+
+.resolution-options {
+  position: absolute;
+  z-index: 3;
+  inset-block-start: calc(100% + 0.25rem);
+  inset-inline-start: 0;
+  inline-size: max-content;
+  max-inline-size: 12rem;
+  max-block-size: min(18rem, 50vh);
+  overflow: auto;
+  padding: 0.3rem 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--bg);
+  color: var(--ink);
+}
+
+.resolution-options label {
+  display: flex;
+}
+
+#export-conflict,
+#receipt-complete {
+  max-inline-size: min(24rem, calc(100% - 3rem));
+  border: 1px solid var(--line);
+  border-radius: 0.6rem;
+}
+
+#export-conflict::backdrop,
+#receipt-complete::backdrop {
+  background: rgb(0 0 0 / 55%);
+}
+
+#receipt-complete-destination {
+  overflow-wrap: anywhere;
+}
+
+#export-conflict-paths {
+  max-block-size: 30vh;
+  overflow: auto;
+  overflow-wrap: anywhere;
+}
+
+#export-conflict .dialog-footer,
+#receipt-complete .dialog-footer {
+  justify-content: flex-end;
 }
 
 .review-count {
@@ -246,6 +331,12 @@ main:has(#photo-review:not([hidden])) {
 }
 
 @media (max-width: 33rem) {
+  .resolution-options {
+    position: relative;
+    inset: auto;
+    margin-block-start: 0.25rem;
+  }
+
   #photo-groups.as-list .review-tile {
     grid-template-columns: minmax(0, 1fr) auto;
   }

@@ -21,6 +21,16 @@ impl ScratchDir {
     }
 }
 
+pub(super) fn modified_millis(path: &Path) -> Option<i64> {
+    let modified = fs::metadata(path).ok()?.modified().ok()?;
+    match modified.duration_since(std::time::UNIX_EPOCH) {
+        Ok(duration) => i64::try_from(duration.as_millis()).ok(),
+        Err(error) => i64::try_from(error.duration().as_millis())
+            .ok()?
+            .checked_neg(),
+    }
+}
+
 pub(super) fn read(path: &Path) -> io::Result<Vec<u8>> {
     fs::read(path)
 }

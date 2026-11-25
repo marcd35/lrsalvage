@@ -58,6 +58,14 @@ export async function checkPreviewReview(send) {
     }[id] ?? directory);
     const bridgePayload = review.files.find(path => path.includes('AAAA0002-'));
     const meadowPayload = review.files.find(path => path.includes('AAAA0001-'));
+    const getFile = FileSystemFileHandle.prototype.getFile;
+    FileSystemFileHandle.prototype.getFile = async function () {
+      const file = await getFile.call(this);
+      // Give the mounted level files distinct, deterministic modification times.
+      const id = file.name.match(/^AAAA(\\d{4})-/)?.[1];
+      if (id) Object.defineProperty(file, 'lastModified', { value: Number(id) * 1000 });
+      return file;
+    };
     globalThis.replaceBridgePayload = async (replace) => {
       const path = replace ? meadowPayload : bridgePayload;
       const response = await fetch('/review/' + path.split('/').map(encodeURIComponent).join('/'));
@@ -65,6 +73,7 @@ export async function checkPreviewReview(send) {
       await writeFile(fixture, bridgePayload, new Uint8Array(await response.arrayBuffer()));
     };
     let pending = 0;
+    globalThis.modificationRequests = 0;
     globalThis.maxBackgroundPreviewReads = 0;
     const NativeWorker = globalThis.Worker;
     globalThis.Worker = class extends NativeWorker {
@@ -75,6 +84,7 @@ export async function checkPreviewReview(send) {
         });
       }
       postMessage(message, ...args) {
+        if (message.type === 'preview-modified') globalThis.modificationRequests++;
         if (message.type === 'preview') {
           pending++;
           if (!document.getElementById('photo-dialog').open &&
@@ -114,7 +124,23 @@ export async function checkPreviewReview(send) {
     await until(lookup('#result') + '?.hidden === false', 'The review screen did not open');
   }
   await scan();
+  assert.match(await count(), /8 shown . 6 checked/);
+  const resolution = (size) => 'Array.from(document.querySelectorAll("#photo-resolution-sizes label"))' +
+    '.find(label => label.textContent.trim() === ' + JSON.stringify(size) + ').querySelector("input")';
+  assert.equal(await evaluate(checkbox('Creek.CR2') + ' === null'), true);
+  await click(lookup('#photo-resolution summary'));
+  assert.equal(await evaluate(element('resolution-all') + '.indeterminate'), true);
+  assert.equal(await evaluate(resolution('640 × 480') + '.checked'), true);
+  assert.equal(await evaluate(resolution('639 × 426') + '.checked'), false);
+  await click(resolution('640 × 480'));
+  assert.match(await count(), /6 shown . 6 checked/);
+  assert.equal(await evaluate(checkbox('Bridge.CR2') + ' === null'), true);
+  assert.equal(await evaluate(element('resolution') + '.open'), true);
+  await click(element('resolution-all'));
   assert.match(await count(), /10 shown . 6 checked/);
+  await evaluate(resolution('639 × 426') + '.focus()');
+  await key('Escape', 27);
+  assert.equal(await evaluate(element('resolution') + '.open'), false);
   assert.equal(await evaluate(checkbox('Bridge.CR2') + '.checked'), true);
   assert.equal(await evaluate(checkbox('Creek.CR2') + '.checked'), false);
   assert.match(await text(element('groups')), /Small previews.*Creek.CR2/s);
@@ -170,6 +196,18 @@ export async function checkPreviewReview(send) {
   assert.equal(await evaluate(checkbox('Bridge.CR2')), null);
   await set('search', '', 'input');
 
+  const previewOrder = () => evaluate(
+    'Array.from(document.querySelectorAll(".review-open"), row => row.getAttribute("aria-label"))',
+  );
+  await set('sort', 'captured');
+  assert.deepEqual((await previewOrder()).slice(0, 4),
+    ['Preview Portrait.CR2', 'Preview Bridge.CR2', 'Preview Orchard.CR2', 'Preview Broken.CR2']);
+  assert.equal(await evaluate('modificationRequests'), 0, 'Scan and capture sort do not request mtimes');
+  await set('sort', 'modified');
+  await until('modificationRequests > 0 && !' + element('sort') + '.hasAttribute("aria-busy")',
+    'The modification-date lookup did not finish');
+  assert.deepEqual((await previewOrder()).slice(0, 3),
+    ['Preview Broken.CR2', 'Preview Photo 5', 'Preview Orchard.CR2']);
   await set('sort', 'size');
   assert.equal(await evaluate(lookup('.review-open') + '.getAttribute("aria-label")'), 'Preview Broken.CR2');
   await set('sort', 'folder');
@@ -277,11 +315,11 @@ export async function checkPreviewReview(send) {
 
   await click(lookup('#roots button'));
   await until(lookup('#roots').concat('.textContent.includes("available from this page")'), 'Recheck did not complete after review');
-  assert.match(await count(), /10 shown . 5 checked/);
+  assert.match(await count(), /8 shown . 5 checked/);
   assert.match(await text(element('groups')), /Meadow.CR2Original is reachable/);
   await click(lookup('#restart'));
   await scan();
-  assert.match(await count(), /10 shown . 6 checked/);
+  assert.match(await count(), /8 shown . 6 checked/);
   await click(lookup('#restart'));
   await scan(false);
   assert.match(await count(), /10 shown . 0 checked/);

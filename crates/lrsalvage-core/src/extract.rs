@@ -61,6 +61,8 @@ pub enum OutcomeStatus {
     Written,
     /// An earlier run already produced a valid file; left alone.
     Skipped,
+    /// The browser user chose to keep a conflicting file that did not verify.
+    Omitted,
     /// `--dry-run`: nothing was written.
     DryRun,
     Failed,
@@ -71,6 +73,7 @@ impl OutcomeStatus {
         match self {
             OutcomeStatus::Written => "written",
             OutcomeStatus::Skipped => "skipped",
+            OutcomeStatus::Omitted => "omitted",
             OutcomeStatus::DryRun => "dry-run",
             OutcomeStatus::Failed => "failed",
         }
@@ -740,6 +743,12 @@ pub fn outcomes_csv(outcomes: &[Outcome]) -> String {
 /// Render cache-only extraction outcomes with an explicit recovery mode column.
 pub fn cache_only_outcomes_csv(outcomes: &[Outcome]) -> String {
     encode_outcomes(outcomes, Some("cache-only"))
+}
+
+/// Render indexless extraction outcomes with their own mode column, so a batch
+/// file says which recovery produced it.
+pub fn legacy_outcomes_csv(outcomes: &[Outcome]) -> String {
+    encode_outcomes(outcomes, Some("legacy"))
 }
 
 fn encode_outcomes(outcomes: &[Outcome], mode: Option<&str>) -> String {

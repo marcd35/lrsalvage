@@ -46,6 +46,7 @@ homepage = "https://github.com/marcd35/lrsalvage"
 # suite outside the checkout, so the property cannot rot back.
 exclude = [
     "tests/exif.rs",
+    "tests/legacy_recovery.rs",
     "tests/extract.rs",
     "tests/matrix.rs",
     "tests/package_tree.rs",

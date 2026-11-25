@@ -4,11 +4,10 @@
 // continuation beside it (`specs/app.md`, *Receipt, reports and diagnostics*).
 //
 // Two of its statements are reads rather than recollections: the reported count
-// comes from the run's own commits, and **View saved files** lists the destination
+// comes from the run's own commits, and **Show file list** lists the destination
 // back through the handle that wrote it. A page cannot learn a folder's path — a
-// directory handle carries a name and nothing else — so the receipt names the
-// folder, offers that name for copying, and says how to find the folder in
-// Explorer instead of offering an *Open folder* the page cannot honour.
+// directory handle supplies the folder name, which the receipt shows and
+// offers to copy.
 
 import { log } from './diagnostics.js';
 import { counted } from './count.js';
@@ -25,6 +24,23 @@ function folder(path) {
   return slash < 0 ? null : path.slice(0, slash);
 }
 
+function quantity(count) {
+  return counted(count) + (count === 1 ? ' file' : ' files');
+}
+
+function recoveryCount(batch) {
+  return counted(batch.verified) + ' of ' + quantity(batch.total) + ' recovered';
+}
+
+function duration(milliseconds) {
+  if (milliseconds < 1000) return 'less than 1 s';
+  if (milliseconds < 60000) return new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 }).format(milliseconds / 1000) + ' s';
+  const seconds = Math.round(milliseconds / 1000);
+  const minutes = Math.floor(seconds / 60);
+  const hours = Math.floor(minutes / 60);
+  return (hours ? counted(hours) + ' h ' : '') + (minutes % 60) + ' min ' + (seconds % 60) + ' s';
+}
+
 export function mountReceipt(document, actions) {
   const el = (suffix) => {
     const node = document.getElementById('receipt-' + suffix);
@@ -37,9 +53,11 @@ export function mountReceipt(document, actions) {
   const headline = el('headline');
   const detail = el('detail');
   const reconciled = el('reconciled');
-  const destination = el('destination');
-  const where = el('where');
   const view = el('view');
+  const completion = el('complete');
+  const completionTitle = el('complete-title');
+  const completionBreakdown = el('complete-breakdown');
+  const completionDestination = el('complete-destination');
   const copyName = el('copy-name');
   const files = el('files');
   const saved = el('saved');
@@ -62,6 +80,7 @@ export function mountReceipt(document, actions) {
     current = null;
     listed = false;
     section.hidden = true;
+    if (completion.open) completion.close();
     files.replaceChildren();
     failures.replaceChildren();
     reportList.replaceChildren();
@@ -86,33 +105,37 @@ export function mountReceipt(document, actions) {
     const entries = [...state.ledger.values()];
     const written = entries.filter((entry) => entry.status === 'written');
     const skipped = entries.filter((entry) => entry.status === 'skipped');
-    if (written.length === 0 && skipped.length === 0 && state.failures.length === 0) {
+    if (!state.batch && !entries.length && !state.failures.length && !state.omitted.size) {
       clear();
       return;
     }
     section.hidden = false;
 
-    // The number a person came for: distinct catalog images this run saved, each
-    // counted once however many times a one-off and a batch reached it.
-    headline.textContent = `${counted(written.length)} ` +
-      (state.cacheOnly
-        ? (written.length === 1 ? 'preview saved' : 'previews saved')
-        : (written.length === 1 ? 'photo saved' : 'photos saved'));
-
-    const parts = [];
-    if (skipped.length) parts.push(`${counted(skipped.length)} already recovered`);
-    if (state.failures.length) parts.push(`${counted(state.failures.length)} could not be saved`);
-    // The count belongs to a read-back, and a count of nothing says nothing the
-    // failures have not already said better.
-    const found = state.reconciled?.ok ? state.reconciled.present.length : 0;
-    if (found > 0) {
-      parts.push(`${counted(found)} ${found === 1 ? 'file' : 'files'} in the folder`);
+    const folderNames = state.destinationNames.map((name) => '“' + name + '”').join(' and ');
+    const batch = state.batch;
+    const savedCount = written.length + skipped.length;
+    const where = batch ? '“' + batch.folder + '”' : folderNames;
+    const to = where ? ' to ' + where : '';
+    const inFolder = where ? ' in ' + where : '';
+    const writtenCount = batch?.written ?? written.length;
+    const already = batch?.already ?? skipped.length;
+    const omitted = batch?.omitted ?? state.omitted.size;
+    const failuresCount = batch?.failed ?? state.failures.length;
+    if (batch && batch.verified !== null && batch.verified !== batch.total) {
+      headline.textContent = recoveryCount(batch) + inFolder;
+    } else if (!writtenCount && already) {
+      headline.textContent = quantity(already) + ' already recovered' + inFolder;
+    } else {
+      headline.textContent = quantity(writtenCount) + ' saved' + to;
     }
+    const parts = [];
+    if (already && writtenCount) parts.push(counted(already) + ' already recovered');
+    if (omitted) parts.push(counted(omitted) + ' skipped');
+    if (failuresCount) parts.push(counted(failuresCount) + ' could not be saved');
+    if (batch?.renamed) parts.push(counted(batch.renamed) + ' kept both');
     detail.textContent = parts.join(' · ');
 
-    // A listing of nothing is not worth opening, and a run that saved nothing
-    // has no folder to name.
-    const savedCount = written.length + skipped.length;
+    // The file list is available when the run has a committed path.
     view.hidden = savedCount === 0;
     if (savedCount === 0 && listed) {
       listed = false;
@@ -120,25 +143,16 @@ export function mountReceipt(document, actions) {
       files.replaceChildren();
       saved.textContent = '';
       view.setAttribute('aria-expanded', 'false');
-      view.textContent = 'View saved files';
+      view.textContent = 'Show file list';
     }
 
     renderReconciled(state);
 
     const chosen = state.destinationNames;
-    destination.textContent = chosen.length
-      ? `Saved to ${chosen.map((name) => `\u201c${name}\u201d`).join(' and ')}`
-      : '';
-    // A page cannot open a folder or learn where it is; saying so once is worth
-    // more than a button that would pretend.
-    where.textContent = chosen.length === 1
-      ? `To find it, open File Explorer and paste the folder name into the address bar — ` +
-        `the button below copies it. Your browser may also list it under recent folders.`
-      : '';
     copyName.hidden = chosen.length !== 1;
 
     el('files').setAttribute('aria-label', `Files in ${chosen.join(' and ') || 'the destination'}`);
-    renderFailures(state.failures);
+    renderFailures([...state.failures, ...[...state.omitted].map(([path, note]) => ({ path, note }))]);
     renderReports(state.reports);
     renderReportFailures(state.reportFailures ?? []);
     support.hidden = written.length === 0;
@@ -173,11 +187,7 @@ export function mountReceipt(document, actions) {
       return;
     }
     if (settled.missing.length === 0) {
-      // Nothing was saved, so there is nothing to have been found: the failure
-      // list is the whole account of this run.
-      reconciled.textContent = settled.present.length > 0
-        ? 'Every file above was found in the folder when it was read back.'
-        : '';
+      reconciled.textContent = '';
       return;
     }
     reconciled.textContent = `${counted(settled.missing.length)} of them ` +
@@ -231,26 +241,23 @@ export function mountReceipt(document, actions) {
   function filesFor(state) {
     const settled = state.reconciled;
     if (settled?.ok) {
-      return settled.present.map((entry) => {
-        const known = state.ledger.get(entry.id);
-        return { path: entry.path, bytes: entry.bytes, status: known?.status ?? 'written' };
-      });
+      return settled.present;
     }
-    return [...state.ledger.values()];
+    return state.files.map((entry) => ({ ...entry, destination: entry.target.handle.name }));
   }
 
   /** What the listing is: the folder's answer, or this run's record when it could not read one. */
   function describeListing(state) {
-    saved.textContent = state.reconciled?.ok
-      ? 'This is the folder listed back through this page, not a second plan.'
-      : 'The folder could not be read back, so this is this run’s own record.';
+    saved.textContent = state.reconciled?.ok ? '' : 'This list comes from the run’s own record.';
   }
 
   function renderFiles(state) {
     files.replaceChildren();
     const groups = new Map();
     for (const entry of filesFor(state)) {
-      const key = folder(entry.path);
+      const subfolder = folder(entry.path);
+      const key = state.destinationNames.length > 1
+        ? [entry.destination, subfolder].filter(Boolean).join('/') : subfolder;
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key).push(entry);
     }
@@ -280,17 +287,32 @@ export function mountReceipt(document, actions) {
       `core ${identity.core ?? 'version unknown'}`;
   }
 
-  view.addEventListener('click', () => {
-    listed = !listed;
+  function showCompletion(batch) {
+    completionTitle.textContent = recoveryCount(batch) + ' in ' + duration(batch.elapsed);
+    completionDestination.textContent = 'Saved to “' + batch.folder + '”';
+    const parts = [];
+    if (batch.already) parts.push(counted(batch.written) + ' saved', counted(batch.already) + ' already recovered');
+    if (batch.renamed) parts.push(counted(batch.renamed) + ' kept both');
+    completionBreakdown.hidden = parts.length === 0;
+    completionBreakdown.textContent = parts.join(' · ');
+    completion.showModal();
+  }
+
+  function showListing(expanded) {
+    listed = expanded;
     files.hidden = !listed;
     view.setAttribute('aria-expanded', String(listed));
-    view.textContent = listed ? 'Hide saved files' : 'View saved files';
+    view.textContent = listed ? 'Hide file list' : 'Show file list';
     if (listed && current) {
       renderFiles(current);
       describeListing(current);
     }
-  });
+  }
 
+  view.addEventListener('click', () => showListing(!listed));
+  completion.addEventListener('close', () => {
+    if (!section.hidden && !completion.open) title.focus();
+  });
   copyName.addEventListener('click', () => {
     const chosen = current?.destinationNames ?? [];
     if (chosen.length !== 1) return;
@@ -308,5 +330,5 @@ export function mountReceipt(document, actions) {
     void actions.saveVerification(reportStatus);
   });
 
-  return { update, clear, renderVersions, show: () => section, focus: () => title.focus() };
+  return { update, clear, renderVersions, showCompletion, show: () => section, focus: () => title.focus() };
 }

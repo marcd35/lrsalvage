@@ -212,19 +212,32 @@ export async function checkReceipt(send) {
   await evaluate("prepareReceipt('working', 'receipt-output')");
   await scan();
   await until(el('#photo-review') + '?.hidden === false', 'The review screen did not open');
+  await until('Array.from(document.querySelectorAll(".review-open img")).some(img => img.naturalWidth > 0)',
+    'No thumbnail decoded before applying the filter');
   await click('#export-pick');
   await until(el('#export-start') + '?.disabled === false', 'The destination was not accepted');
+  await click('#photo-resolution summary');
+  const allResolutions = el('#photo-resolution-all');
+  if (!await evaluate(allResolutions + '.checked')) await click('#photo-resolution-all');
+  await click('#photo-resolution-all');
+  await click('#photo-resolution summary');
+  assert.match(await text('#photo-count'), /0 shown . 3 checked/);
   await click('#export-start');
   await until(el('#export-status') + '.textContent.includes("3 saved") && ' +
     el('#export-start') + '.disabled === false', 'The batch did not commit three JPEGs');
   await until(el('#receipt-section') + '?.hidden === false', 'No receipt appeared after a batch');
-  assert.equal(await text('#receipt-headline'), '3 photos saved');
-  assert.match(await text('#receipt-detail'), /3 files in the folder/);
-  assert.match(await text('#receipt-reconciled'),
-    /Every file above was found in the folder when it was read back/,
-    'the receipt must say the destination answered, not just that writes resolved');
-  assert.match(await text('#receipt-destination'), /receipt-output/);
+  assert.equal(await text('#receipt-headline'), '3 files saved to “receipt-output”');
+  assert.equal(await text('#receipt-detail'), '');
+  assert.equal(await text('#receipt-reconciled'), '');
   assert.equal(await text('#receipt-versions'), 'lrsalvage app 0.1.0 · core 0.4.0');
+  assert.equal(await evaluate(el('#receipt-complete') + '.open'), true);
+  assert.match(await text('#receipt-complete-title'), /^3 of 3 files recovered in /);
+  assert.match(await text('#receipt-complete-destination'), /Saved to .*receipt-output/);
+  assert.equal(await evaluate('document.activeElement.textContent'), 'OK');
+  assert.equal(await evaluate(el('#receipt-complete') + '.querySelectorAll("button").length'), 1);
+  await click('#receipt-complete button[type="submit"]');
+  assert.equal(await evaluate(el('#receipt-complete') + '.open'), false);
+  await until('document.activeElement.id === "receipt-title"', 'Focus did not return to the receipt');
 
   const files = await evaluate('receiptFiles()');
   for (const name of ['report.csv', 'extract.csv', 'manifest.json']) {
@@ -292,15 +305,20 @@ export async function checkReceipt(send) {
   ].sort());
 
   // A photo a one-off reaches after a batch does not grow the count.
+  await click('#photo-resolution summary');
+  await click('#photo-resolution-all');
+  await click('#photo-resolution summary');
   await click('button[aria-label^="Preview IMG_0002"]');
   await until(el('#export-one') + '?.disabled === false', 'The one-off save was not enabled');
   await click('#export-one');
+  await until(el('#export-conflict') + '.open', 'One-off save did not ask about the existing file');
+  await click('#export-conflict [value="skip"]');
   await until(
     el('#export-one-status') + '.textContent.startsWith("Saved") || ' +
       el('#export-one-status') + '.textContent.startsWith("Already recovered")',
     'The one-off save of a file the batch wrote said nothing',
   );
-  assert.equal(await text('#receipt-headline'), '3 photos saved',
+  assert.match(await text('#receipt-headline'), /^3 files saved to /,
     'a photo counted once must stay counted once');
   await click('#photo-close');
 
@@ -323,7 +341,7 @@ export async function checkReceipt(send) {
     'A batch into a folder that cannot be listed did not finish its writes');
   await until(el('#receipt-reconciled') + '.textContent.includes("could not be read back")',
     'the receipt kept claiming a folder it could not read');
-  assert.equal(await text('#receipt-headline'), '3 photos saved',
+  assert.match(await text('#receipt-headline'), /^3 files saved to /,
     'the run did save those three, and the receipt says so beside the unreadable folder');
   assert.equal(await text('#receipt-detail'), '',
     'a count of files in the folder would be the run’s recollection, so there is none');
@@ -334,7 +352,8 @@ export async function checkReceipt(send) {
   await openListing();
   assert.match(await text('#receipt-saved'), /own record/,
     'the fallback to the ledger has to say it is a fallback');
-  assert.equal((await listed()).length, 3);
+  assert.equal((await listed()).length, 6,
+    'the run record lists files saved across both destinations');
 
   // ---- a run that only ever saved one photo -------------------------------
   await click('#restart');
@@ -347,7 +366,7 @@ export async function checkReceipt(send) {
   await until(el('#export-one-status') + '.textContent.startsWith("Saved")',
     'The one-off JPEG did not commit');
   await until(el('#receipt-section') + '?.hidden === false', 'A one-off-only run got no receipt');
-  assert.equal(await text('#receipt-headline'), '1 photo saved');
+  assert.match(await text('#receipt-headline'), /^1 file saved to /);
   assert.equal(await evaluate(el('#receipt-report-list') + '.children.length'), 0,
     'a run with no reports must not claim any');
   assert.equal(await evaluate(el('#receipt-report-note') + '?.hidden'), false,
@@ -355,7 +374,8 @@ export async function checkReceipt(send) {
   const single = await copy();
   assert.equal(single.writes.planned, 0, 'no batch was ever started');
   assert.equal(single.writes.written, 1);
-  assert.equal(single.writes.confirmed_on_disk, null, 'a one-off does not settle a batch');
+  assert.equal(single.writes.confirmed_on_disk, 1,
+    'the one-off is confirmed by the destination read-back');
   await click('#photo-close');
 
   // ---- stopped, settled and continued, with reports of its own ------------
@@ -364,6 +384,9 @@ export async function checkReceipt(send) {
   await scan();
   await until(el('#photo-review') + '?.hidden === false', 'The review screen did not reopen');
   // The below-floor preview starts unchecked; including it makes the batch 13.
+  await click('#photo-resolution summary');
+  await click('#photo-resolution-all');
+  await click('#photo-resolution summary');
   await click('button[aria-label^="Preview Small"]');
   await click('#photo-dialog-check');
   await click('#photo-close');
@@ -377,7 +400,8 @@ export async function checkReceipt(send) {
   await until(el('#export-status') + '.textContent.includes("Stopped") && ' +
     el('#export-start') + '.disabled === false', 'The stopped batch did not settle');
   await until(el('#receipt-section') + '?.hidden === false', 'A stopped batch got no receipt');
-  assert.match(await text('#receipt-headline'), /^[1-9][\d]* photos? saved$/, 'the settled count is on the receipt');
+  assert.equal(await evaluate(el('#receipt-complete') + '.open'), false);
+  assert.match(await text('#receipt-headline'), /^[1-9][\d]* of 13 files recovered in /, 'the settled count is on the receipt');
 
   // One committed file goes missing between the stop and the continuation. No
   // row is re-written — the batch believes it wrote that file — so only the
@@ -402,7 +426,7 @@ export async function checkReceipt(send) {
   await click('#export-start');
   await until(el('#export-status') + '.textContent.startsWith("13 saved") && ' +
     el('#export-start') + '.disabled === false', 'Continuation did not finish');
-  await until(el('#receipt-headline') + '.textContent === "13 photos saved"',
+  await until(el('#receipt-headline') + '.textContent.startsWith("12 of 13 files recovered")',
     'The continued run did not count thirteen photos');
   const resumed = await copy();
   assertFields(resumed);
@@ -412,7 +436,7 @@ export async function checkReceipt(send) {
   assert.equal(resumed.writes.confirmed_on_disk, 12,
     'the destination answered for twelve of the thirteen committed files');
   assert.equal(resumed.writes.failed, 0, 'the continuation wrote everything it believed it had not');
-  assert.match(await text('#receipt-detail'), /12 files in the folder/);
+  assert.equal(await text('#receipt-detail'), '');
   assert(await text('#receipt-reconciled') === `1 of them is not in the folder any more: ${removed}.`,
     'the receipt must name the file the folder no longer holds');
   assert.equal(resumed.events.stopped, 1);

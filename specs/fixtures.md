@@ -91,7 +91,10 @@ xmp_blob(xml)                        the catalog's zlib blob with its 4-byte pre
 archetype, then per-image composition:
 
 ```text
-Vault::modern() / legacy() / mixed() / damaged() / empty() / unindexed() / unrecognised()
+Vault::modern() / legacy() / mixed() / damaged() / empty() / unindexed() /
+Vault::unindexed_legacy()           .lrprev containers and no previews.db: the cache
+                                    the indexless mode recovers (#198)
+Vault::unrecognised()
 Vault::image(ImageRow)              catalog row, original path, orientation, XMP blob.
                                     `ImageRow::path_from_root` sets
                                     AgLibraryFolder.pathFromRoot, so an image's folder
@@ -106,6 +109,16 @@ Vault::cache_entry_without_image(uuid)  an ImageCacheEntry row whose imageId nam
                                     image: the dead row a deleted image leaves behind,
                                     whose payload is therefore an orphan
 Vault::unclaimed(levels)            a pyramid no image claims
+Vault::container(levels)            the pyramid's levels as one .lrprev, whatever the
+                                    cache holds; `level_file` on a legacy vault writes
+                                    the same container at the derived shard address
+Vault::container_at(relative, levels)  one .lrprev at an explicit cache-relative path,
+                                    including outside the shard folders the derived
+                                    address uses — the candidate the indexless walk
+                                    must still find
+Vault::raw_file(relative, bytes)    bytes at an explicit cache-relative path: a
+                                    container whose declared lengths stop agreeing part
+                                    way through, or one holding a payload no reader knows
 Vault::superseded(levels)           level files plus a deliberately unreadable .lrprev
 Vault::unrecognised_file(shape)     payload-like, wrong shard / no suffix / bad uuid
 Vault::preoccupied_destination(relative, bytes)  a file already in the output tree
@@ -488,3 +501,15 @@ at once, so Stop/Continue can leave pending work and finish it on continuation.
 The browser product test compares the generated names and JPEG SHA-256 values
 against the native run and reads the receipt and manifest against the saved
 files. It supplies accepted handles at the picker boundary.
+
+## Legacy app recovery without an index
+
+The indexless checks (#198) compose `Vault::unindexed_legacy()` — no
+`previews.db` at all — plus the shapes the mode has to tell apart: a container of
+several sizes, two equal-area chunks, a usable prefix before a damaged boundary, a
+container whose chunks are all non-JPEG images, an empty folder, and containers at
+explicit paths outside the shard folders.
+`Vault::container_at` and `Vault::raw_file` put a container anywhere in the cache,
+which is what makes the second and the last of those possible without a writer of
+their own. The browser product test mounts the same fixtures and compares the
+saved names and bytes with the native run, one case at a time.

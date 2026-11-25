@@ -105,6 +105,7 @@ fn main() {
         "separator": std::path::MAIN_SEPARATOR.to_string(),
         "vaults": reported,
         "cache_only": cache_only(&out),
+        "legacy": legacy(&out),
     });
     let path = out.join("native.json");
     fs::write(
@@ -189,6 +190,113 @@ fn recovery_vault(mut vault: Vault) -> Vault {
         .pyramid(PyramidRow::new(&unsupported).level(960, 640))
         .level_file(Level::sized(&unsupported, 960, 640).raw(b"GIF89a"))
         .pyramid(PyramidRow::new(&key(16)).level(960, 640))
+}
+
+/// The indexless cases (#198): what the page must say and write when the only
+/// thing a cache still holds is its `.lrprev` containers.
+///
+/// | case | what it holds |
+/// |---|---|
+/// | `legacy-sizes` | sixteen containers, three levels each — more than the writer schedules at once |
+/// | `legacy-tie` | two equal-area chunks, and one taller container beside them |
+/// | `legacy-damaged` | a usable prefix before damage, a truncated container, a non-JPEG one |
+/// | `legacy-empty` | no container at all |
+/// | `legacy-outside` | containers outside the shard folders as well as at them |
+fn legacy(out: &Path) -> Vec<serde_json::Value> {
+    [
+        ("legacy-sizes", legacy_sizes()),
+        ("legacy-tie", legacy_tie()),
+        ("legacy-damaged", legacy_damaged()),
+        ("legacy-empty", Vault::unindexed_legacy()),
+        ("legacy-outside", legacy_outside()),
+    ]
+    .into_iter()
+    .map(|(name, vault)| {
+        let vault = vault.write();
+        let root = out.join(name);
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).expect("create an isolated legacy fixture");
+        let files = copy_tree(vault.previews(), &root);
+        match lrsalvage_app::scan_legacy(&root, &mut |_| Control::Continue) {
+            Ok(scan) => {
+                let paths = scan.review.export_paths(true);
+                let outcomes: Vec<_> = paths
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|row| {
+                        let id = row["id"].as_str().unwrap().parse().unwrap();
+                        let (_, outcome) =
+                            scan.review.prepare(id, true).expect("prepare a preview");
+                        outcome
+                    })
+                    .collect();
+                json!({
+                    "name": name, "files": files, "report": scan.report,
+                    "manifest": outcomes,
+                })
+            }
+            Err(error) => json!({"name": name, "files": files, "error": error.kind}),
+        }
+    })
+    .collect()
+}
+
+/// Sixteen containers, each with three levels: enough that the writer's eight
+/// concurrent writes can be stopped in the middle of a batch.
+fn legacy_sizes() -> Vault {
+    let mut vault = Vault::unindexed_legacy();
+    for number in 1..=16 {
+        let uuid = key(number);
+        vault = vault.container(&[
+            Level::sized(&uuid, 320, 213),
+            Level::sized(&uuid, 960, 640),
+            Level::sized(&uuid, 1600, 1067),
+        ]);
+    }
+    vault
+}
+
+fn legacy_tie() -> Vault {
+    let tie = key(1);
+    let taller = key(2);
+    Vault::unindexed_legacy()
+        .container(&[Level::sized(&tie, 960, 640), Level::sized(&tie, 640, 960)])
+        .container(&[
+            Level::sized(&taller, 1200, 800),
+            Level::sized(&taller, 800, 1200),
+        ])
+}
+
+fn legacy_damaged() -> Vault {
+    let mut prefix = lrsalvage_fixtures::bytes::container(&[(1200, 800), (320, 213)]);
+    prefix.extend_from_slice(&lrsalvage_fixtures::bytes::damaged_tail());
+    let mut truncated = lrsalvage_fixtures::bytes::chunk(
+        "level_1",
+        &lrsalvage_fixtures::bytes::truncated_jpeg(1200, 800),
+        0,
+    );
+    truncated.extend_from_slice(b"AgHg\x00\x00");
+    let mut unsupported = lrsalvage_fixtures::bytes::chunk(
+        "header",
+        &lrsalvage_fixtures::bytes::header(&[(900, 600)]),
+        0,
+    );
+    unsupported.extend_from_slice(&lrsalvage_fixtures::bytes::chunk(
+        "level_1",
+        &lrsalvage_fixtures::bytes::other_image(),
+        0,
+    ));
+    Vault::unindexed_legacy()
+        .raw_file("damaged/prefix.lrprev", &prefix)
+        .raw_file("damaged/truncated.lrprev", &truncated)
+        .raw_file("damaged/unsupported.lrprev", &unsupported)
+}
+
+fn legacy_outside() -> Vault {
+    Vault::unindexed_legacy()
+        .container_at("loose/copy.lrprev", &[Level::sized(&key(1), 800, 533)])
+        .container(&[Level::sized(&key(2), 1200, 800)])
 }
 
 fn key(id: u32) -> String {
