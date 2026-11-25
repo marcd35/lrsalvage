@@ -2,13 +2,20 @@
 # The app's browser run: one entry, two targets, and the flow a person takes.
 #
 #   sh scripts/browser-app.sh [--chrome <path>] [--attach <port>] [--verbose]
-#                             [--only <phase>] [--work <dir>]
+#                             [--only <phase>] [--work <dir>] [--reuse-module]
 #
 # `--only` runs one phase — `parity`, `review`, `export`, `receipt`, `progress`
 # or `cache-only` — and `--work` reuses a fixture directory: the native run, the
 # vaults and the CLI's own files are made only when they are missing, and the
-# directory is left in place. Together they turn iterating on one phase from a
-# rebuild into a rerun.
+# directory is left in place. Both leave the wasm rebuild alone: a page is only
+# worth measuring against a module built from the Rust in front of you, so the
+# build runs every time unless `--reuse-module` says otherwise.
+#
+# `--reuse-module` measures the phases against `crates/lrsalvage-app/web/pkg` as
+# it stands and prints which module it reused, for a checkout whose Rust another
+# build already compiled — the frontend is served from this tree either way, so a
+# frontend-only change is checked against the module the parent commit built. It
+# is how this run is reachable on a machine with no wasm C compiler at all.
 #
 # The browser app workflow runs this check on one Chromium runner for relevant
 # pull requests. See docs/agents/browser-app-deployment.md for setup and evidence.
@@ -37,10 +44,11 @@
 # is supplied as the value a pick returns, and its *cancelled* branch is driven for
 # real, because headless answers `AbortError` with no dialog.
 #
-# Needs: `cargo`, `node`, `wasm-bindgen` (the version the lock names), the
-# `wasm32-unknown-unknown` target, a C compiler for it — the same two variables
-# `scripts/check.sh wasm` wants — and Chromium or Chrome. Each is required, not
-# skipped.
+# Needs: `cargo`, `node` and Chromium or Chrome. Building the module also needs
+# `wasm-bindgen` (the version the lock names), the `wasm32-unknown-unknown`
+# target and a C compiler for it — the same two variables `scripts/check.sh wasm`
+# wants — so `--reuse-module` is what runs on a machine without them. Each is
+# required by the step that uses it, not skipped.
 set -eu
 
 cd "$(dirname "$0")/.."
@@ -54,25 +62,33 @@ require() {
 
 require cargo 'rustup.rs'
 require node 'nodejs.org'
-require wasm-bindgen 'cargo install wasm-bindgen-cli --version 0.2.130'
-require rustup 'rustup.rs'
 
-if ! rustup target list --installed | grep -qx wasm32-unknown-unknown; then
-    printf '%s\n' \
-        'wasm32-unknown-unknown is not installed: rustup target add wasm32-unknown-unknown' >&2
-    exit 1
-fi
+# The three things only a build needs, checked by the step that builds rather than
+# on the way in: `--reuse-module` and a phase that never loads a module should
+# not be refused for a toolchain they do not use.
+require_wasm_build() {
+    require wasm-bindgen 'cargo install wasm-bindgen-cli --version 0.2.130'
+    require rustup 'rustup.rs'
+    if ! rustup target list --installed | grep -qx wasm32-unknown-unknown; then
+        printf '%s\n' \
+            'wasm32-unknown-unknown is not installed: rustup target add wasm32-unknown-unknown' >&2
+        exit 1
+    fi
+    require_wasm_compiler || exit 1
+}
 
 # The machine's own values, which is where the wasm C compiler lives on a machine
 # that keeps it off `PATH`. The candidates and their order are
 # `scripts/load-env.sh`'s, so a machine that satisfied the `wasm` gate satisfies
-# this too — including which file wins when two name the same variable.
+# this too — including which file wins when two name the same variable, and
+# `require_wasm_compiler`, which names a path that has moved.
 . ./scripts/load-env.sh
 
 chrome=''
 driver_args=''
 phase=''
 given_work=''
+reuse_module=''
 while [ "$#" -gt 0 ]; do
     case "$1" in
         --chrome)
@@ -112,6 +128,9 @@ while [ "$#" -gt 0 ]; do
                 printf '%s\n' '--work needs a directory' >&2
                 exit 2
             }
+            ;;
+        --reuse-module)
+            reuse_module=yes
             ;;
         *)
             printf 'unknown argument: %s\n' "$1" >&2
@@ -155,20 +174,38 @@ else
 fi
 
 printf '%s\n' '== wasm32'
-cargo build -q --lib --locked --target wasm32-unknown-unknown -p lrsalvage-app
-rm -rf crates/lrsalvage-app/web/pkg
-mkdir -p crates/lrsalvage-app/web/pkg
-wasm-bindgen \
-    --target web \
-    --out-dir crates/lrsalvage-app/web/pkg \
-    --out-name lrsalvage_app \
-    target/wasm32-unknown-unknown/debug/lrsalvage_app.wasm
+module=crates/lrsalvage-app/web/pkg/lrsalvage_app_bg.wasm
+if [ -n "$reuse_module" ]; then
+    # Said, not assumed. A run's numbers are about the module it loaded, so the
+    # reuse names the file and leaves its mtime on screen: a module older than the
+    # Rust beside it is the reader's to spot, and `--reuse-module` is only honest
+    # when the two agree.
+    if [ ! -f "$module" ]; then
+        printf '%s\n' \
+            "--reuse-module found no module at $module" \
+            '  build one where a wasm C compiler exists,' \
+            '  or copy crates/lrsalvage-app/web/pkg from a checkout whose Rust matches this one.' >&2
+        exit 1
+    fi
+    printf '%s\n' 'reusing the module already in the tree:'
+    ls -l "$module"
+else
+    require_wasm_build
+    cargo build -q --lib --locked --target wasm32-unknown-unknown -p lrsalvage-app
+    rm -rf crates/lrsalvage-app/web/pkg
+    mkdir -p crates/lrsalvage-app/web/pkg
+    wasm-bindgen \
+        --target web \
+        --out-dir crates/lrsalvage-app/web/pkg \
+        --out-name lrsalvage_app \
+        target/wasm32-unknown-unknown/debug/lrsalvage_app.wasm
+fi
 
-printf '%s\n' '== headless Chromium'
 # The harness page covers scan parity and picker cancellation. No leading slash:
 # `sh` rewrites an argument that starts with one into a Windows path.
 page='crates/lrsalvage-app/web/test.html'
 if want parity; then
+printf '%s\n' '== headless Chromium'
 if [ -n "$chrome" ]; then
     # shellcheck disable=SC2086
     node scripts/drive-browser.mjs "$work" --chrome "$chrome" --page "$page" $driver_args
@@ -178,8 +215,8 @@ else
 fi
 fi
 
-printf '%s\n' '== product preview review'
 if want review; then
+printf '%s\n' '== product preview review'
 if [ -n "$chrome" ]; then
     # shellcheck disable=SC2086
     node scripts/drive-browser.mjs "$work" --chrome "$chrome" --check-review $driver_args
@@ -200,8 +237,8 @@ cli_extract() {
         --out "$work/cli-extract" --no-timestamps
 }
 
-printf '%s\n' '== D12 product export and CLI parity'
 if want export; then
+printf '%s\n' '== D12 product export and CLI parity'
 cli_extract
 if [ -n "$chrome" ]; then
     # shellcheck disable=SC2086
@@ -212,8 +249,8 @@ else
 fi
 fi
 
-printf '%s\n' '== receipt, reports and local diagnostics'
 if want receipt; then
+printf '%s\n' '== receipt, reports and local diagnostics'
 cli_extract
 # The verification report the page offers is the CLI's own object, so the run
 # needs one to compare against. `scan` writes nothing but the file it is given.
@@ -230,15 +267,15 @@ else
 fi
 fi
 
-printf '%s\n' '== #185 scan progress readout'
 if want progress; then
-    if [ -n "$chrome" ]; then
-        # shellcheck disable=SC2086
-        node scripts/drive-browser.mjs "$work" --chrome "$chrome" --check-scan-progress $driver_args
-    else
-        # shellcheck disable=SC2086
-        node scripts/drive-browser.mjs "$work" --check-scan-progress $driver_args
-    fi
+printf '%s\n' '== #185 scan progress readout'
+if [ -n "$chrome" ]; then
+    # shellcheck disable=SC2086
+    node scripts/drive-browser.mjs "$work" --chrome "$chrome" --check-scan-progress $driver_args
+else
+    # shellcheck disable=SC2086
+    node scripts/drive-browser.mjs "$work" --check-scan-progress $driver_args
+fi
 fi
 
 if want cache-only; then
