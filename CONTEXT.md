@@ -131,6 +131,10 @@ _Avoid_: stray file, unmapped file
 
 ## Recovery
 
+**Legacy cache recovery**:
+Recovery of previews directly from legacy containers. Each usable container
+supplies one preview with a generated name and no catalog association.
+
 **Salvageable image**:
 A catalog image whose original file cannot be found and for which at least one
 payload survives. An image whose original is still on disk is not a salvage
