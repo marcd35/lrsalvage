@@ -47,6 +47,9 @@ pending.
 - [ ] Record the [synthetic writer result](https://github.com/marcd35/lrsalvage/issues/171).
       Follow the [release-scale writer protocol](agents/browser-app-deployment.md#verify-the-writer-at-release-scale)
       and link the dated result for the tested candidate.
+      Exceeding 120 seconds is a performance miss, not a release blocker, when
+      correctness, disk reconciliation, and CLI parity pass. Record the miss and
+      track a performance follow-up.
 - [ ] Record the [deployed browser and accessibility results](https://github.com/marcd35/lrsalvage/issues/172).
       Exercise the actual folder pickers in Windows Chrome and Edge.
       Review the [app 0.1.0 accessibility statement](app-0.1-accessibility.md)
@@ -62,18 +65,23 @@ pending.
       on the same deployed candidate, using the pre-alpha catalog and preview
       cache on the maintainer's test laptop. In a supported Windows browser,
       scan and review the full default eligible selection, then save it to a
-      fresh destination with the default small-preview setting. Stop while work
-      remains pending, let in-flight saves settle, reconcile the partial receipt
-      with disk, and continue in the same tab.
+      fresh destination with the default small-preview setting. Stop after some
+      outputs are saved while other batch items remain pending. Let in-flight
+      writes settle, reconcile the partial receipt with disk, and continue in the
+      same tab.
 
       Find the recovery folder from the receipt and reconcile final counts and
       paths with disk. The fresh destination should yield one saved output per
       selected preview, zero already recovered, zero final failures, and no
-      missing or duplicate outputs. Count scan exclusions separately. Open
-      samples across available preview sizes, orientations, and source folders;
-      each sample must open, show the expected photo, and be worth keeping.
-      Confirm the receipt lists its reports and offers the verification report;
-      record transient failures.
+      missing or duplicate outputs. Count scan exclusions separately. Choose
+      samples that cover every available preview size, orientation, and source
+      folder; a sample may cover more than one of those categories. Each sample
+      must open, show the expected photo without visible corruption, and be
+      useful at its recovered preview size. These are previews, not
+      original-quality replacements. Confirm the receipt lists its reports and
+      offers the verification report. Record transient failures and successful
+      retries; a transient failure that is retried successfully is not a final
+      failure.
 
       Record the candidate commit and URL, app and core versions, Windows and
       browser versions, scan and write counts, timings, and failures. Compare
@@ -81,14 +89,15 @@ pending.
       time, which starts at page load. Check that the gallery scrolls, opens
       previews, accepts selection changes, and proceeds to saving reliably;
       restore the default selection before saving. File follow-up tuning for
-      slow but usable behavior. The diagnostic longest write gap includes the
+      slow but usable behavior. Timings are evidence, with no separate numeric
+      threshold for this gate. The diagnostic longest write gap includes the
       deliberate stop and continuation pause.
 
       Use **Copy diagnostics**, check that the copied text contains no private
-      paths, filenames, or catalog content, and share it manually. Keep the
-      receipt's CSV reports and manifest on the test machine. Fix and rerun a
-      failing recovery before release. Limit public claims to the tested recovery
-      and environment.
+      paths, filenames, or catalog content, and share it in the issue comment
+      with the aggregate result. Keep the receipt's CSV reports and manifest on
+      the test machine. Fix and rerun a failing recovery before release. Limit
+      public claims to the tested recovery and environment.
 
 ## Tag
 

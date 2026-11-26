@@ -230,6 +230,12 @@ browser's handle: each image the run saved or found already recovered, by folder
 and name. Evidence read from the disk rather than a second telling of the plan.
 _Avoid_: output list, export list, folder contents
 
+**Transient write failure**:
+A preview save attempt that initially fails but succeeds on a later attempt. The
+failure is recorded, but it is not a final save failure if the destination
+reconciles successfully.
+_Avoid_: failed recovery, failure-free run
+
 **Diagnostics**:
 A curated account of one run that a person may copy by hand and choose to share:
 versions, timings, counts and failure categories. It names no path, filename,
